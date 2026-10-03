@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -26,6 +27,7 @@ public sealed class AppShell(
     IServiceProvider services,
     SettingsService settings,
     MonitorHost monitors,
+    AccountService accounts,
     WindowPlacementService placement,
     TrayService tray,
     AppPaths paths,
@@ -39,6 +41,7 @@ public sealed class AppShell(
     private WidgetWindow? _widget;
     private WidgetViewModel? _widgetViewModel;
     private SettingsWindow? _settingsWindow;
+    private SettingsViewModel? _settingsViewModel;
     private DispatcherTimer? _clock;
     private DateTimeOffset _widgetDeactivatedAt = DateTimeOffset.MinValue;
     private bool _quitting;
@@ -87,6 +90,9 @@ public sealed class AppShell(
         _clock.Tick += (_, _) => _widgetViewModel.Tick();
         _clock.Start();
 
+        // Restore the signed-in account in the background; the widget shows the outcome.
+        _ = RestoreAccountAsync();
+
         logger.LogInformation("Shell started; tray {Tray}, demo {Demo}", CanHideToTray ? "available" : "unavailable", monitors.IsDemo);
     }
 
@@ -128,12 +134,15 @@ public sealed class AppShell(
     {
         if (_settingsWindow is null)
         {
-            var viewModel = ActivatorUtilities.CreateInstance<SettingsViewModel>(services, this);
+            var account = ActivatorUtilities.CreateInstance<AccountViewModel>(services, this);
+            var viewModel = ActivatorUtilities.CreateInstance<SettingsViewModel>(services, this, account);
+            _settingsViewModel = viewModel;
             _settingsWindow = new SettingsWindow { DataContext = viewModel, Icon = _widget?.Icon };
             _settingsWindow.Closed += (_, _) =>
             {
-                viewModel.Dispose();
+                viewModel.Dispose(); // also cancels a sign-in in progress
                 _settingsWindow = null;
+                _settingsViewModel = null;
             };
         }
 
@@ -144,6 +153,31 @@ public sealed class AppShell(
         }
 
         _settingsWindow.Activate();
+    }
+
+    public void BeginSignIn()
+    {
+        OpenSettings();
+        if (_settingsViewModel?.Account.SignInCommand is { } signIn && signIn.CanExecute(null))
+        {
+            signIn.Execute(null);
+        }
+    }
+
+    public async Task CopyTextAsync(string text)
+    {
+        try
+        {
+            var clipboard = (_settingsWindow as TopLevel ?? _widget)?.Clipboard;
+            if (clipboard is not null)
+            {
+                await clipboard.SetTextAsync(text);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Copying to the clipboard failed");
+        }
     }
 
     public async Task<bool> OpenDataFolderAsync()
@@ -165,6 +199,7 @@ public sealed class AppShell(
     public void Quit()
     {
         _quitting = true;
+        accounts.Dispose();
         settings.Flush();
         _settingsWindow?.Close();
         _desktop?.Shutdown();
@@ -181,6 +216,18 @@ public sealed class AppShell(
     /// covered by other windows is brought forward instead. Clicking the tray icon itself
     /// deactivates the widget, so "just using it" means active within a short grace period.
     /// </summary>
+    private async Task RestoreAccountAsync()
+    {
+        try
+        {
+            await accounts.RestoreAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Restoring the GitHub account failed");
+        }
+    }
+
     private void ToggleWidget()
     {
         var wasInUse = _widget is not null

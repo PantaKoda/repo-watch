@@ -181,10 +181,21 @@
         <!-- Not signed in -->
         <StackPanel IsVisible="{Binding ShowSignedOutState}" Margin="16" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="Not signed in" FontSize="16" FontWeight="SemiBold" />
-          <TextBlock TextWrapping="Wrap"
-                     Text="Repo Watch shows GitHub Actions, pull requests and issues for repositories you choose. Signing in with GitHub is not available in this build yet." />
+          <TextBlock TextWrapping="Wrap" Text="{Binding SignedOutText}" />
           <WrapPanel>
-            <Button Content="Explore demo data" Command="{Binding EnterDemoCommand}" Classes="accent" Margin="0,0,8,8" />
+            <Button Content="Sign in with GitHub" Command="{Binding SignInCommand}" Classes="accent" Margin="0,0,8,8"
+                    IsVisible="{Binding IsSignInConfigured}" />
+            <Button Content="Explore demo data" Command="{Binding EnterDemoCommand}" Margin="0,0,8,8" />
+            <Button Content="Settings" Command="{Binding OpenSettingsCommand}" Margin="0,0,8,8" />
+          </WrapPanel>
+        </StackPanel>
+
+        <!-- Session expired or revoked: one explicit action, no retry loop -->
+        <StackPanel IsVisible="{Binding ShowReconnectState}" Margin="16" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="Reconnect to GitHub" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock TextWrapping="Wrap" Text="Your GitHub session expired or was revoked. Repo Watch has stopped checking until you sign in again." />
+          <WrapPanel>
+            <Button Content="Sign in again" Command="{Binding SignInCommand}" Classes="accent" Margin="0,0,8,8" IsVisible="{Binding IsSignInConfigured}" />
             <Button Content="Settings" Command="{Binding OpenSettingsCommand}" Margin="0,0,8,8" />
           </WrapPanel>
         </StackPanel>

@@ -5,57 +5,74 @@ using RepoWatch.Desktop.Demo;
 namespace RepoWatch.Desktop.Services;
 
 /// <summary>
-/// Chooses which monitor the UI observes. Demo data is used only after an explicit request
-/// (the --demo argument or the "Explore demo data" action) and is always labeled.
+/// Chooses which monitor the UI observes: the account's monitor (the "base"), or labeled demo data
+/// laid over it. Demo data is used only after an explicit request (the --demo argument or the
+/// "Explore demo data" action); leaving demo mode returns to the account's monitor.
 /// </summary>
 public sealed class MonitorHost : IDisposable
 {
     private readonly TimeProvider _time;
+    private IRepositoryMonitor _base = new StatusOnlyMonitor(ConnectionState.NotSignedIn);
+    private DemoRepositoryMonitor? _demo;
 
     public MonitorHost(TimeProvider time)
     {
         _time = time;
-        Current = new SignedOutMonitor();
     }
 
-    public IRepositoryMonitor Current { get; private set; }
+    public IRepositoryMonitor Current => _demo ?? _base;
 
-    public bool IsDemo => Current is DemoRepositoryMonitor;
+    public bool IsDemo => _demo is not null;
 
     /// <summary>Raised on the UI thread when <see cref="Current"/> is replaced.</summary>
     public event EventHandler? CurrentChanged;
 
     public void EnterDemo()
     {
-        if (!IsDemo)
+        if (_demo is null)
         {
-            Use(new DemoRepositoryMonitor(_time));
+            _demo = new DemoRepositoryMonitor(_time);
+            CurrentChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
     public void ExitDemo()
     {
-        if (IsDemo)
+        if (_demo is not null)
         {
-            Use(new SignedOutMonitor());
+            _demo.Dispose();
+            _demo = null;
+            CurrentChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
-    public void Dispose() => (Current as IDisposable)?.Dispose();
-
-    /// <summary>Switches the UI to <paramref name="monitor"/>, disposing the previous one. Call on the UI thread.</summary>
-    public void Use(IRepositoryMonitor monitor)
+    /// <summary>Replaces the account's monitor, disposing the previous one. Call on the UI thread.</summary>
+    public void SetBase(IRepositoryMonitor monitor)
     {
-        (Current as IDisposable)?.Dispose();
-        Current = monitor;
-        CurrentChanged?.Invoke(this, EventArgs.Empty);
+        ArgumentNullException.ThrowIfNull(monitor);
+        var previous = _base;
+        _base = monitor;
+        (previous as IDisposable)?.Dispose();
+        if (_demo is null)
+        {
+            CurrentChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void Dispose()
+    {
+        _demo?.Dispose();
+        (_base as IDisposable)?.Dispose();
     }
 }
 
-/// <summary>No account: nothing is monitored and no requests are made.</summary>
-public sealed class SignedOutMonitor : IRepositoryMonitor
+/// <summary>
+/// Reports an account state without monitoring anything: signed out, reconnect required, or
+/// signed in before repositories are chosen. Makes no requests.
+/// </summary>
+public sealed class StatusOnlyMonitor(ConnectionState state) : IRepositoryMonitor
 {
-    public ConnectionState State => ConnectionState.NotSignedIn;
+    public ConnectionState State { get; } = state;
 
     public IReadOnlyList<MonitoredRepository> Repositories => [];
 

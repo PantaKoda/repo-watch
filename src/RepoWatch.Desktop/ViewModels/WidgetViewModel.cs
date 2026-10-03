@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RepoWatch.Core.Configuration;
 using RepoWatch.Core.Identity;
 using RepoWatch.Core.Monitoring;
 using RepoWatch.Core.Platform;
@@ -27,8 +28,9 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
     private static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(8);
 
-    public WidgetViewModel(MonitorHost monitors, SettingsService settings, IShell shell, IExternalBrowser browser, TimeProvider time, IUiDispatcher dispatcher)
+    public WidgetViewModel(MonitorHost monitors, SettingsService settings, IShell shell, IExternalBrowser browser, TimeProvider time, IUiDispatcher dispatcher, RepoWatchOptions options)
     {
+        IsSignInConfigured = options.GitHub.IsSignInConfigured;
         _monitors = monitors;
         _settings = settings;
         _shell = shell;
@@ -70,6 +72,16 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     public partial bool ShowEmptyWatchlist { get; private set; }
+
+    /// <summary>The GitHub session expired or was revoked: show a reconnect action instead of retrying.</summary>
+    [ObservableProperty]
+    public partial bool ShowReconnectState { get; private set; }
+
+    public bool IsSignInConfigured { get; }
+
+    public string SignedOutText => IsSignInConfigured
+        ? "Repo Watch shows GitHub Actions, pull requests and issues for repositories you choose. Sign in with GitHub to get started."
+        : "Repo Watch shows GitHub Actions, pull requests and issues for repositories you choose. GitHub sign-in is not configured in this build (no GitHub App client ID).";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowList))]
@@ -179,6 +191,9 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void OpenSettings() => _shell.OpenSettings();
+
+    [RelayCommand]
+    private void SignIn() => _shell.BeginSignIn();
 
     [RelayCommand]
     private void Hide() => _shell.HideWidget();
@@ -298,7 +313,8 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         IsRefreshing = refreshing;
         HasRepositories = Repositories.Count > 0;
         ShowSignedOutState = _monitor.State == ConnectionState.NotSignedIn;
-        ShowEmptyWatchlist = !ShowSignedOutState && !HasRepositories;
+        ShowReconnectState = _monitor.State == ConnectionState.ReconnectRequired && !HasRepositories;
+        ShowEmptyWatchlist = !ShowSignedOutState && !ShowReconnectState && !HasRepositories;
 
         var failing = Repositories.Count(r => r.Attention == AttentionLevel.Failure);
         var warnings = Repositories.Count(r => r.Attention == AttentionLevel.Warning);

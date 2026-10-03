@@ -7,5 +7,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/RepoWatch.Core.Tests/RepoWatch.Core.Tests.csproj" />
     <Project Path="tests/RepoWatch.Desktop.Tests/RepoWatch.Desktop.Tests.csproj" />
+    <Project Path="tests/RepoWatch.GitHub.Tests/RepoWatch.GitHub.Tests.csproj" />
   </Folder>
 </Solution>

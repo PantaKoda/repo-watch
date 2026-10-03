@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using RepoWatch.Core.Accounts;
 using RepoWatch.Core.Platform;
 using RepoWatch.Core.Settings;
 using RepoWatch.Desktop.Infrastructure;
@@ -39,6 +40,15 @@ internal static class CompositionRoot
         services.AddSingleton(sp => new SettingsService(
             () => sp.GetRequiredService<ISettingsStore>(),
             sp.GetRequiredService<ILogger<SettingsService>>()));
+
+        // GitHub access. Tokens go only to the credential store: Credential Manager on Windows,
+        // otherwise a clearly labeled session-only store (never plaintext on disk).
+        services.AddSingleton(_ => GitHubHttp.CreateClient());
+        services.AddSingleton<ICredentialStore>(_ => OperatingSystem.IsWindows()
+            ? new Platform.Windows.WindowsCredentialStore()
+            : new SessionCredentialStore());
+        services.AddSingleton<AccountService>();
+        services.AddSingleton<AvatarLoader>();
 
         // Monitoring and platform adapters.
         services.AddSingleton<MonitorHost>();

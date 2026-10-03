@@ -92,9 +92,9 @@ public sealed class WidgetBehaviorTests
     {
         var monitors = new MonitorHost(TimeProvider.System);
         var monitor = new FakeMonitor();
-        monitors.Use(monitor);
+        monitors.SetBase(monitor);
         var shell = new FakeShell();
-        var widget = new WidgetViewModel(monitors, TestServices.Settings(), shell, new RecordingBrowser(), TimeProvider.System, new ImmediateDispatcher());
+        var widget = new WidgetViewModel(monitors, TestServices.Settings(), shell, new RecordingBrowser(), TimeProvider.System, new ImmediateDispatcher(), new RepoWatch.Core.Configuration.RepoWatchOptions());
         return (widget, monitor, shell);
     }
 
@@ -164,7 +164,7 @@ public sealed class WidgetBehaviorTests
     public void Demo_mode_is_explicit_and_labeled()
     {
         var monitors = new MonitorHost(TimeProvider.System);
-        var widget = new WidgetViewModel(monitors, TestServices.Settings(), new FakeShell(), new RecordingBrowser(), TimeProvider.System, new ImmediateDispatcher());
+        var widget = new WidgetViewModel(monitors, TestServices.Settings(), new FakeShell(), new RecordingBrowser(), TimeProvider.System, new ImmediateDispatcher(), new RepoWatch.Core.Configuration.RepoWatchOptions());
 
         Assert.False(widget.IsDemo);
         Assert.True(widget.ShowSignedOutState);

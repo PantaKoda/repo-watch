@@ -41,7 +41,7 @@ public sealed class WidgetWindowTests
         }
 
         var browser = new RecordingBrowser();
-        var viewModel = new WidgetViewModel(monitors, TestServices.Settings(), new FakeShell(), browser, TimeProvider.System, new ImmediateDispatcher());
+        var viewModel = new WidgetViewModel(monitors, TestServices.Settings(), new FakeShell(), browser, TimeProvider.System, new ImmediateDispatcher(), new RepoWatch.Core.Configuration.RepoWatchOptions());
         var window = new WidgetWindow { DataContext = viewModel, Width = width, Height = height };
         window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -221,8 +221,7 @@ public sealed class WidgetWindowTests
         Application.Current!.RequestedThemeVariant = ThemeVariant.Light;
         var settings = TestServices.Settings();
         var monitors = new MonitorHost(TimeProvider.System);
-        var paths = new RepoWatch.Desktop.Infrastructure.AppPaths(Path.GetTempPath(), "defaults.json", "user.json", "logs");
-        var viewModel = new SettingsViewModel(settings, monitors, new FakeShell { CanHideToTray = true }, new ImmediateDispatcher(), new Core.Configuration.RepoWatchOptions(), paths);
+        var viewModel = SettingsViewModels.Create(settings, monitors, new FakeShell { CanHideToTray = true });
         var window = new SettingsWindow { DataContext = viewModel, Width = 480, Height = 640 };
         window.Show();
         Dispatcher.UIThread.RunJobs();
