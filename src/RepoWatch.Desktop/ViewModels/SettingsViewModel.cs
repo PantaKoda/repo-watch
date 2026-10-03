@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RepoWatch.Core.Configuration;
 using RepoWatch.Core.Settings;
 using RepoWatch.Desktop.Infrastructure;
 using RepoWatch.Desktop.Presentation;
@@ -22,9 +23,14 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private bool _applying;
 
     public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths, VisualStateService visuals, DesktopIntegration? integration = null,
-        UpdateService? updates = null)
+        UpdateService? updates = null, RepoWatchOptions? options = null)
     {
         _updates = updates;
+        var polling = (options ?? new RepoWatchOptions()).Polling;
+        DefaultRunningSeconds = polling.ActiveWorkflowSeconds;
+        DefaultPullRequestsSeconds = polling.PullRequestSeconds;
+        DefaultIssuesSeconds = polling.IssueSeconds;
+        DefaultQuietSeconds = polling.QuietSeconds;
         _integration = integration;
         if (_integration is not null)
         {
@@ -213,6 +219,55 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     partial void OnMonitoringPausedChanged(bool value) => Save(s => s with { MonitoringPaused = value });
 
+    // Refresh intervals: the defaults come from configuration (Polling:*); a value equal to its default is
+    // stored as "use the default", so a later change of defaults still applies.
+    public int DefaultRunningSeconds { get; }
+
+    public int DefaultPullRequestsSeconds { get; }
+
+    public int DefaultIssuesSeconds { get; }
+
+    public int DefaultQuietSeconds { get; }
+
+    public int MinRefreshSeconds => RefreshIntervals.MinSeconds;
+
+    public int MaxRefreshSeconds => RefreshIntervals.MaxSeconds;
+
+    [ObservableProperty] public partial decimal? RunningSeconds { get; set; }
+
+    [ObservableProperty] public partial decimal? PullRequestsSeconds { get; set; }
+
+    [ObservableProperty] public partial decimal? IssuesSeconds { get; set; }
+
+    [ObservableProperty] public partial decimal? QuietSeconds { get; set; }
+
+    [ObservableProperty] public partial bool RefreshIsDefault { get; private set; }
+
+    partial void OnRunningSecondsChanged(decimal? value) => SaveRefresh(r => r with { RunningWorkflowsSeconds = Choice(value, DefaultRunningSeconds) });
+
+    partial void OnPullRequestsSecondsChanged(decimal? value) => SaveRefresh(r => r with { PullRequestsSeconds = Choice(value, DefaultPullRequestsSeconds) });
+
+    partial void OnIssuesSecondsChanged(decimal? value) => SaveRefresh(r => r with { IssuesSeconds = Choice(value, DefaultIssuesSeconds) });
+
+    partial void OnQuietSecondsChanged(decimal? value) => SaveRefresh(r => r with { QuietSeconds = Choice(value, DefaultQuietSeconds) });
+
+    [RelayCommand]
+    private void ResetRefreshIntervals() => Save(s => s with { Refresh = new RefreshIntervals() });
+
+    private void SaveRefresh(Func<RefreshIntervals, RefreshIntervals> change) => Save(s => s with { Refresh = change(s.Refresh) });
+
+    /// <summary>Null (default) when empty or equal to the default; otherwise the value within the allowed range.</summary>
+    private static int? Choice(decimal? value, int defaultSeconds)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var seconds = RefreshIntervals.Clamp((int)Math.Round(value.Value))!.Value;
+        return seconds == defaultSeconds ? null : seconds;
+    }
+
     partial void OnThemeChanged(ThemePreference value) => Save(s => s with { Appearance = s.Appearance with { Theme = value } });
 
     partial void OnMaterialChanged(WindowMaterial value) => Save(s => s with { Appearance = s.Appearance with { Material = value } });
@@ -366,6 +421,11 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             AlwaysOnTop = app.Window.AlwaysOnTop;
             PositionLocked = app.Window.PositionLocked;
             MonitoringPaused = app.MonitoringPaused;
+            RunningSeconds = app.Refresh.RunningWorkflowsSeconds ?? DefaultRunningSeconds;
+            PullRequestsSeconds = app.Refresh.PullRequestsSeconds ?? DefaultPullRequestsSeconds;
+            IssuesSeconds = app.Refresh.IssuesSeconds ?? DefaultIssuesSeconds;
+            QuietSeconds = app.Refresh.QuietSeconds ?? DefaultQuietSeconds;
+            RefreshIsDefault = app.Refresh.IsDefault;
             Theme = app.Appearance.Theme;
             Material = app.Appearance.Material;
             OpacityPercent = app.Appearance.BackgroundOpacity * 100;
@@ -403,6 +463,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         if (before.Window.AlwaysOnTop != after.Window.AlwaysOnTop
             || before.Window.PositionLocked != after.Window.PositionLocked
             || before.MonitoringPaused != after.MonitoringPaused
+            || before.Refresh != after.Refresh
             || before.Notifications != after.Notifications
             || before.Startup != after.Startup
             || before.Window.ShowHideShortcut != after.Window.ShowHideShortcut

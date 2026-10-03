@@ -64,7 +64,8 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     private readonly IRepositoryDataSource _source;
     private readonly string _login;
     private readonly TimeProvider _time;
-    private readonly PollingIntervals _intervals;
+    private readonly PollingIntervals _baseIntervals;
+    private PollingIntervals _intervals; // _baseIntervals with the user's Settings applied; changes while running
     private readonly ILogger _logger;
     private readonly PollingConditions? _conditions;
     private readonly Storage.AccountCache? _cache;
@@ -98,7 +99,8 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         _login = login;
         _time = time;
         _logger = logger;
-        _intervals = intervals ?? new PollingIntervals();
+        _baseIntervals = intervals ?? new PollingIntervals();
+        _intervals = _baseIntervals.With(conditions?.RefreshIntervals);
         _conditions = conditions;
         _cache = cache;
         _cacheOptions = cacheOptions ?? new Core.Configuration.CacheOptions();
@@ -121,6 +123,18 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     public AccountKey Account { get; }
 
     public ConnectionState State { get; private set; }
+
+    /// <summary>The intervals in effect: the configured ones with the user's Settings applied.</summary>
+    public PollingIntervals Intervals
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _intervals;
+            }
+        }
+    }
 
     public RepositoryOrdering Ordering
     {
@@ -689,6 +703,10 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     {
         lock (_gate)
         {
+            // New intervals from Settings apply at once: shorter ones pull due times in below (longer ones
+            // take effect from the next refresh of each part).
+            _intervals = _baseIntervals.With(_conditions?.RefreshIntervals);
+
             if (IsPausedByUser)
             {
                 foreach (var entry in _entries.Values)

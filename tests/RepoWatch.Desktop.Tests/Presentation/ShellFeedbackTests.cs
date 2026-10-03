@@ -202,6 +202,31 @@ public sealed class ShellFeedbackTests
         Assert.True(viewModel.HasActionMessage);
     }
 
+    [Fact]
+    public void Refresh_intervals_are_saved_in_seconds_and_reset_to_defaults()
+    {
+        var settings = TestServices.Settings();
+        using var viewModel = SettingsViewModels.Create(settings, new MonitorHost(TimeProvider.System), new FakeShell());
+        Assert.Equal(90, viewModel.PullRequestsSeconds); // shows the default
+        Assert.True(viewModel.RefreshIsDefault);
+
+        viewModel.PullRequestsSeconds = 45;
+        viewModel.IssuesSeconds = 3; // below the floor
+        viewModel.QuietSeconds = 180; // equal to the default: stays "default"
+
+        Assert.Equal(45, settings.App.Refresh.PullRequestsSeconds);
+        Assert.Equal(RefreshIntervals.MinSeconds, settings.App.Refresh.IssuesSeconds);
+        Assert.Null(settings.App.Refresh.QuietSeconds);
+        Assert.False(viewModel.RefreshIsDefault);
+
+        viewModel.ResetRefreshIntervalsCommand.Execute(null);
+
+        Assert.True(settings.App.Refresh.IsDefault);
+        Assert.Equal(90, viewModel.PullRequestsSeconds);
+        Assert.Equal(120, viewModel.IssuesSeconds);
+        Assert.True(viewModel.RefreshIsDefault);
+    }
+
     [Theory]
     [InlineData(59.7, "59m ago")]
     [InlineData(60.1, "1h ago")]

@@ -30,6 +30,9 @@ public sealed record AppSettings : SettingsRecord
 
     public bool MonitoringPaused { get; init; }
 
+    /// <summary>The user's refresh intervals (Settings › Refresh intervals). Unset values use the defaults.</summary>
+    public RefreshIntervals Refresh { get; init; } = new();
+
     /// <summary>Set when the first-run onboarding (sign in → grant access → choose → appearance) was finished.</summary>
     public bool OnboardingCompleted { get; init; }
 }
@@ -174,4 +177,31 @@ public sealed record QuietHours : SettingsRecord
             ? localTime >= Start && localTime < End
             : localTime >= Start || localTime < End;
     }
+}
+
+/// <summary>
+/// How often Repo Watch asks GitHub about each kind of data, in seconds. Null means the default
+/// (Polling:* in configuration). Hidden widgets and battery power stretch these, and GitHub's rate limits
+/// always win; they are targets, not guarantees.
+/// </summary>
+public sealed record RefreshIntervals : SettingsRecord
+{
+    public const int MinSeconds = 10;
+    public const int MaxSeconds = 3600;
+
+    /// <summary>Workflows that are queued or running, and the repository whose details are open.</summary>
+    public int? RunningWorkflowsSeconds { get; init; }
+
+    /// <summary>Pull requests (checks, reviews, merge state) and repository details (public/private, renames, archived).</summary>
+    public int? PullRequestsSeconds { get; init; }
+
+    /// <summary>Issues.</summary>
+    public int? IssuesSeconds { get; init; }
+
+    /// <summary>Workflows when nothing is running.</summary>
+    public int? QuietSeconds { get; init; }
+
+    public bool IsDefault => RunningWorkflowsSeconds is null && PullRequestsSeconds is null && IssuesSeconds is null && QuietSeconds is null;
+
+    public static int? Clamp(int? seconds) => seconds is { } value ? Math.Clamp(value, MinSeconds, MaxSeconds) : null;
 }

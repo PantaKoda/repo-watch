@@ -1,4 +1,5 @@
 using RepoWatch.Core.Configuration;
+using RepoWatch.Core.Settings;
 
 namespace RepoWatch.Desktop.Services;
 
@@ -43,6 +44,17 @@ public sealed record PollingIntervals
 
     /// <summary>Longest wait for a rate-limit reset before trying again.</summary>
     public TimeSpan MaxRateLimitWait { get; init; } = TimeSpan.FromHours(1);
+
+    /// <summary>These intervals with the user's choices from Settings applied (unset values keep these).</summary>
+    public PollingIntervals With(RefreshIntervals? user) => user is null ? this : this with
+    {
+        Active = Seconds(user.RunningWorkflowsSeconds) ?? Active,
+        PullRequests = Seconds(user.PullRequestsSeconds) ?? PullRequests,
+        Issues = Seconds(user.IssuesSeconds) ?? Issues,
+        Quiet = Seconds(user.QuietSeconds) ?? Quiet,
+    };
+
+    private static TimeSpan? Seconds(int? value) => value is { } seconds ? TimeSpan.FromSeconds(RefreshIntervals.Clamp(seconds)!.Value) : null;
 
     public static PollingIntervals From(PollingOptions options)
     {

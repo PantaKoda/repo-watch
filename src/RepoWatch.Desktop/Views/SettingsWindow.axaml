@@ -27,6 +27,38 @@
       <TextBlock Classes="secondary" TextWrapping="Wrap"
                  Text="While paused, Repo Watch sends no requests to GitHub and shows the last data it had. Also available from the tray menu." />
 
+      <TextBlock Classes="heading" Text="Refresh intervals" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="How often Repo Watch asks GitHub about each kind of data, in seconds. Shorter is fresher but uses more of your GitHub request allowance; unchanged answers cost nothing." />
+      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="2" ColumnSpacing="12" Margin="0,4,0,0">
+        <TextBlock Grid.Row="0" Text="Running workflows" VerticalAlignment="Center" FontWeight="SemiBold" />
+        <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding RunningSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
+                       Increment="5" FormatString="0" MinWidth="130" AutomationProperties.Name="Running workflows refresh interval in seconds" />
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
+                   Text="{Binding DefaultRunningSeconds, StringFormat='Actions while a workflow is queued or running, and the repository whose details are open. Default {0} s.'}" />
+
+        <TextBlock Grid.Row="2" Text="Pull requests and repository details" VerticalAlignment="Center" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding PullRequestsSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
+                       Increment="10" FormatString="0" MinWidth="130" AutomationProperties.Name="Pull requests refresh interval in seconds" />
+        <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
+                   Text="{Binding DefaultPullRequestsSeconds, StringFormat='Open pull requests with their checks, reviews and merge state, plus repository details: public or private, renames, archived. Default {0} s.'}" />
+
+        <TextBlock Grid.Row="4" Text="Issues" VerticalAlignment="Center" FontWeight="SemiBold" />
+        <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding IssuesSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
+                       Increment="10" FormatString="0" MinWidth="130" AutomationProperties.Name="Issues refresh interval in seconds" />
+        <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
+                   Text="{Binding DefaultIssuesSeconds, StringFormat='Open issues and their counts. Default {0} s.'}" />
+
+        <TextBlock Grid.Row="6" Text="Quiet workflows" VerticalAlignment="Center" FontWeight="SemiBold" />
+        <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding QuietSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
+                       Increment="10" FormatString="0" MinWidth="130" AutomationProperties.Name="Quiet workflows refresh interval in seconds" />
+        <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
+                   Text="{Binding DefaultQuietSeconds, StringFormat='Actions when nothing is running, to notice a new run starting. Default {0} s.'}" />
+      </Grid>
+      <TextBlock Classes="secondary" TextWrapping="Wrap" TextTrimming="None"
+                 Text="Allowed: 10 to 3600 seconds. Repo Watch checks less often while the widget is hidden (×3) or on battery (×2), and waits when GitHub asks it to. Bringing the widget to the front always refreshes anything older than 30 seconds, and F5 refreshes everything now." />
+      <Button Content="Reset to defaults" Command="{Binding ResetRefreshIntervalsCommand}" IsEnabled="{Binding !RefreshIsDefault}" HorizontalAlignment="Left" />
+
       <TextBlock Classes="heading" Text="Notifications" />
       <CheckBox Content="Show notifications" IsChecked="{Binding NotificationsEnabled}" />
       <StackPanel Margin="24,0,0,0" Spacing="2" IsEnabled="{Binding NotificationsEnabled}">

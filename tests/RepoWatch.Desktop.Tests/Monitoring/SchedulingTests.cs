@@ -33,6 +33,35 @@ public sealed class SchedulingTests
         Assert.Equal(TimeSpan.FromSeconds(seconds), PollingPolicy.Interval(part, active, focused, Defaults));
 
     [Fact]
+    public void The_users_intervals_replace_only_the_values_they_set()
+    {
+        var intervals = Defaults.With(new RefreshIntervals { PullRequestsSeconds = 30, IssuesSeconds = 5 });
+
+        Assert.Equal(TimeSpan.FromSeconds(30), intervals.PullRequests);
+        Assert.Equal(TimeSpan.FromSeconds(RefreshIntervals.MinSeconds), intervals.Issues); // never below the floor
+        Assert.Equal(Defaults.Active, intervals.Active);
+        Assert.Equal(Defaults.Quiet, intervals.Quiet);
+        Assert.Equal(TimeSpan.FromSeconds(30), PollingPolicy.Interval(RefreshParts.Metadata, false, false, intervals)); // repository details follow PRs
+    }
+
+    [Fact]
+    public void A_running_monitor_uses_new_intervals_from_Settings_at_once()
+    {
+        var settings = TestServices.Settings();
+        var conditions = new PollingConditions(settings, TimeProvider.System, () => false, watchSystem: false);
+        var account = new AccountSettings { Watchlist = [new WatchedRepository { RepositoryId = 1, Owner = "octo", Name = "repo1" }] };
+        using var monitor = new PollingRepositoryMonitor(Account, account, new FakeDataSource(), "octo", TimeProvider.System, NullLogger.Instance, CancellationToken.None,
+            Defaults, conditions);
+        Assert.Equal(TimeSpan.FromSeconds(90), monitor.Intervals.PullRequests);
+
+        settings.UpdateApp(s => s with { Refresh = new RefreshIntervals { PullRequestsSeconds = 30 } });
+
+        Assert.Equal(TimeSpan.FromSeconds(30), monitor.Intervals.PullRequests);
+        settings.UpdateApp(s => s with { Refresh = new RefreshIntervals() });
+        Assert.Equal(TimeSpan.FromSeconds(90), monitor.Intervals.PullRequests);
+    }
+
+    [Fact]
     public void Hidden_battery_and_a_low_budget_slow_polling_down_within_bounds()
     {
         Assert.Equal(1, PollingPolicy.Slowdown(widgetVisible: true, onBattery: false, budgetLow: false));

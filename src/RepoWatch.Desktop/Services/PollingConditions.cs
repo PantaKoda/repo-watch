@@ -44,6 +44,9 @@ public sealed class PollingConditions : IDisposable
 
     public bool IsPaused => _settings.App.MonitoringPaused;
 
+    /// <summary>The user's refresh intervals from Settings; a change raises <see cref="Changed"/>.</summary>
+    public RefreshIntervals RefreshIntervals => _settings.App.Refresh;
+
     public bool IsWidgetVisible => _widgetVisible;
 
     public bool IsOnBattery => _batteryPower;
@@ -101,7 +104,7 @@ public sealed class PollingConditions : IDisposable
 
     private void OnSettingsChanged(object? sender, AppSettingsChangedEventArgs e)
     {
-        if (e.Previous.MonitoringPaused != e.Current.MonitoringPaused)
+        if (e.Previous.MonitoringPaused != e.Current.MonitoringPaused || e.Previous.Refresh != e.Current.Refresh)
         {
             Changed?.Invoke(this, EventArgs.Empty);
         }
