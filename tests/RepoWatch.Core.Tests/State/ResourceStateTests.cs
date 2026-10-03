@@ -43,13 +43,30 @@ public sealed class ResourceStateTests
     }
 
     [Fact]
-    public void Cached_data_is_distinguished_until_confirmed_by_a_refresh()
+    public void Recent_cached_data_is_distinguished_until_confirmed_by_a_refresh()
     {
-        var cached = Resource<IssuesState>.FromCache(Issues(4), T0.AddDays(-1));
+        var cached = Resource<IssuesState>.FromCache(Issues(4), T0.AddMinutes(-1));
 
         Assert.Equal(Freshness.Cached, cached.GetFreshness(T0, StaleAfter));
-        Assert.Equal(Freshness.Cached, cached.Failed(NetworkError(0)).GetFreshness(T0, StaleAfter));
         Assert.Equal(Freshness.Fresh, cached.Succeeded(Issues(5), T0).GetFreshness(T0, StaleAfter));
+    }
+
+    [Fact]
+    public void Old_cached_data_is_stale()
+    {
+        var cached = Resource<IssuesState>.FromCache(Issues(4), T0.AddDays(-3));
+
+        Assert.Equal(Freshness.Stale, cached.GetFreshness(T0, StaleAfter));
+    }
+
+    [Fact]
+    public void Cached_data_with_a_failed_refresh_is_stale()
+    {
+        // Started offline with a recent cache, then the first refresh failed.
+        var cached = Resource<IssuesState>.FromCache(Issues(4), T0.AddMinutes(-1)).Failed(NetworkError(0));
+
+        Assert.Equal(Freshness.Stale, cached.GetFreshness(T0, StaleAfter));
+        Assert.NotNull(cached.Value);
     }
 
     [Fact]
@@ -108,11 +125,22 @@ public sealed class ResourceStateTests
     [Fact]
     public void Account_and_repository_keys_use_ids_not_names()
     {
-        var a = new RepositoryKey(new AccountKey("GitHub.com/", 1001), 42);
-        var b = new RepositoryKey(AccountKey.ForWebBase(new Uri("https://github.com"), 1001), 42);
+        var a = new RepositoryKey(new AccountKey("GitHub.com", 1001), 42);
+        var b = new RepositoryKey(AccountKey.ForWebBase(new Uri("https://github.com/"), 1001), 42);
 
         Assert.Equal(a, b);
         Assert.Equal("github.com/1001/42", a.StorageKey);
         Assert.NotEqual(a, new RepositoryKey(new AccountKey("github.com", 1002), 42));
+        Assert.Equal("ghe.example.com:8443/7", AccountKey.ForWebBase(new Uri("https://ghe.example.com:8443"), 7).StorageKey);
+    }
+
+    [Theory]
+    [InlineData("https://github.com")]
+    [InlineData("github.com/")]
+    [InlineData("github.com/api")]
+    [InlineData("git hub.com")]
+    public void Account_keys_reject_urls_so_one_account_cannot_get_two_keys(string host)
+    {
+        Assert.Throws<ArgumentException>(() => new AccountKey(host, 1001));
     }
 }

@@ -9,6 +9,11 @@ public enum SettingsLoadStatus
     Loaded,
     /// <summary>Loaded from an older schema and upgraded in memory; save to persist the upgrade.</summary>
     Migrated,
+    /// <summary>
+    /// Loaded, but invalid values were dropped (listed in the problem) and use their defaults.
+    /// The caller should back up the original document.
+    /// </summary>
+    Repaired,
     /// <summary>Nothing stored; defaults returned.</summary>
     Missing,
     /// <summary>Stored data was unreadable; defaults returned. The caller should back up the original.</summary>
@@ -27,14 +32,24 @@ public sealed record SettingsMigration(int FromVersion, Func<JsonObject, JsonObj
 /// <para>
 /// Migration strategy: every document carries <c>schemaVersion</c>. On load, migrations run in
 /// order on the raw JSON from the stored version up to <see cref="CurrentVersion"/>, then the
-/// result is deserialized and normalized. Adding a field with a default needs no migration;
-/// renaming, moving or reinterpreting a field adds a migration and bumps the version.
-/// Documents from a newer version are never overwritten.
+/// result is deserialized and normalized.
 /// </para>
+/// <list type="bullet">
+/// <item>Adding a field with a default needs no version bump. Unknown fields are preserved through
+/// <see cref="SettingsRecord.ExtensionData"/>, so an older version saving does not erase them.</item>
+/// <item>Renaming, moving or reinterpreting a field, changing its type, or adding an enum member
+/// requires a migration and a version bump. Older versions then see a newer schema and never
+/// overwrite the document.</item>
+/// <item>An individual invalid value (wrong type, unknown enum name, missing required field) is
+/// dropped by its JSON path and falls back to its default; the rest of the document is kept.</item>
+/// </list>
 /// </summary>
 public sealed class SettingsCodec<T> where T : class
 {
     public const string VersionProperty = "schemaVersion";
+
+    // Bounds the repair loop; a document needing more repairs than this is treated as corrupt.
+    private const int MaxRepairs = 32;
 
     private readonly JsonTypeInfo<T> _typeInfo;
     private readonly Func<T> _createDefault;
@@ -109,8 +124,25 @@ public sealed class SettingsCodec<T> where T : class
             }
 
             document.Remove(VersionProperty);
-            var value = document.Deserialize(_typeInfo) ?? throw new JsonException("The settings document is empty.");
-            return new(_normalize(value), version < CurrentVersion ? SettingsLoadStatus.Migrated : SettingsLoadStatus.Loaded, version);
+            var dropped = new List<string>();
+            while (true)
+            {
+                try
+                {
+                    var value = document.Deserialize(_typeInfo) ?? throw new JsonException("The settings document is empty.");
+                    if (dropped.Count > 0)
+                    {
+                        return new(_normalize(value), SettingsLoadStatus.Repaired, version,
+                            "Invalid values were reset to defaults: " + string.Join(", ", dropped));
+                    }
+
+                    return new(_normalize(value), version < CurrentVersion ? SettingsLoadStatus.Migrated : SettingsLoadStatus.Loaded, version);
+                }
+                catch (JsonException ex) when (dropped.Count < MaxRepairs && ex.Path is { } path && JsonPathRemoval.TryRemove(document, path))
+                {
+                    dropped.Add(path);
+                }
+            }
         }
         catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or ArgumentException)
         {

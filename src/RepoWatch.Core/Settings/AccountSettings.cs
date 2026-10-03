@@ -5,7 +5,7 @@ namespace RepoWatch.Core.Settings;
 /// Survives sign-out so the watchlist is still there on the next sign-in. Contains no secrets
 /// and no cached private repository content.
 /// </summary>
-public sealed record AccountSettings
+public sealed record AccountSettings : SettingsRecord
 {
     /// <summary>Last known login, for display before the identity is re-resolved.</summary>
     public string? LastKnownLogin { get; init; }
@@ -30,15 +30,16 @@ public enum PullRequestScope
     None,
 }
 
-public sealed record WatchedRepository
+public sealed record WatchedRepository : SettingsRecord
 {
     /// <summary>Stable GitHub repository ID; the identity of this entry.</summary>
     public required long RepositoryId { get; init; }
 
-    /// <summary>Last known owner/name, for display while metadata loads. Not an identifier.</summary>
-    public required string Owner { get; init; }
+    /// <summary>Last known owner, for display while metadata loads. Not an identifier; may be empty.</summary>
+    public string Owner { get; init; } = "";
 
-    public required string Name { get; init; }
+    /// <summary>Last known name, for display while metadata loads. Not an identifier; may be empty.</summary>
+    public string Name { get; init; } = "";
 
     /// <summary>Branches whose workflow health is shown; empty means the default branch.</summary>
     public IReadOnlyList<string> Branches { get; init; } = [];

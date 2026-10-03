@@ -99,18 +99,49 @@ public sealed class CommitAggregationTests
     }
 
     [Fact]
-    public void Rerun_check_supersedes_earlier_check_with_same_app_and_name()
+    public void Rerun_check_supersedes_earlier_check_with_same_name_in_the_same_suite()
     {
         var summary = CommitChecks.Summarize(HeadSha,
         [
-            Check(100, "build", CheckOutcome.Failure),
-            Check(200, "build", CheckOutcome.Success),
-            Check(150, "build", CheckOutcome.Failure, appId: 999), // same name, different app: separate check
+            Check(100, "build", CheckOutcome.Failure, suiteId: 1),
+            Check(200, "build", CheckOutcome.Success, suiteId: 1),
             Check(50, "lint", CheckOutcome.Failure, sha: PreviousSha),
         ], []);
 
+        Assert.Equal(RollupState.Passing, summary.Rollup.State);
+        Assert.Equal(200, Assert.Single(summary.CheckRuns).Id);
+    }
+
+    [Fact]
+    public void Same_named_jobs_in_different_workflows_are_not_collapsed()
+    {
+        // ci.yml/build fails, then lint.yml/build passes later: both come from the Actions app.
+        var summary = CommitChecks.Summarize(HeadSha,
+        [
+            Check(100, "build", CheckOutcome.Failure, suiteId: 10),
+            Check(101, "build", CheckOutcome.Success, suiteId: 20),
+        ], []);
+
         Assert.Equal(RollupState.Failing, summary.Rollup.State);
-        Assert.Equal([150L, 200L], summary.CheckRuns.Select(c => c.Id).Order());
+        Assert.Equal(2, summary.CheckRuns.Count);
+    }
+
+    [Fact]
+    public void Same_commit_on_another_branch_does_not_replace_default_branch_health()
+    {
+        // main's head SHA is also pushed to release; release's run is newer and passes.
+        WorkflowRun[] runs =
+        [
+            Run(1, CheckOutcome.Failure, runNumber: 1, branch: "main"),
+            Run(2, CheckOutcome.Success, runNumber: 2, branch: "release"),
+        ];
+
+        var main = WorkflowRunSelection.ForCommit(runs, HeadSha, branch: "main");
+        var all = WorkflowRunSelection.ForCommit(runs, HeadSha);
+
+        Assert.Equal(RollupState.Failing, main.Rollup.State);
+        Assert.Equal(1, Assert.Single(main.Runs).Id);
+        Assert.Equal(2, all.Runs.Count);
     }
 
     [Fact]

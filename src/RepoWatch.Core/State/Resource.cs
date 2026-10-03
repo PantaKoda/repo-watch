@@ -18,7 +18,7 @@ public enum Freshness
     NotLoaded,
     /// <summary>Confirmed by a successful refresh within the stale threshold.</summary>
     Fresh,
-    /// <summary>Restored from local cache and not yet confirmed in this session.</summary>
+    /// <summary>Restored from local cache within the stale threshold; not yet confirmed in this session.</summary>
     Cached,
     /// <summary>Has data, but it is older than the threshold or the latest refresh failed.</summary>
     Stale,
@@ -121,16 +121,17 @@ public sealed record Resource<T> where T : class
             return LastError is null ? Freshness.NotLoaded : Freshness.Failed;
         }
 
-        if (IsFromCache)
-        {
-            return Freshness.Cached;
-        }
-
+        // A failed refresh or expired age makes any data stale, including data restored from cache.
         if (LastError is not null && (LastSuccessAt is null || LastError.OccurredAt >= LastSuccessAt))
         {
             return Freshness.Stale;
         }
 
-        return LastSuccessAt is { } success && now - success <= staleAfter ? Freshness.Fresh : Freshness.Stale;
+        if (LastSuccessAt is not { } success || now - success > staleAfter)
+        {
+            return Freshness.Stale;
+        }
+
+        return IsFromCache ? Freshness.Cached : Freshness.Fresh;
     }
 }

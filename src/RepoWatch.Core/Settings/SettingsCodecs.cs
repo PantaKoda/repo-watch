@@ -67,6 +67,8 @@ public static partial class SettingsCodecs
                 .DistinctBy(w => w.RepositoryId)
                 .Select(w => w with
                 {
+                    Owner = w.Owner ?? "",
+                    Name = w.Name ?? "",
                     PullRequests = Defined(w.PullRequests),
                     Branches = (w.Branches ?? []).Where(b => !string.IsNullOrWhiteSpace(b)).Distinct(StringComparer.Ordinal).ToList(),
                     WorkflowIds = (w.WorkflowIds ?? []).Where(id => id > 0).Distinct().ToList(),

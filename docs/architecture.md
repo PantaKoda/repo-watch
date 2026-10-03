@@ -44,10 +44,17 @@ UI code observes view-model state and issues commands. Polling loops, HTTP and p
 
 1. Read `schemaVersion`. If it is newer than supported, return defaults and never overwrite the stored document.
 2. Apply JSON migrations `v → v+1` up to the current version.
-3. Deserialize, then normalize invalid values.
-4. Unreadable documents are copied to `settings_backup` before defaults can replace them.
+3. Deserialize. An individual invalid value (wrong type, unknown enum name, missing required field, invalid account key) is removed by its JSON path and falls back to its default; the rest of the document is kept (`Repaired`).
+4. Normalize out-of-range values.
+5. Unreadable documents are copied to `settings_backup` before defaults can replace them; repaired documents are backed up and kept until the next save.
 
-Adding a field with a default needs no migration. Renaming, moving or reinterpreting a field needs a migration and a version bump.
+Schema change rules:
+- **Adding a field with a default** needs no version bump. Unknown properties are preserved via `[JsonExtensionData]` on every settings record, so an older version saving the document does not erase a newer version's fields.
+- **Adding an enum member, changing a field's type, or renaming, moving or reinterpreting a field** needs a migration and a version bump. An older version then sees a newer schema and refuses to overwrite the document.
+
+Database initialization takes the write lock (`BEGIN IMMEDIATE`) and re-reads `user_version` inside each migration transaction, so concurrent first runs are safe. `journal_mode = WAL` is set only after the version check, so a database from a newer version is never modified.
+
+`AccountKey` accepts only a bare host (optionally with port), so the same account cannot get two storage keys. Use `AccountKey.ForWebBase` to derive one from a URL.
 
 ## Configuration vs. user settings vs. secrets
 

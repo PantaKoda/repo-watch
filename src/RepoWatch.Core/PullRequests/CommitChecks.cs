@@ -9,8 +9,14 @@ public sealed record CheckRun
 
     public required string Name { get; init; }
 
-    /// <summary>ID of the GitHub App that created the check; names are only unique per app.</summary>
+    /// <summary>ID of the GitHub App that created the check.</summary>
     public required long AppId { get; init; }
+
+    /// <summary>
+    /// Check suite the run belongs to. Names are only unique within a suite: every Actions workflow
+    /// is a separate suite from the same app, and re-runs stay in their suite.
+    /// </summary>
+    public required long CheckSuiteId { get; init; }
 
     public required string HeadSha { get; init; }
 
@@ -45,7 +51,9 @@ public static class CommitChecks
 {
     /// <summary>
     /// Summarizes the checks of one commit. A re-run check supersedes the earlier run with the
-    /// same app and name; a newer status supersedes older statuses with the same context.
+    /// same name in the same check suite; same-named checks in different suites (e.g. a "build"
+    /// job in two workflows) are counted separately. A newer status supersedes older statuses
+    /// with the same context.
     /// </summary>
     public static CommitChecksSummary Summarize(string sha, IEnumerable<CheckRun> checkRuns, IEnumerable<CommitStatus> statuses)
     {
@@ -55,7 +63,7 @@ public static class CommitChecks
 
         var currentRuns = checkRuns
             .Where(c => string.Equals(c.HeadSha, sha, StringComparison.OrdinalIgnoreCase))
-            .GroupBy(c => (c.AppId, c.Name))
+            .GroupBy(c => (c.CheckSuiteId, c.Name))
             .Select(g => g.MaxBy(c => c.Id)!)
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();

@@ -52,27 +52,39 @@ public sealed class LocalDatabase
 
     public static int LatestSchemaVersion => Migrations.Length;
 
-    /// <summary>Creates the file if needed and applies pending migrations.</summary>
+    /// <summary>
+    /// Creates the file if needed and applies pending migrations. Safe when several processes
+    /// initialize the same new database at once: each step takes the write lock (BEGIN IMMEDIATE)
+    /// and re-reads the version inside it.
+    /// </summary>
     /// <exception cref="DatabaseVersionException">The database was created by a newer version of the app.</exception>
     public void Initialize()
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
         using var connection = Open();
-        Execute(connection, "PRAGMA journal_mode = WAL;");
 
-        var version = GetUserVersion(connection);
-        if (version > Migrations.Length)
+        while (true)
         {
-            throw new DatabaseVersionException(Path, version, Migrations.Length);
-        }
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var version = GetUserVersion(connection, transaction);
+            if (version > Migrations.Length)
+            {
+                throw new DatabaseVersionException(Path, version, Migrations.Length);
+            }
 
-        for (var next = version; next < Migrations.Length; next++)
-        {
-            using var transaction = connection.BeginTransaction();
-            Execute(connection, Migrations[next], transaction);
-            Execute(connection, $"PRAGMA user_version = {next + 1};", transaction);
+            if (version == Migrations.Length)
+            {
+                transaction.Commit();
+                break;
+            }
+
+            Execute(connection, Migrations[version], transaction);
+            Execute(connection, $"PRAGMA user_version = {version + 1};", transaction);
             transaction.Commit();
         }
+
+        // Persistent header change: only after confirming this version owns the schema.
+        Execute(connection, "PRAGMA journal_mode = WAL;");
     }
 
     public SqliteConnection Open()
@@ -83,10 +95,11 @@ public sealed class LocalDatabase
         return connection;
     }
 
-    public static int GetUserVersion(SqliteConnection connection)
+    public static int GetUserVersion(SqliteConnection connection, SqliteTransaction? transaction = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version;";
         return Convert.ToInt32(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }

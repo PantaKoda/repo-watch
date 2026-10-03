@@ -58,8 +58,12 @@ public sealed class SqliteSettingsStore : ISettingsStore
             switch (result.Status)
             {
                 case SettingsLoadStatus.Corrupt:
-                    Backup(connection, scope, json!, result.Problem ?? "unreadable");
+                    Backup(connection, scope, json!, result.Problem ?? "unreadable", removeOriginal: true);
                     _logger.LogWarning("Settings '{Scope}' were unreadable and have been backed up; using defaults. {Problem}", scope, result.Problem);
+                    break;
+                case SettingsLoadStatus.Repaired:
+                    Backup(connection, scope, json!, result.Problem ?? "repaired", removeOriginal: false);
+                    _logger.LogWarning("Settings '{Scope}' contained invalid values; original backed up. {Problem}", scope, result.Problem);
                     break;
                 case SettingsLoadStatus.NewerVersion:
                     _protectedScopes.Add(scope);
@@ -112,13 +116,11 @@ public sealed class SqliteSettingsStore : ISettingsStore
         return command.ExecuteScalar() is long version ? (int)version : 0;
     }
 
-    private void Backup(SqliteConnection connection, string scope, string json, string reason)
+    private void Backup(SqliteConnection connection, string scope, string json, string reason, bool removeOriginal)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO settings_backup (scope, json, reason, backed_up_at) VALUES ($scope, $json, $reason, $now);
-            DELETE FROM settings WHERE scope = $scope;
-            """;
+        command.CommandText = "INSERT INTO settings_backup (scope, json, reason, backed_up_at) VALUES ($scope, $json, $reason, $now);"
+            + (removeOriginal ? " DELETE FROM settings WHERE scope = $scope;" : "");
         command.Parameters.AddWithValue("$scope", scope);
         command.Parameters.AddWithValue("$json", json);
         command.Parameters.AddWithValue("$reason", reason);

@@ -23,7 +23,8 @@ internal static class Fixtures
         long workflowId = 10,
         string sha = HeadSha,
         string @event = "push",
-        int minutes = 0) => new()
+        int minutes = 0,
+        string branch = "main") => new()
         {
             Id = id,
             WorkflowId = workflowId,
@@ -31,7 +32,7 @@ internal static class Fixtures
             RunNumber = runNumber,
             RunAttempt = attempt,
             HeadSha = sha,
-            HeadBranch = "main",
+            HeadBranch = branch,
             Event = @event,
             Outcome = outcome,
             HtmlUrl = new Uri($"https://github.com/o/r/actions/runs/{id}/attempts/{attempt}"),
@@ -39,11 +40,12 @@ internal static class Fixtures
             UpdatedAt = T0.AddMinutes(minutes),
         };
 
-    public static CheckRun Check(long id, string name, CheckOutcome outcome, long appId = 15368, string sha = HeadSha) => new()
+    public static CheckRun Check(long id, string name, CheckOutcome outcome, long suiteId = 1, long appId = 15368, string sha = HeadSha) => new()
     {
         Id = id,
         Name = name,
         AppId = appId,
+        CheckSuiteId = suiteId,
         HeadSha = sha,
         Outcome = outcome,
         HtmlUrl = new Uri($"https://github.com/o/r/runs/{id}"),

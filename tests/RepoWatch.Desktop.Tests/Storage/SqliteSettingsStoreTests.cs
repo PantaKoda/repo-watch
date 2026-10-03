@@ -114,6 +114,76 @@ public sealed class SqliteSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Repaired_settings_are_backed_up_and_keep_their_valid_values()
+    {
+        OpenStore();
+        const string partlyInvalid = """{ "schemaVersion": 1, "appearance": { "material": "Glass" }, "monitoringPaused": true }""";
+        ExecuteSql($"INSERT INTO settings (scope, schema_version, json, updated_at) VALUES ('app', 1, '{partlyInvalid}', 'x');");
+
+        var store = OpenStore();
+        var result = store.LoadAppSettings();
+
+        Assert.Equal(SettingsLoadStatus.Repaired, result.Status);
+        Assert.True(result.Value.MonitoringPaused);
+
+        using var connection = new LocalDatabase(DatabasePath).Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT (SELECT json FROM settings_backup WHERE scope = 'app'), (SELECT json FROM settings WHERE scope = 'app');";
+        using var reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal(partlyInvalid, reader.GetString(0));
+        Assert.Equal(partlyInvalid, reader.GetString(1)); // original row kept until the next save
+    }
+
+    [Fact]
+    public void Concurrent_first_run_initialization_does_not_fail()
+    {
+        const int threadsPerRound = 8;
+        for (var round = 0; round < 40; round++)
+        {
+            var path = Path.Combine(_root, $"race-{round}.db");
+            using var start = new Barrier(threadsPerRound);
+            var errors = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+
+            var threads = Enumerable.Range(0, threadsPerRound).Select(_ => new Thread(() =>
+            {
+                start.SignalAndWait();
+                try
+                {
+                    new LocalDatabase(path).Initialize();
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(ex);
+                }
+            })).ToList();
+            threads.ForEach(t => t.Start());
+            threads.ForEach(t => t.Join());
+
+            Assert.Empty(errors);
+        }
+    }
+
+    [Fact]
+    public void A_newer_database_is_not_modified()
+    {
+        using (var raw = new SqliteConnection($"Data Source={DatabasePath}"))
+        {
+            raw.Open();
+            using var command = raw.CreateCommand();
+            command.CommandText = $"PRAGMA user_version = {LocalDatabase.LatestSchemaVersion + 5};";
+            command.ExecuteNonQuery();
+        }
+
+        Assert.Throws<DatabaseVersionException>(() => new LocalDatabase(DatabasePath).Initialize());
+
+        using var connection = new LocalDatabase(DatabasePath).Open();
+        using var check = connection.CreateCommand();
+        check.CommandText = "PRAGMA journal_mode;";
+        Assert.Equal("delete", check.ExecuteScalar() as string);
+    }
+
+    [Fact]
     public void Database_migrations_are_idempotent_and_newer_databases_are_rejected()
     {
         var database = new LocalDatabase(DatabasePath);

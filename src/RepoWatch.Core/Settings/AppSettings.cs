@@ -1,9 +1,21 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using RepoWatch.Core.Identity;
 
 namespace RepoWatch.Core.Settings;
 
+/// <summary>
+/// Base for persisted settings records. Properties this version does not know are kept in
+/// <see cref="ExtensionData"/> and written back, so saving never erases a newer version's fields.
+/// </summary>
+public abstract record SettingsRecord
+{
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
 /// <summary>Machine-wide user preferences, shared by all accounts. Contains no secrets.</summary>
-public sealed record AppSettings
+public sealed record AppSettings : SettingsRecord
 {
     public AppearanceSettings Appearance { get; init; } = new();
 
@@ -43,7 +55,7 @@ public enum Density
     Compact,
 }
 
-public sealed record AppearanceSettings
+public sealed record AppearanceSettings : SettingsRecord
 {
     public const double MinBackgroundOpacity = 0.2;
     public const double MaxBackgroundOpacity = 1.0;
@@ -61,7 +73,7 @@ public sealed record AppearanceSettings
     public string? AccentColor { get; init; }
 }
 
-public sealed record WindowSettings
+public sealed record WindowSettings : SettingsRecord
 {
     public bool AlwaysOnTop { get; init; }
 
@@ -74,7 +86,7 @@ public sealed record WindowSettings
 }
 
 /// <summary>Window bounds in device-independent pixels for a given display configuration.</summary>
-public sealed record WindowPlacement
+public sealed record WindowPlacement : SettingsRecord
 {
     /// <summary>Identifies the monitor layout, e.g. a hash of screen bounds and scaling.</summary>
     public required string DisplayKey { get; init; }
@@ -88,7 +100,7 @@ public sealed record WindowPlacement
     public required double Height { get; init; }
 }
 
-public sealed record StartupSettings
+public sealed record StartupSettings : SettingsRecord
 {
     /// <summary>Opt-in; off by default.</summary>
     public bool StartAtLogin { get; init; }
@@ -96,7 +108,7 @@ public sealed record StartupSettings
     public bool StartMinimized { get; init; }
 }
 
-public sealed record NotificationSettings
+public sealed record NotificationSettings : SettingsRecord
 {
     public bool Enabled { get; init; } = true;
 
@@ -114,7 +126,7 @@ public sealed record NotificationSettings
     public QuietHours QuietHours { get; init; } = new();
 }
 
-public sealed record QuietHours
+public sealed record QuietHours : SettingsRecord
 {
     public bool Enabled { get; init; }
 
