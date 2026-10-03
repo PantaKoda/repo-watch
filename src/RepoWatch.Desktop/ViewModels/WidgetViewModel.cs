@@ -7,6 +7,7 @@ using RepoWatch.Core.Identity;
 using RepoWatch.Core.Monitoring;
 using RepoWatch.Core.Platform;
 using RepoWatch.Core.Settings;
+using RepoWatch.Core.State;
 using RepoWatch.Desktop.Presentation;
 using RepoWatch.Desktop.Services;
 
@@ -38,6 +39,11 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
     // Demo data ignores the account's saved order, so the sort menu applies for this session only.
     private RepositoryOrdering? _demoOrdering;
+
+    // The first load ends once any repository's metadata has an outcome (data, error or lost access)
+    // or a refresh pass finishes, so repositories that never get metadata can't keep the line running.
+    private bool _firstLoadDone;
+    private bool _wasRefreshing;
 
     private static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(8);
 
@@ -253,7 +259,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         HideIdle = false;
     }
 
-    partial void OnSearchTextChanged(string value) => Sync();
+    partial void OnSearchTextChanged(string value) => Sync(filtersChanged: true);
 
     partial void OnHideIdleChanged(bool value)
     {
@@ -262,7 +268,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
             _settings.UpdateApp(s => s with { Window = s.Window with { HideIdleRepositories = value } });
         }
 
-        Sync();
+        Sync(filtersChanged: true);
     }
 
     partial void OnSelectedSortChanged(SortOption? value)
@@ -353,7 +359,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ExitDemo() => _monitors.ExitDemo();
 
-    private void OnMonitorChanged(object? sender, EventArgs e) => _dispatcher.Post(Sync);
+    private void OnMonitorChanged(object? sender, EventArgs e) => _dispatcher.Post(() => Sync());
 
     private void OnCurrentMonitorChanged(object? sender, EventArgs e)
     {
@@ -362,6 +368,8 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         _monitor.Changed += OnMonitorChanged;
         Repositories.Clear();
         _demoOrdering = null;
+        _firstLoadDone = false;
+        _wasRefreshing = false;
         SelectedRepository = null;
         ShowDetails = false;
         Sync();
@@ -432,20 +440,44 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void Sync()
+    /// <param name="filtersChanged">
+    /// The user changed the filters: their result applies at once. Otherwise (a status change) a row
+    /// that just became idle stays while the user interacts with the list, like a deferred reorder.
+    /// </param>
+    private void Sync(bool filtersChanged = false)
     {
         var now = _time.GetUtcNow();
         var refreshing = _monitor.IsRefreshing;
         var allowReorder = !IsInteracting;
         var all = _monitor.Repositories;
         var search = SearchText.Trim();
+        var keepShownIdle = !allowReorder && !filtersChanged;
+        var shown = keepShownIdle ? Repositories.Select(r => r.Key).ToHashSet() : [];
+        var deferredRemoval = false;
 
-        // Filters decide what is shown; a repository whose details are open stays visible.
-        var ordered = AttentionPolicy.Order(all, Ordering)
-            .Where(r => (search.Length == 0 || r.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
-                && (!HideIdle || !AttentionPolicy.IsIdle(r.Snapshot) || (ShowDetails && SelectedRepository?.Key == r.Key)))
-            .ToList();
-        HasPendingReorder = !CollectionReconciler.Reconcile(
+        bool Visible(MonitoredRepository r)
+        {
+            if (search.Length > 0 && !r.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!HideIdle || !AttentionPolicy.IsIdle(r.Snapshot) || (ShowDetails && SelectedRepository?.Key == r.Key))
+            {
+                return true; // a repository whose details are open stays visible
+            }
+
+            if (shown.Contains(r.Key))
+            {
+                deferredRemoval = true; // became idle under the pointer or focus: remove after the interaction
+                return true;
+            }
+
+            return false;
+        }
+
+        var ordered = AttentionPolicy.Order(all, Ordering).Where(Visible).ToList();
+        HasPendingReorder = deferredRemoval | !CollectionReconciler.Reconcile(
             Repositories,
             ordered,
             r => r.Key,
@@ -470,7 +502,11 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         ConnectionTone = _monitor.IsRateLimited ? StatusTone.Warning : tone;
         IsDemo = _monitor.State == ConnectionState.Demo;
         IsRefreshing = refreshing;
-        IsLoadingFirstData = refreshing && all.Count > 0 && all.All(r => r.Snapshot.Metadata.Value is null);
+        _firstLoadDone |= (_wasRefreshing && !refreshing)
+            || all.Any(r => r.Snapshot.Metadata.Value is not null || r.Snapshot.Metadata.LastError is not null
+                || r.Snapshot.Metadata.Availability == ResourceAvailability.AccessLost);
+        _wasRefreshing = refreshing;
+        IsLoadingFirstData = !_firstLoadDone && refreshing && all.Count > 0;
         HasRepositories = all.Count > 0;
         HiddenCount = all.Count - Repositories.Count;
         ShowNoMatches = HasRepositories && Repositories.Count == 0;
@@ -486,8 +522,10 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         SelectedSort = SortOptions.FirstOrDefault(o => o.Ordering == Ordering);
         _syncing = false;
 
-        var failing = Repositories.Count(r => r.Attention == AttentionLevel.Failure);
-        var warnings = Repositories.Count(r => r.Attention == AttentionLevel.Warning);
+        // Counted over every watched repository, so filtering never hides that something is failing.
+        var levels = all.Select(r => AttentionPolicy.Evaluate(r.Snapshot)).ToList();
+        var failing = levels.Count(l => l == AttentionLevel.Failure);
+        var warnings = levels.Count(l => l == AttentionLevel.Warning);
         SummaryText = HasRepositories
             ? (HiddenCount > 0
                 ? string.Create(CultureInfo.InvariantCulture, $"{Repositories.Count} of {all.Count} shown")

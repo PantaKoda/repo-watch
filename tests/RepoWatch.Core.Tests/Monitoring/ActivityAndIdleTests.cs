@@ -107,6 +107,16 @@ public sealed class ActivityAndIdleTests
     }
 
     [Fact]
+    public void A_section_whose_latest_refresh_failed_is_not_idle()
+    {
+        var snapshot = Snapshot(1);
+        snapshot = snapshot with { Issues = snapshot.Issues.Failed(new ResourceError(ResourceErrorKind.ServerError, "boom", T0.AddMinutes(5))) };
+
+        Assert.NotNull(snapshot.Issues.Value); // the cached "nothing open" is still there...
+        Assert.False(AttentionPolicy.IsIdle(snapshot)); // ...but may be out of date
+    }
+
+    [Fact]
     public void Sections_turned_off_count_as_idle()
     {
         var snapshot = Snapshot(1) with

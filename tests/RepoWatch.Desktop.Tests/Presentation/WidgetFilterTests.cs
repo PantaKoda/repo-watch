@@ -102,6 +102,67 @@ public sealed class WidgetFilterTests
     }
 
     [Fact]
+    public void A_row_that_becomes_idle_stays_until_the_interaction_ends()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "busy", 0, openIssues: 2), Repo(2, "other", 1, openIssues: 1)]);
+        widget.HideIdle = true;
+        var focused = widget.Repositories[0];
+        widget.SelectedRepository = focused;
+
+        widget.IsInteracting = true;
+        monitor.Publish([Repo(1, "busy", 0), Repo(2, "other", 1, openIssues: 1)]); // the last issue was closed
+
+        Assert.Same(focused, widget.Repositories[0]);
+        Assert.Same(focused, widget.SelectedRepository);
+        Assert.True(widget.HasPendingReorder);
+
+        widget.IsInteracting = false;
+
+        Assert.Equal(["octo/other"], Names(widget));
+    }
+
+    [Fact]
+    public void Filter_changes_made_by_the_user_apply_at_once_even_during_interaction()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "quiet", 0), Repo(2, "busy", 1, openIssues: 1)]);
+        widget.IsInteracting = true;
+
+        widget.HideIdle = true;
+
+        Assert.Equal(["octo/busy"], Names(widget));
+    }
+
+    [Fact]
+    public void The_footer_counts_failures_hidden_by_the_name_filter()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "broken", 0, outcome: CheckOutcome.Failure), Repo(2, "fine", 1)]);
+
+        widget.SearchText = "fine";
+
+        Assert.Equal("1 of 2 shown · 1 failing", widget.SummaryText);
+    }
+
+    [Fact]
+    public void Repositories_that_never_get_metadata_do_not_keep_the_header_animating()
+    {
+        var (widget, monitor, _) = Create();
+        var key = new RepositoryKey(Account, 9);
+        var failed = new RepositorySnapshot(key) with
+        {
+            Metadata = Resource<RepositoryMetadata>.NotLoaded.Failed(new ResourceError(ResourceErrorKind.Forbidden, "SSO required", Now)),
+        };
+        var repository = new MonitoredRepository(new WatchedRepository { RepositoryId = 9, Owner = "octo", Name = "sso" }, failed, 0);
+
+        monitor.IsRefreshing = true;
+        monitor.Publish([repository]);
+
+        Assert.False(widget.ShowActivity); // the first attempt already has an outcome: later polls are background work
+    }
+
+    [Fact]
     public void When_every_repository_is_filtered_out_Show_all_brings_them_back()
     {
         var (widget, monitor, _) = Create();

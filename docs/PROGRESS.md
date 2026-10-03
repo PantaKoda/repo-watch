@@ -454,7 +454,7 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
 
 **DPI check (3 Oct 2026):** the maintainer set Windows display scale to 125% and 150% and reported that the widget scales fine. That closes the last open acceptance item below.
 
-Everything is implemented and checked except one acceptance item: **verifying DPI scaling at 125%/150%**. That requires changing the Windows display scale, a system setting this agent doesn't change. The user can do it in Settings → System → Display → Scale, and the screenshots can then be repeated.
+Everything is implemented and checked. The last acceptance item, **DPI scaling at 125%/150%**, needed a Windows display-scale change (a system setting this agent doesn't change); the maintainer did it on 3 Oct 2026 and reported the widget scales fine.
 
 ### Part 1 — pulled forward (user request, before Stage 06)
 
@@ -556,7 +556,7 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
   - Clicks inside the widget hit the widget (`WindowFromPoint`) in 17 of 18 matrix captures. The one exception was Dark/Frosted on the second matrix run; three dedicated reruns of that case hit the widget. It looks transient (another window briefly on top), but it is recorded here rather than dismissed.
 
 **Open acceptance item (blocker)**
-- **DPI above 100%:** this machine runs at 96 DPI, and changing the Windows display scale is a system setting I did not change. Layout and saved placement use device-independent units (Stage 03), but the acceptance check at 125%/150% is still open.
+- **DPI above 100%:** this machine runs at 96 DPI, and changing the Windows display scale is a system setting I did not change. Layout and saved placement use device-independent units (Stage 03). The maintainer later checked 125% and 150% and reported the widget scales fine.
 
 **Not verified (environment)**
 - **High contrast and remote desktop:** both need system changes or another machine. Their solid fallbacks are unit-tested. The "no transparency granted" fallback (surface painted solid) is unit-tested; it was not seen because this machine grants transparency.
@@ -819,7 +819,7 @@ No code was edited and no tokens were copied by hand at any point.
 - **Not verified live:** notifications from real GitHub events and the relay with real webhooks (fixtures only).
 
 **Next concrete task**
-- Stage 08: the display-scale check at 125 %/150 % (maintainer). Then UI changes as requested. Stage 12 (macOS/Linux) is a later release.
+- UI changes as requested (Stage 08's display-scale check has since passed). Stage 12 (macOS/Linux) is a later release.
 
 ## After release — widget list usability (feature branch `widget-ux-filters`)
 
@@ -860,4 +860,14 @@ Requested by the maintainer after using 0.1.0:
 
 **Limitations**
 - Activity uses data Repo Watch already loads; there is no extra request per repository. Repositories cached before this version show no push time until their metadata refreshes.
+
+**Review of PR #13 (all findings addressed)**
+- **Rows no longer vanish during interaction:** with *Hide idle* on, a repository that becomes idle in a background refresh stays while the pointer or keyboard focus is in the list. It is removed when the interaction ends, like a deferred reorder. Filter changes you make still apply at once.
+- **A failed refresh is not idle:** a section with a failed latest refresh (stale cached value) keeps the repository visible, together with its freshness warning.
+- **Footer counts:** failing and needs-attention counts include repositories hidden by the filters.
+- **First load is latched:** it ends once any repository's metadata has an outcome (data, error or lost access) or a refresh pass finishes. Repositories that never get metadata no longer bring the header line back on every poll.
+- Stage 08 wording updated.
+
+**Next concrete task**
+- Rebuild the installed app from main after merge. Further UI changes as requested. Stage 12 (macOS/Linux) is a later release.
 

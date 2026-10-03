@@ -74,13 +74,15 @@ public static class AttentionPolicy
 
     /// <summary>
     /// Nothing to look at: no failures or problems, nothing running, no open pull requests (in the
-    /// watched scope) and no open issues. A section that hasn't loaded yet is not idle, so a
-    /// repository is never hidden for lack of data.
+    /// watched scope) and no open issues. A section that hasn't loaded yet, or whose latest refresh
+    /// failed (its "nothing open" may be out of date), is not idle: such a repository is never hidden.
     /// </summary>
     public static bool IsIdle(RepositorySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (Evaluate(snapshot) != AttentionLevel.Quiet)
+        if (Evaluate(snapshot) != AttentionLevel.Quiet
+            || snapshot.Metadata.LastError is not null || snapshot.Actions.LastError is not null
+            || snapshot.PullRequests.LastError is not null || snapshot.Issues.LastError is not null)
         {
             return false;
         }
