@@ -34,7 +34,7 @@
       <Button Content="Show widget" Command="{Binding ShowWidgetCommand}" />
 
       <TextBlock Classes="heading" Text="Appearance" />
-      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="8">
+      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="8">
         <TextBlock Text="Theme" VerticalAlignment="Center" />
         <ComboBox Grid.Column="1" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" MinWidth="140"
                   AutomationProperties.Name="Theme" />
@@ -51,6 +51,12 @@
         <TextBlock Grid.Row="3" Text="Motion" VerticalAlignment="Center" />
         <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding MotionChoices}" SelectedItem="{Binding Motion}" MinWidth="140"
                   AutomationProperties.Name="Motion" />
+        <TextBlock Grid.Row="4" Text="Accent" VerticalAlignment="Center" />
+        <ComboBox Grid.Row="4" Grid.Column="1" ItemsSource="{Binding Accents}" SelectedItem="{Binding Accent}" MinWidth="140"
+                  AutomationProperties.Name="Accent" />
+        <TextBlock Grid.Row="5" Text="Density" VerticalAlignment="Center" />
+        <ComboBox Grid.Row="5" Grid.Column="1" ItemsSource="{Binding Densities}" SelectedItem="{Binding Density}" MinWidth="140"
+                  AutomationProperties.Name="Density" />
       </Grid>
       <TextBlock Classes="secondary" TextWrapping="Wrap"
                  Text="Only the widget's background fades; text, icons and menus stay fully opaque. Motion: System follows Windows' animation setting." />

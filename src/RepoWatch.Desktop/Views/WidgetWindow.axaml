@@ -121,11 +121,11 @@
     widget hit-testable, so transparency never becomes click-through.
   -->
   <Panel Margin="6">
-    <Border Name="Surface" CornerRadius="14" Background="{DynamicResource SpaceSurfaceBrush}" Opacity="{Binding SurfaceOpacity}" />
-    <Border CornerRadius="14" ClipToBounds="True" Opacity="{Binding SurfaceOpacity}">
+    <Border Name="Surface" CornerRadius="{StaticResource RadiusLarge}" Background="{DynamicResource SpaceSurfaceBrush}" Opacity="{Binding SurfaceOpacity}" />
+    <Border CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True" Opacity="{Binding SurfaceOpacity}">
       <c:StarField />
     </Border>
-  <Border CornerRadius="14" BorderBrush="{DynamicResource HudFrameBrush}" BorderThickness="1"
+  <Border CornerRadius="{StaticResource RadiusLarge}" BorderBrush="{DynamicResource HudFrameBrush}" BorderThickness="1"
           BoxShadow="{DynamicResource HudGlowShadow}">
     <DockPanel Classes.legible="{Binding NeedsTextHalo}">
       <!-- Header: drag to move -->

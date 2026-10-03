@@ -11,7 +11,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 05 | Repository access and watchlist picker | completed |
 | 06 | Fetch and normalize real GitHub data | completed |
 | 07 | Durable caching and efficient synchronization | completed |
-| 08 | Modern visuals and real transparency | pending |
+| 08 | Modern visuals and real transparency | blocked (only the DPI check at 125%/150% remains; see Stage 08) |
 | 09 | Desktop behavior and notifications | pending |
 | 10 | Near-real-time delivery (relay) | pending |
 | 11 | Package and validate the Windows release | pending |
@@ -449,10 +449,14 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
 - **Notification history** has no table yet; it is added with notifications in Stage 09, along with notification timestamps that stay separate from refresh timestamps.
 
 **Next concrete task**
-- Stage 08 remainder: density and accent options, the light/dark × material matrix check with DPI, and observing the high-contrast and remote fallbacks.
-## Stage 08 — Visuals pulled forward (user request, before Stage 06): partial
+- Stage 08 remainder (done below).
+## Stage 08 — Modern visuals and real transparency: blocked
 
-The user asked for a UI uplift ahead of order: optional transparency with a slider, motion, a "radiating" state for in-progress work, and a futuristic space-station look. Stage 06 remains the next stage in order. The rest of Stage 08 is still pending: density, the accent option, a full manual light/dark × material × background matrix with DPI checks, and the high-contrast/remote fallbacks observed on a real machine.
+Everything is implemented and checked except one acceptance item: **verifying DPI scaling at 125%/150%**. That requires changing the Windows display scale, a system setting this agent doesn't change. The user can do it in Settings → System → Display → Scale, and the screenshots can then be repeated.
+
+### Part 1 — pulled forward (user request, before Stage 06)
+
+The user asked for a UI uplift ahead of order: optional transparency with a slider, motion, a "radiating" state for in-progress work, and a futuristic space-station look. Stage 06 remained the next stage in order. At the time, the rest of Stage 08 was still pending (all done in Part 2 except the DPI check): density, the accent option, a full manual light/dark × material × background matrix with DPI checks, and the high-contrast/remote fallbacks observed on a real machine.
 
 **Implemented**
 - A "space station" theme (`App.axaml`). Dark navy gradient surface with a static deterministic star field (`StarField`, no idle animation), HUD corner brackets (`HudCorners`), a cyan frame glow, and neon status colors with a soft halo per status dot. There is a light variant.
@@ -513,3 +517,44 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
 | Frosted 30%, hidden to tray | 0.00% | 0.0% | 181 MB |
 | Frosted 85%, visible | 0.12% | 1.1% | 170 MB |
 | Frosted 85%, hidden to tray | 0.00% | 0.0% | 171 MB |
+
+### Part 2 — completion
+
+**Implemented**
+- **Visual tokens** in `App.axaml`: corner radii (small 6, medium 8, large 14), caption, title and heading sizes, and row/item paddings (comfortable and compact). Colors stay in the theme dictionaries.
+- **Accent** (Settings → Appearance → Accent): Station cyan (default), Nebula violet, Ion blue and Plasma magenta.
+  - Status colors never change with the accent.
+  - The default Station cyan deliberately shares the "running" hue, so the HUD itself reads as active. The three alternatives use hues that differ from every status color.
+  - Only presets are honored: a hand-edited value falls back to the default, so Settings always shows the active accent and every accent has a contrast guarantee.
+  - `AccentPalette` updates the HUD brushes (brand, frame, glow, hover, selection) and the Fluent accent (sliders, check boxes, focus) at runtime.
+  - The light theme uses a darker variant for contrast.
+  - The default light accent changed from `#0081A8` to `#006F8E`: the new contrast test showed the old value at 4.2:1, below 4.5:1, on the light surface.
+- **Density** (Settings → Appearance → Density): Comfortable or Compact. Compact uses tighter list rows and item paddings and smaller captions and titles, applied as a `compact` class on every window.
+- **Default accent matches the XAML:** applying the default accent reproduces `App.axaml` exactly (alphas, the light colors, and `WidgetBorderBrush` with its own alpha); `App.axaml` stays the source of truth.
+- **Light secondary text** darkened from `#5E6C84` to `#56637A`. The old value was 4.45:1 on the lighter end of the painted gradient (`#E3ECF6`). The contrast tests now check every stop of the gradient the widget actually paints, instead of the solid surface color.
+- **Light-theme opacity floor:** see-through materials keep at least 75% background in the light theme. The matrix showed dark text on a thin light surface becoming unreadable over dark content. The Settings status line explains this when it applies.
+
+**Checks run**
+- `dotnet test --solution RepoWatch.slnx`: 339 passed after the review of PR #8. The secondary-text test was confirmed to fail with the old color (4.45:1).
+- New tests:
+  - every accent preset reaches ≥ 4.5:1 against the dark and light surfaces;
+  - secondary text reaches ≥ 4.5:1 on both themes;
+  - unknown accents fall back to the default;
+  - applying an accent changes the HUD but not the status colors;
+  - the Settings Accent and Density controls work;
+  - compact rows are shorter, and titles end inside a 320-px widget, measured in window coordinates (the first version compared parent-relative bounds and could not fail);
+  - the default accent reproduces `App.axaml`;
+  - changing the accent updates an open widget (brand text) and Fluent's `SystemAccentColor`;
+  - the light-theme floor.
+- **Real-app matrix** (Windows 11 26200, Debug build, demo data, 96 DPI / 100%): light and dark × Solid, Transparent 50% and Frosted 60% × bright, dark and busy backdrops, 18 screenshots. They are in `artifacts/screenshots/stage08/`, with contact sheets `matrix-dark-sheet.png` and `matrix-light-sheet.png` (not committed). Observed:
+  - Solid gives a solid surface. Transparent achieved `Transparent`. Frosted achieved `AcrylicBlur` (real blur of the backdrop), in both themes.
+  - Dark theme: readable in all nine cells.
+  - Light theme: after the 75% floor, readable in all nine cells. Before it, the light-over-dark cells were washed out.
+  - Text, icons and status dots stay fully opaque; only the background layers change.
+  - Clicks inside the widget hit the widget (`WindowFromPoint`) in 17 of 18 matrix captures. The one exception was Dark/Frosted on the second matrix run; three dedicated reruns of that case hit the widget. It looks transient (another window briefly on top), but it is recorded here rather than dismissed.
+
+**Open acceptance item (blocker)**
+- **DPI above 100%:** this machine runs at 96 DPI, and changing the Windows display scale is a system setting I did not change. Layout and saved placement use device-independent units (Stage 03), but the acceptance check at 125%/150% is still open.
+
+**Not verified (environment)**
+- **High contrast and remote desktop:** both need system changes or another machine. Their solid fallbacks are unit-tested. The "no transparency granted" fallback (surface painted solid) is unit-tested; it was not seen because this machine grants transparency.

@@ -122,3 +122,9 @@ No client secret or private key is ever embedded in the desktop app. Server-only
 - `RepoWatch.Core.Tests`: pure policy and validation logic, plus GitHub endpoint composition.
 - `RepoWatch.Desktop.Tests`: configuration loading against real temporary files, with injected environment variables.
 - Later stages add HTTP-contract fixtures (GitHub), persistence round trips (SQLite) and headless UI checks (`Avalonia.Headless.XUnit`, version-pinned).
+
+## Visuals (Desktop)
+
+- **Tokens:** radii, type sizes and paddings are defined in `App.axaml`. Colors live in the light/dark theme dictionaries. Status colors are fixed; the accent (`AccentPalette`) only re-colors the HUD brushes and the Fluent accent.
+- **Materials:** `WindowMaterialService` requests a material and reads back what was achieved. Only the background layers take the surface opacity. The light theme keeps at least 75% so dark text stays readable.
+- **Classes on windows:** `reduce-motion` (Motion setting or Windows animation preference; also set while the widget is hidden) and `compact` (Density).

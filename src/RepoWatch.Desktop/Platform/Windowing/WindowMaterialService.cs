@@ -42,7 +42,8 @@ public static class WindowMaterialService
             window.TransparencyLevelHint = hint;
         }
 
-        var applied = Resolve(appearance, window.ActualTransparencyLevel, SystemVisuals.HighContrast, SystemVisuals.RemoteSession);
+        var applied = Resolve(appearance, window.ActualTransparencyLevel, SystemVisuals.HighContrast, SystemVisuals.RemoteSession,
+            lightTheme: window.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Light);
 
         // Without any transparency the window's own background shows through the margin and
         // rounded corners (black on Windows), so paint it with the surface to stay truly solid.
@@ -57,8 +58,15 @@ public static class WindowMaterialService
         ArgumentNullException.ThrowIfNull(applied);
         return applied.Achieved == WindowTransparencyLevel.None && solidSurface is not null ? solidSurface : Brushes.Transparent;
     }
+
+    /// <summary>
+    /// In the light theme a see-through surface keeps at least this opacity: dark text on a thin light
+    /// surface becomes unreadable over dark content behind the widget (observed in the Stage 08 matrix).
+    /// </summary>
+    public const double LightThemeMinimumOpacity = 0.75;
+
     /// <summary>Decides the surface opacity and any fallback message from what the platform achieved.</summary>
-    public static AppliedMaterial Resolve(AppearanceSettings appearance, WindowTransparencyLevel achieved, bool highContrast, bool remoteSession)
+    public static AppliedMaterial Resolve(AppearanceSettings appearance, WindowTransparencyLevel achieved, bool highContrast, bool remoteSession, bool lightTheme = false)
     {
         ArgumentNullException.ThrowIfNull(appearance);
         var (material, fallback) = Effective(appearance.Material, highContrast, remoteSession);
@@ -87,6 +95,12 @@ public static class WindowMaterialService
             }
 
             opacity = requestedOpacity;
+        }
+
+        if (lightTheme && opacity < LightThemeMinimumOpacity)
+        {
+            opacity = LightThemeMinimumOpacity;
+            fallback ??= $"In the light theme the background stays at least {LightThemeMinimumOpacity:P0} opaque so dark text stays readable.";
         }
 
         return new AppliedMaterial(appearance.Material, achieved, opacity, fallback);

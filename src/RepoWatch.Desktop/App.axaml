@@ -23,18 +23,18 @@
             <GradientStop Color="#F5F9FD" Offset="0" />
             <GradientStop Color="#E3ECF6" Offset="1" />
           </LinearGradientBrush>
-          <SolidColorBrush x:Key="HudAccentBrush" Color="#0081A8" />
-          <SolidColorBrush x:Key="HudFrameBrush" Color="#660081A8" />
-          <SolidColorBrush x:Key="HudDimBrush" Color="#5E6C84" />
+          <SolidColorBrush x:Key="HudAccentBrush" Color="#006F8E" />
+          <SolidColorBrush x:Key="HudFrameBrush" Color="#66006F8E" />
+          <SolidColorBrush x:Key="HudDimBrush" Color="#56637A" />
           <SolidColorBrush x:Key="StarBrush" Color="#30203A55" />
-          <SolidColorBrush x:Key="RowHoverBrush" Color="#140081A8" />
-          <SolidColorBrush x:Key="PanelBrush" Color="#0A0081A8" />
-          <BoxShadows x:Key="HudGlowShadow">0 0 6 0 #330081A8</BoxShadows>
+          <SolidColorBrush x:Key="RowHoverBrush" Color="#14006F8E" />
+          <SolidColorBrush x:Key="PanelBrush" Color="#0A006F8E" />
+          <BoxShadows x:Key="HudGlowShadow">0 0 6 0 #33006F8E</BoxShadows>
           <DropShadowEffect x:Key="TextHaloEffect" BlurRadius="2.5" OffsetX="0" OffsetY="0" Color="#FFFFFFFF" Opacity="1" />
           <SolidColorBrush x:Key="LegibleSecondaryBrush" Color="#2A3448" />
 
           <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="#F5F9FD" />
-          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#550081A8" />
+          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#55006F8E" />
           <SolidColorBrush x:Key="DemoBannerBrush" Color="#26FFB547" />
           <SolidColorBrush x:Key="DemoBannerForegroundBrush" Color="#6B4200" />
         </ResourceDictionary>
@@ -67,6 +67,22 @@
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
 
+      <!--
+        Visual tokens: one place for spacing, radii and type sizes. Colors live in the theme dictionaries
+        above; the accent overrides the HUD brushes at runtime (AccentPalette), status colors never change.
+      -->
+      <CornerRadius x:Key="RadiusSmall">6</CornerRadius>
+      <CornerRadius x:Key="RadiusMedium">8</CornerRadius>
+      <CornerRadius x:Key="RadiusLarge">14</CornerRadius>
+      <x:Double x:Key="FontSizeCaption">11</x:Double>
+      <x:Double x:Key="FontSizeCaptionCompact">10</x:Double>
+      <x:Double x:Key="FontSizeTitleCompact">12.5</x:Double>
+      <x:Double x:Key="FontSizeHeading">15</x:Double>
+      <Thickness x:Key="RowPadding">10,8</Thickness>
+      <Thickness x:Key="RowPaddingCompact">8,3</Thickness>
+      <Thickness x:Key="ItemPadding">8,6</Thickness>
+      <Thickness x:Key="ItemPaddingCompact">6,3</Thickness>
+
       <!-- Icon geometries from Material Design Icons (Apache License 2.0). -->
       <StreamGeometry x:Key="IconRefresh">M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z</StreamGeometry>
       <StreamGeometry x:Key="IconSettings">M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.48.48 0 0 0 13.92 2h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.73 8.47a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.08.63-.08.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z</StreamGeometry>
@@ -82,7 +98,7 @@
     <FluentTheme>
       <FluentTheme.Palettes>
         <ColorPaletteResources x:Key="Dark" Accent="#FF1FB8D6" RegionColor="#FF070C18" />
-        <ColorPaletteResources x:Key="Light" Accent="#FF0081A8" RegionColor="#FFF5F9FD" />
+        <ColorPaletteResources x:Key="Light" Accent="#FF006F8E" RegionColor="#FFF5F9FD" />
       </FluentTheme.Palettes>
     </FluentTheme>
 
@@ -93,7 +109,7 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="MinWidth" Value="28" />
       <Setter Property="MinHeight" Value="28" />
-      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}" />
       <Setter Property="Foreground" Value="{DynamicResource HudDimBrush}" />
     </Style>
     <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
@@ -113,8 +129,8 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="8,6" />
-      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="{StaticResource ItemPadding}" />
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}" />
     </Style>
     <Style Selector="Button.row:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
@@ -122,9 +138,9 @@
 
     <!-- Repository rows: soft hover glow with a short transition. -->
     <Style Selector="ListBox.hud ListBoxItem">
-      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="Padding" Value="{StaticResource RowPadding}" />
       <Setter Property="Margin" Value="0,1" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
     </Style>
     <Style Selector="ListBox.hud ListBoxItem /template/ ContentPresenter">
       <Setter Property="Transitions">
@@ -154,7 +170,7 @@
     </Style>
 
     <Style Selector="TextBlock.secondary">
-      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
       <Setter Property="Foreground" Value="{DynamicResource HudDimBrush}" />
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
@@ -163,7 +179,7 @@
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
     <Style Selector="TextBlock.heading">
-      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontSize" Value="{StaticResource FontSizeHeading}" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Margin" Value="0,12,0,4" />
     </Style>
@@ -179,6 +195,21 @@
       <Setter Property="FontWeight" Value="Bold" />
       <Setter Property="LetterSpacing" Value="3" />
       <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
+    </Style>
+
+    <!-- Compact density: tighter rows and smaller captions; the same information stays visible. -->
+    <Style Selector="Window.compact ListBox.hud ListBoxItem">
+      <Setter Property="Padding" Value="{StaticResource RowPaddingCompact}" />
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="Window.compact Button.row">
+      <Setter Property="Padding" Value="{StaticResource ItemPaddingCompact}" />
+    </Style>
+    <Style Selector="Window.compact TextBlock.secondary">
+      <Setter Property="FontSize" Value="{StaticResource FontSizeCaptionCompact}" />
+    </Style>
+    <Style Selector="Window.compact TextBlock.title">
+      <Setter Property="FontSize" Value="{StaticResource FontSizeTitleCompact}" />
     </Style>
 
     <!-- Scan line: a thin indeterminate bar shown only while something is active. -->
