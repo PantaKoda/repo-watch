@@ -11,7 +11,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 05 | Repository access and watchlist picker | completed |
 | 06 | Fetch and normalize real GitHub data | pending |
 | 07 | Durable caching and efficient synchronization | pending |
-| 08 | Modern visuals and real transparency | pending (partly delivered early; see below) |
+| 08 | Modern visuals and real transparency | pending |
 | 09 | Desktop behavior and notifications | pending |
 | 10 | Near-real-time delivery (relay) | pending |
 | 11 | Package and validate the Windows release | pending |
@@ -297,6 +297,13 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
   - All animations stop under `Window.reduce-motion`, which is set from the Motion setting. `System` follows Windows' client-area animation setting (`SPI_GETCLIENTAREAANIMATION`).
   - Animations run only while something is active; nothing animates when idle.
 - `MotionPreference` is persisted in `AppearanceSettings` (round-trip covered).
+- **Runtime OS changes:** `SystemVisualsWatcher` re-applies visuals when any of these change:
+  - the achieved transparency level, the widget being shown, hidden or minimized, or high contrast;
+  - on Windows, `WM_SETTINGCHANGE`, `WM_THEMECHANGED`, `WM_DWMCOMPOSITIONCHANGED`, `WM_POWERBROADCAST` or `WM_DISPLAYCHANGE`.
+  Bursts are coalesced into one re-apply.
+- The transparency hint is reassigned only when the material changes, so slider drags don't rebuild the backdrop.
+- If no transparency is granted, the window background is painted with the surface brush, so the fallback is solid edge to edge.
+- The widget pauses its animations while hidden or minimized. The low-opacity halo applies to text only, so the pulse and scan animations never re-blur the content.
 
 **Checks run**
 - `dotnet build` (0 warnings) and `dotnet test --solution RepoWatch.slnx`: 255 passed.
@@ -317,4 +324,14 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
 **Observed limitations**
 - Plain Transparent at low opacity over very busy, high-contrast content is still hard to read, even with the halo. Frosted/Auto is the readable choice and is the default.
 - Mica is a system backdrop tinted from the wallpaper. It does not show windows behind the widget.
-- High-contrast and remote-session fallbacks are unit-tested but were not observed on a real machine.
+- High-contrast and remote-session fallbacks are unit-tested but were not observed on a real machine. The same goes for re-applying after a runtime OS change, such as toggling Windows "Transparency effects", battery saver or an RDP connect.
+- Whether Avalonia updates `ActualTransparencyLevel` when Windows turns transparency effects off is unverified. The watcher re-reads it on the corresponding broadcast messages.
+
+**Measured resource use** (Debug build, Windows 11, demo data with one running item, 15 s samples, CPU as a share of all cores)
+
+| Mode | CPU | GPU 3D | Working set |
+| --- | --- | --- | --- |
+| Frosted 30% (halo on), visible | 0.34% | 2.3% | 181 MB |
+| Frosted 30%, hidden to tray | 0.00% | 0.0% | 181 MB |
+| Frosted 85%, visible | 0.12% | 1.1% | 170 MB |
+| Frosted 85%, hidden to tray | 0.00% | 0.0% | 171 MB |

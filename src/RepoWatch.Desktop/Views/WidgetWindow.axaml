@@ -126,7 +126,7 @@
       <c:StarField />
     </Border>
   <Border CornerRadius="14" BorderBrush="{DynamicResource HudFrameBrush}" BorderThickness="1"
-          BoxShadow="0 0 14 0 #333FE0FF">
+          BoxShadow="{DynamicResource HudGlowShadow}">
     <DockPanel Classes.legible="{Binding NeedsTextHalo}">
       <!-- Header: drag to move -->
       <Border DockPanel.Dock="Top" Padding="14,8,6,4" Background="Transparent" PointerPressed="OnHeaderPointerPressed">

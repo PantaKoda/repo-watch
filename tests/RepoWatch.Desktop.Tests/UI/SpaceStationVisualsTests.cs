@@ -161,6 +161,52 @@ public sealed class SpaceStationVisualsTests
         window.Close();
     }
 
+    [AvaloniaFact]
+    public void Opacity_changes_do_not_reapply_the_window_backdrop()
+    {
+        var (window, _) = Open();
+        WindowMaterialService.Apply(window, Appearance(WindowMaterial.Frosted, 0.5));
+        var hint = window.TransparencyLevelHint;
+
+        WindowMaterialService.Apply(window, Appearance(WindowMaterial.Frosted, 0.6));
+        Assert.Same(hint, window.TransparencyLevelHint);
+
+        WindowMaterialService.Apply(window, Appearance(WindowMaterial.Solid, 0.6));
+        Assert.NotSame(hint, window.TransparencyLevelHint);
+        window.Close();
+    }
+
+    [Fact]
+    public void Without_transparency_the_whole_window_is_painted_solid()
+    {
+        var surface = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Colors.Navy);
+        var none = WindowMaterialService.Resolve(Appearance(WindowMaterial.Transparent, 0.4), WindowTransparencyLevel.None, false, false);
+        var granted = WindowMaterialService.Resolve(Appearance(WindowMaterial.Transparent, 0.4), WindowTransparencyLevel.Transparent, false, false);
+
+        // Otherwise the margin and rounded corners render black around a "solid" widget.
+        Assert.Same(surface, WindowMaterialService.WindowBackground(none, surface));
+        Assert.Same(Avalonia.Media.Brushes.Transparent, WindowMaterialService.WindowBackground(granted, surface));
+    }
+    [AvaloniaFact]
+    public void The_low_opacity_halo_applies_to_text_not_the_animated_content()
+    {
+        Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+        var (window, viewModel) = Open();
+        viewModel.SurfaceOpacity = 0.4;
+        Dispatcher.UIThread.RunJobs();
+
+        var content = window.GetVisualDescendants().OfType<DockPanel>().Single(d => d.Classes.Contains("legible"));
+        Assert.Null(content.Effect);
+        // Button labels (AccessText) sit on opaque button backgrounds and need no halo.
+        Assert.All(content.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible && t is not Avalonia.Controls.Primitives.AccessText), t => Assert.NotNull(t.Effect));
+        Assert.All(content.GetVisualDescendants().OfType<StatusDot>(), d => Assert.Null(d.Effect));
+
+        viewModel.SurfaceOpacity = 0.9;
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<DockPanel>(), d => d.Classes.Contains("legible"));
+        window.Close();
+    }
+
     private static AppearanceSettings Appearance(WindowMaterial material, double opacity) =>
         new() { Material = material, BackgroundOpacity = opacity };
 

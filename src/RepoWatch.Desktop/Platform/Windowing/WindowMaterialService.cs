@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Media;
 using RepoWatch.Core.Settings;
 
 namespace RepoWatch.Desktop.Platform.Windowing;
@@ -27,17 +28,35 @@ public static class WindowMaterialService
         var (effective, _) = Effective(appearance.Material, SystemVisuals.HighContrast, SystemVisuals.RemoteSession);
 
         // Rounded corners need a transparent window even when the surface itself is solid.
-        window.TransparencyLevelHint = effective switch
+        IReadOnlyList<WindowTransparencyLevel> hint = effective switch
         {
             WindowMaterial.Frosted or WindowMaterial.Auto => [WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Blur, WindowTransparencyLevel.Transparent],
             WindowMaterial.Mica => [WindowTransparencyLevel.Mica, WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Transparent],
             _ => [WindowTransparencyLevel.Transparent],
         };
-        window.Background = Avalonia.Media.Brushes.Transparent;
 
-        return Resolve(appearance, window.ActualTransparencyLevel, SystemVisuals.HighContrast, SystemVisuals.RemoteSession);
+        // Re-applying an equal hint still makes the platform rebuild the backdrop (flicker while
+        // dragging the opacity slider), so only assign it when the material actually changes.
+        if (!window.TransparencyLevelHint.SequenceEqual(hint))
+        {
+            window.TransparencyLevelHint = hint;
+        }
+
+        var applied = Resolve(appearance, window.ActualTransparencyLevel, SystemVisuals.HighContrast, SystemVisuals.RemoteSession);
+
+        // Without any transparency the window's own background shows through the margin and
+        // rounded corners (black on Windows), so paint it with the surface to stay truly solid.
+        window.Background = WindowBackground(applied,
+            window.TryFindResource("WidgetSurfaceBrush", window.ActualThemeVariant, out var surface) ? surface as IBrush : null);
+        return applied;
     }
 
+    /// <summary>The window's own background: transparent unless the platform granted no transparency.</summary>
+    public static IBrush WindowBackground(AppliedMaterial applied, IBrush? solidSurface)
+    {
+        ArgumentNullException.ThrowIfNull(applied);
+        return applied.Achieved == WindowTransparencyLevel.None && solidSurface is not null ? solidSurface : Brushes.Transparent;
+    }
     /// <summary>Decides the surface opacity and any fallback message from what the platform achieved.</summary>
     public static AppliedMaterial Resolve(AppearanceSettings appearance, WindowTransparencyLevel achieved, bool highContrast, bool remoteSession)
     {

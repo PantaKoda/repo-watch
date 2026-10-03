@@ -29,7 +29,7 @@
           <SolidColorBrush x:Key="StarBrush" Color="#30203A55" />
           <SolidColorBrush x:Key="RowHoverBrush" Color="#140081A8" />
           <SolidColorBrush x:Key="PanelBrush" Color="#0A0081A8" />
-          <Color x:Key="HudGlowColor">#330081A8</Color>
+          <BoxShadows x:Key="HudGlowShadow">0 0 6 0 #330081A8</BoxShadows>
           <DropShadowEffect x:Key="TextHaloEffect" BlurRadius="2.5" OffsetX="0" OffsetY="0" Color="#FFFFFFFF" Opacity="1" />
           <SolidColorBrush x:Key="LegibleSecondaryBrush" Color="#2A3448" />
 
@@ -56,7 +56,7 @@
           <SolidColorBrush x:Key="StarBrush" Color="#D8E9FF" />
           <SolidColorBrush x:Key="RowHoverBrush" Color="#1A3FE0FF" />
           <SolidColorBrush x:Key="PanelBrush" Color="#0D3FE0FF" />
-          <Color x:Key="HudGlowColor">#553FE0FF</Color>
+          <BoxShadows x:Key="HudGlowShadow">0 0 6 0 #553FE0FF</BoxShadows>
           <DropShadowEffect x:Key="TextHaloEffect" BlurRadius="2.5" OffsetX="0" OffsetY="0" Color="#FF000000" Opacity="1" />
           <SolidColorBrush x:Key="LegibleSecondaryBrush" Color="#E2EAF6" />
 
@@ -142,8 +142,11 @@
       <Setter Property="BorderThickness" Value="1" />
     </Style>
 
-    <!-- Low background opacity: a soft halo keeps content legible over busy backgrounds. One layer for the whole content. -->
-    <Style Selector="DockPanel.legible">
+    <!--
+      Low background opacity: a soft halo keeps text legible over busy backgrounds. Scoped to text so
+      the animated pulse and scan lines never force the blurred layers to re-render each frame.
+    -->
+    <Style Selector="DockPanel.legible TextBlock">
       <Setter Property="Effect" Value="{DynamicResource TextHaloEffect}" />
     </Style>
     <Style Selector="DockPanel.legible TextBlock.secondary">
