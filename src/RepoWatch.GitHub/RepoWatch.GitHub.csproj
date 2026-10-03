@@ -1,5 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- GitHub authentication, API clients, synchronization and relay client. No UI dependencies. -->
+  <!--
+    Release RIDs. Listed here (not only on the publish command line) so packages.lock.json always
+    contains the RID-specific graph and a normal restore matches the one the release publish uses.
+  -->
+  <PropertyGroup>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\RepoWatch.Core\RepoWatch.Core.csproj" />
   </ItemGroup>

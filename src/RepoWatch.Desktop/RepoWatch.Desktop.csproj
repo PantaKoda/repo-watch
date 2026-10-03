@@ -4,6 +4,7 @@
     <AssemblyName>RepoWatch</AssemblyName>
     <RootNamespace>RepoWatch.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\RepoWatch.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!--
       net10.0 is the portable build (tests, later macOS/Linux). The Windows build adds native toast
@@ -13,6 +14,8 @@
     <TargetFramework />
     <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Release RID (scripts/publish-windows.ps1); listed so restore and packages.lock.json match the release publish. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
@@ -38,5 +41,6 @@
 
   <ItemGroup>
     <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <AvaloniaResource Include="Assets\RepoWatch.ico" />
   </ItemGroup>
 </Project>

@@ -2,7 +2,68 @@
 
 A Windows-first desktop widget for monitoring GitHub Actions, pull requests and issues, built with C#, .NET and Avalonia. The shared core and UI are kept portable for later macOS/Linux releases.
 
-> **Status: early development.** The widget, tray icon, settings window and window placement work, with labeled demo data. GitHub sign-in works and was verified against github.com: device flow, Windows Credential Manager storage, token renewal and sign-out (see [docs/github-app-setup.md](docs/github-app-setup.md)). Choosing repositories works: onboarding, the repository picker and the watchlist, verified with a real account. Live repository data comes in Stage 06. GitHub sign-in, repository monitoring and the widget UI are **not implemented yet**. See [docs/PROGRESS.md](docs/PROGRESS.md) for current state.
+> **Status: first Windows release candidate (0.1.0).** Sign-in, the repository picker, live GitHub data with caching and desktop integration (tray, startup, single instance, shortcut) were checked on Windows 11 against github.com. Notifications from real GitHub events and the webhook relay with real GitHub webhooks have been verified only with test fixtures so far. macOS and Linux are not supported yet. Open limitations are listed in [docs/PROGRESS.md](docs/PROGRESS.md).
+
+## Install and run (Windows)
+
+1. Download `RepoWatch-<version>-win-x64.zip` and its `.sha256` from the [releases page](https://github.com/PantaKoda/repo-watch/releases), or build them yourself (see [Releases](#releases)).
+2. Verify the download: the hash printed by `Get-FileHash RepoWatch-<version>-win-x64.zip -Algorithm SHA256` must match the `.sha256` file.
+3. Extract the zip to a folder you can write to (for example `%LOCALAPPDATA%\Programs\RepoWatch`) and start `RepoWatch\RepoWatch.exe`.
+
+The zip is **portable and self-contained**: the .NET runtime is included, nothing is installed and no administrator rights are needed. The executable is **not code-signed** yet, so Windows SmartScreen may say "Windows protected your PC"; choose *More info → Run anyway* only when the SHA-256 matches. To update, quit Repo Watch, replace the folder with the new release and start it again. Settings, the watchlist and the sign-in are kept because they live outside the folder (see [Local data](#local-data)). To remove Repo Watch, see [Uninstall](#uninstall).
+
+## First run
+
+The onboarding window walks through **Sign in → Grant repository access → Choose repositories → Appearance → Open widget**:
+
+1. **Sign in with GitHub.** Repo Watch shows a short code. Use *Copy code* and *Open GitHub*, enter the code on github.com and approve. Repo Watch never asks for your password or a personal access token.
+2. **Grant repository access.** GitHub decides which repositories the Repo Watch GitHub App may read. *Grant access on GitHub* opens the installation page, where you pick accounts, organizations and repositories. Organizations may need an owner's approval. Skip this step if the app is already installed.
+3. **Choose repositories.** Access alone adds nothing to the widget. Tick the repositories to watch; search and owner filters help. Change the list later with Settings → *Manage repositories…*.
+4. **Appearance.** Theme, material (Auto, Solid, Transparent, Frosted, Mica) and background opacity. Text stays fully opaque.
+5. **Open the widget.** It lives in the notification area and remembers its position.
+
+## Using the widget
+
+- **Move:** drag the header (unless *Lock the widget's position* is on). **Resize:** drag the bottom-right grip. The position and size are remembered per monitor setup. If the widget would open off-screen, it is moved back onto the primary display.
+- **Tray:** click the tray icon to show or hide the widget. Its menu has *Show widget*, *Pause monitoring*, *Settings…* and *Quit Repo Watch*. Closing or hiding the widget keeps Repo Watch running. Where no tray is available, the widget stays in the taskbar and closing it exits.
+- **Shortcut:** <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> shows or hides the widget from anywhere. It can be turned off in Settings, which also says when another app already uses it.
+- **Keyboard:** <kbd>Tab</kbd> to the list, arrow keys to move, <kbd>Enter</kbd> to open details, <kbd>Esc</kbd> to go back or collapse, <kbd>F5</kbd> to refresh, <kbd>Ctrl</kbd>+<kbd>,</kbd> for settings.
+- **Status:** Actions, pull requests and issues are shown separately per repository, each with its own freshness. The header shows `Live`, `Polling`, `Offline`, `Paused` or `Reconnect required`. When a refresh fails, the last data stays visible and is labeled stale.
+- **Acting on things:** merges, reviews, comments and workflow re-runs open GitHub in your browser. Repo Watch only reads.
+- **Notifications:** CI failing or passing again on a tracked branch, a new review request and a merged pull request you track, each once. Quiet hours, per-repository switches and *Hide private repository names and titles in notifications* are in Settings.
+- **Demo mode:** started with `--demo` or *Explore demo data*. A banner stays visible while sample data is shown, and links open GitHub documentation because the sample repositories don't exist.
+- **About:** Settings → About shows the version and commit. *Check for updates* opens the releases page in your browser. Repo Watch never downloads or installs anything by itself.
+
+## Troubleshooting
+
+| Symptom | What to do |
+| --- | --- |
+| The widget is gone | Click the tray icon (look in the hidden-icons overflow), press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>, or start `RepoWatch.exe` again: a second start shows the running instance. |
+| Sign-in fails at once ("Device flow is not enabled", invalid client) | The configured GitHub App is missing device flow, or `GitHub:ClientId` is wrong. See [docs/github-app-setup.md](docs/github-app-setup.md). |
+| *Grant access on GitHub* shows a 404, or you can't install the app | The GitHub App can be installed only on its owner's account until the maintainer sets *Where can this GitHub App be installed?* to **Any account**. |
+| A repository is missing from the picker | GitHub has not granted the app access to it. Use *Manage access*, then *Refresh list*. Organization repositories may be waiting for an owner's approval or need *Authorize single sign-on*. |
+| `Reconnect required` | The session expired or was revoked on GitHub. Choose *Sign in again*; Repo Watch does not retry forever. |
+| One section says it is unavailable (e.g. Actions disabled) | That part is reported per repository; the other sections keep working. Check the repository's settings on GitHub. |
+| Data is stale or `Offline` | The last data stays, labeled, and refreshes after reconnect or wake. GitHub rate limits slow refreshes down instead of failing them. |
+| No notifications | Check Settings → Notifications (*Show a test notification*), quiet hours, and Windows Settings → System → Notifications → Repo Watch. |
+| Transparency looks solid | Windows transparency effects are off, high contrast is on, the session is remote or battery saver is on. Repo Watch then uses a solid surface on purpose. Settings shows the achieved material. |
+| A configuration error window at start | It names each setting, the problem and the files read. Fix or remove that value. |
+| Anything else | Settings → About → *Export diagnostics* creates a redacted archive (no tokens, codes, repository names or content) to attach to an issue. Logs are in `%LOCALAPPDATA%\RepoWatch\logs`. |
+
+## Privacy and security
+
+- **Read-only.** The GitHub App requests read permissions only: Metadata, Actions, Checks, Commit statuses, Issues and Pull requests. Repo Watch connects only to GitHub and, when configured, your relay. There is no telemetry.
+- **Tokens** are stored only in Windows Credential Manager (`RepoWatch:github/<host>/<userId>`), never in files, the database, logs, URLs or the clipboard. Without a working credential store, the sign-in lasts for the session only.
+- **No secrets ship with the app.** The client ID in `appsettings.json` is public. The desktop app has no client secret and no private key.
+- **Sign out** stops monitoring, removes the tokens and deletes that account's cached repository data. Watchlist choices stay for the next sign-in. Local sign-out does not revoke the app on GitHub: use *Review access on GitHub* (Settings → Account) to revoke it there.
+- **Repository content is untrusted.** Titles are shown as plain text, and only HTTPS links on the GitHub web host are opened.
+
+## Uninstall
+
+1. In Settings, turn off *Start Repo Watch when I sign in* (removes the `Run` registry value) and choose *Sign out* (removes the tokens and the account's cached data).
+2. Quit Repo Watch from the tray menu and delete its folder.
+3. Optionally delete `%LOCALAPPDATA%\RepoWatch` (settings, cache, logs) and the registry key `HKCU\Software\Classes\AppUserModelId\RepoWatch.Desktop` (notification identity).
+4. Optionally revoke the app on GitHub (Settings → Applications → Authorized GitHub Apps) and uninstall it where it was installed.
 
 ## Platform baseline
 
@@ -11,7 +72,7 @@ A Windows-first desktop widget for monitoring GitHub Actions, pull requests and 
 | .NET SDK | 10.0 (LTS), pinned by `global.json` (`10.0.100`, rolls forward to the latest installed 10.0 feature band) |
 | Target framework | `net10.0` (shared projects, tests); the desktop app also builds `net10.0-windows10.0.19041.0`, the Windows build with native notifications |
 | Avalonia | 12.1.3 |
-| Supported Windows | Windows 10 version 1809 or later and Windows 11, x64 and ARM64. Mica backdrop (later stage) requires Windows 11. |
+| Supported Windows | Windows 10 version 1809 or later and Windows 11. The release zip is **x64**; ARM64 devices would run it under emulation, which is not verified. Mica requires Windows 11. |
 | macOS / Linux | Shared code builds in CI; **not** release-ready or supported yet. |
 
 Package versions are pinned centrally in `Directory.Packages.props`, and NuGet lock files (`packages.lock.json`) are committed for reproducible restores.
@@ -44,21 +105,31 @@ dotnet test --solution RepoWatch.slnx
 
 Tests use xunit v3 on Microsoft.Testing.Platform (opted in via `global.json`), so `dotnet test` takes `--solution` / `--project` options rather than a positional path. Headless UI tests write screenshots to `artifacts/screenshots/` (not committed).
 
-## Using the widget
+## Releases
 
-- **Move:** drag the header (unless *Lock position* is on). **Resize:** drag the bottom-right grip. The position and size are remembered per monitor setup. If the widget would open off-screen, it is moved back onto the primary display.
-- **Tray:** on Windows the widget lives in the notification area. Click the tray icon to show or hide it; its menu has *Show widget*, *Settings…* and *Quit*. Closing or hiding the widget keeps Repo Watch running. Where no tray is available, the widget stays in the taskbar and closing it exits.
-- **Keyboard:** <kbd>Tab</kbd> to the list, arrow keys to move, <kbd>Enter</kbd> to open details, <kbd>Esc</kbd> to go back or collapse, <kbd>F5</kbd> to refresh, <kbd>Ctrl</kbd>+<kbd>,</kbd> for settings.
-- **Demo mode:** started with `--demo` or *Explore demo data*. A banner stays visible while sample data is shown, and links open GitHub documentation because the sample repositories don't exist.
+`scripts/publish-windows.ps1` builds the release: locked restore, Release build and tests, a self-contained `win-x64` publish, then `artifacts/release/RepoWatch-<version>-win-x64.zip` and its `.sha256`.
+
+```bash
+pwsh scripts/publish-windows.ps1
+```
+
+- **Reproducible:** deterministic compilation with CI path mapping, locked package versions, no debug symbols, and a zip whose entries are sorted ordinally and stamped with the commit time. The same commit gives the same SHA-256 from any checkout path with the same .NET SDK and PowerShell versions, which the script prints (`global.json` rolls forward to newer 10.0 SDKs, and zip compression comes from the runtime PowerShell runs on). The script warns when the working tree has uncommitted or untracked files; such a build must not be released.
+- **Version:** `Version` in `Directory.Build.props`. The commit is added automatically and shown in About and in diagnostics.
+- **Symbols:** release builds have none. Avalonia's XAML compiler would record absolute build paths in them, breaking reproducibility; logged stack traces keep method names but not line numbers.
+- **Signing:** not done yet. Certificates and keys must never be committed (`*.pfx`, `*.snk` and `*.pem` are ignored); a later signing step must take them from secret storage.
+- **Publishing a GitHub release** (a tag plus the zip and `.sha256`) is a maintainer action; nothing here does it automatically. The manual CI workflow only uploads the zip as a workflow artifact.
+- **Before a release,** run [docs/validation-checklist.md](docs/validation-checklist.md) against the published zip, not a debug build.
+- `scripts/make-icon.ps1` regenerates `src/RepoWatch.Desktop/Assets/RepoWatch.ico`, used for the executable, windows, tray and notifications.
 
 ### Which checks need what
 
 | Check | Requirement |
 | --- | --- |
 | Restore, build, unit tests | Any OS with the .NET 10 SDK |
+| Release publish | Windows with the .NET 10 SDK and PowerShell 7 |
 | Running the desktop app | A desktop session; Windows is the delivery target |
-| Tray, window materials, Credential Manager, startup registration (later stages) | Windows |
-| Sign-in and live GitHub smoke tests (Stage 04+) | A registered GitHub App client ID and a GitHub account |
+| Tray, window materials, Credential Manager, startup registration, notifications, global shortcut | Windows |
+| Sign-in and live GitHub smoke tests | A registered GitHub App client ID and a GitHub account |
 | Relay tests (in-memory relay, end to end) | Any OS with the .NET 10 SDK |
 | Live mode with real GitHub webhooks | A deployed relay (HTTPS) and the GitHub App's webhook configured; see [docs/relay.md](docs/relay.md) |
 
@@ -73,8 +144,8 @@ Configuration holds only **public** deployment values. Secrets never belong here
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `GitHub:ClientId` | empty | Public client ID of the Repo Watch GitHub App. Empty means sign-in is unavailable. |
-| `GitHub:AppSlug` | empty | The app's URL slug, used for the "Grant repository access" link. |
+| `GitHub:ClientId` | empty (the shipped `appsettings.json` sets it) | Public client ID of the Repo Watch GitHub App. Empty means sign-in is unavailable. |
+| `GitHub:AppSlug` | empty (the shipped `appsettings.json` sets it) | The app's URL slug, used for the "Grant repository access" link. |
 | `GitHub:WebBaseUrl` | `https://github.com` | GitHub web base URL (https only). |
 | `GitHub:ApiBaseUrl` | `https://api.github.com` | GitHub REST base URL (https only). |
 | `Polling:ActiveWorkflowSeconds` | 20 | Target refresh for running workflows (5–3600). |
@@ -84,6 +155,7 @@ Configuration holds only **public** deployment values. Secrets never belong here
 | `Cache:RetentionDays` | 30 | How long cached repository data and notification history are kept (1–365). |
 | `Cache:MaxCachedResponses` | 2000 | Most cached REST responses per account (100–100000). |
 | `Relay:BaseUrl` | empty | Optional live-update relay ([docs/relay.md](docs/relay.md)). https, or `http://localhost` for development. Empty: polling only. |
+| `Updates:ReleasesUrl` | `https://github.com/PantaKoda/repo-watch/releases` | Page opened by *Check for updates* (https, on the GitHub web host). Empty hides the action, and so does the default when `GitHub:WebBaseUrl` points elsewhere. |
 
 Unknown keys, wrongly typed values, malformed JSON and invalid values stop startup with a window listing each problem, the setting to change and the files that were read. Problems are also logged.
 
@@ -109,7 +181,8 @@ src/RepoWatch.GitHub    GitHub auth/API clients, synchronization, relay client
 src/RepoWatch.Desktop   Avalonia app, storage, settings, platform adapters
 src/RepoWatch.Relay     Optional webhook relay (ASP.NET Core): signed deliveries, sessions, server-sent events
 tests/                  Focused tests
-docs/                   Architecture and progress
+scripts/                Release publish and icon generation
+docs/                   Architecture, progress, GitHub App and relay setup, validation checklist
 ```
 
 See [docs/architecture.md](docs/architecture.md).

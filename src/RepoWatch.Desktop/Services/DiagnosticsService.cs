@@ -52,7 +52,7 @@ public sealed class DiagnosticsService(AppPaths paths, AccountService accounts, 
         var monitor = monitors.Current;
         var repositories = monitor.Repositories;
         var text = new StringBuilder()
-            .AppendLine(CultureInfo.InvariantCulture, $"Repo Watch {AppInfo.Version}")
+            .AppendLine(CultureInfo.InvariantCulture, $"Repo Watch {AppInfo.Display}")
             .AppendLine(CultureInfo.InvariantCulture, $"Created: {now:O}")
             .AppendLine(CultureInfo.InvariantCulture, $"OS: {Environment.OSVersion}; .NET {Environment.Version}; 64-bit process: {Environment.Is64BitProcess}")
             .AppendLine(CultureInfo.InvariantCulture, $"Account: {accounts.State}; credential storage: {accounts.CredentialStorage}; persistent: {accounts.CredentialsArePersistent}")

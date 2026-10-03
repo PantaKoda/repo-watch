@@ -14,6 +14,8 @@ public sealed class RepoWatchOptions
     public CacheOptions Cache { get; set; } = new();
 
     public RelayOptions Relay { get; set; } = new();
+
+    public UpdatesOptions Updates { get; set; } = new();
 }
 
 public sealed class GitHubOptions
@@ -67,4 +69,24 @@ public sealed class RelayOptions
     public string? BaseUrl { get; set; }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(BaseUrl);
+}
+
+/// <summary>
+/// Where "Check for updates" points. The app only opens this page in the browser: it never downloads or runs
+/// an update itself (that needs signed, authenticated update metadata, which is not designed yet).
+/// </summary>
+public sealed class UpdatesOptions
+{
+    public const string DefaultReleasesUrl = "https://github.com/PantaKoda/repo-watch/releases";
+
+    /// <summary>HTTPS page on the GitHub web host listing releases. Empty hides the action.</summary>
+    public string? ReleasesUrl { get; set; } = DefaultReleasesUrl;
+
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(ReleasesUrl);
+
+    public bool IsDefault => string.Equals(ReleasesUrl, DefaultReleasesUrl, StringComparison.Ordinal);
+
+    /// <summary>The page to open, or null when unset or not on the GitHub web host (only those links are opened).</summary>
+    public Uri? ResolveFor(Uri gitHubWebBase) =>
+        IsConfigured && Uri.TryCreate(ReleasesUrl, UriKind.Absolute, out var url) && Platform.ExternalLinkPolicy.IsAllowed(url, gitHubWebBase) ? url : null;
 }
