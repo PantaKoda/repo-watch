@@ -78,6 +78,10 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
             {
                 ShowNotice($"Updated to {_updates.Current} (from {from}).");
             }
+            else if (_updates.Install.UpdateFailed is not null)
+            {
+                ShowNotice("The last update couldn't be applied. Open Update for details.");
+            }
         }
     }
 

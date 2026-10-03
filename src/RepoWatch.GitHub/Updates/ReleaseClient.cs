@@ -30,6 +30,12 @@ public sealed class ReleaseClient(HttpClient http, GitHubEndpoints endpoints, st
     private const int MaxNotesLength = 20_000;
     private readonly string _repository = repository.Trim();
 
+    /// <summary>
+    /// A download that receives nothing for this long is abandoned. HttpClient's timeout ends once the
+    /// headers arrive, and a socket can stall silently (Wi-Fi switch, sleep, a proxy dropping it).
+    /// </summary>
+    public TimeSpan StallTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
     public Uri ReleasesApi => new(endpoints.ApiBase, $"repos/{_repository}/releases?per_page=30");
 
     public async Task<ReleaseListResult> GetReleasesAsync(CancellationToken cancellationToken)
@@ -93,9 +99,27 @@ public sealed class ReleaseClient(HttpClient http, GitHubEndpoints endpoints, st
         await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var buffer = new byte[81920];
         long received = 0;
-        int read;
-        while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        while (true)
         {
+            int read;
+            using (var stall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                stall.CancelAfter(StallTimeout);
+                try
+                {
+                    read = await source.ReadAsync(buffer, stall.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TimeoutException($"the download stalled (nothing received for {StallTimeout.TotalSeconds:0} seconds)");
+                }
+            }
+
+            if (read == 0)
+            {
+                break;
+            }
+
             received += read;
             if (received > maxBytes)
             {

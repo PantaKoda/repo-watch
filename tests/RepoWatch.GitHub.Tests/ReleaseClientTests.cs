@@ -69,6 +69,58 @@ public sealed class ReleaseClientTests
         Assert.Equal(allowed, client.IsReleaseDownload(new Uri(url)));
     }
 
+    /// <summary>A response body that sends nothing, like a connection that stalled halfway.</summary>
+    private sealed class StalledContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) => Task.CompletedTask;
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override Task<Stream> CreateContentReadStreamAsync() => Task.FromResult<Stream>(new StalledStream());
+
+        private sealed class StalledStream : Stream
+        {
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => 0; set => throw new NotSupportedException(); }
+
+            public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return 0;
+            }
+
+            public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            public override void Flush() { }
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
+    }
+
+    [Fact]
+    public async Task A_download_that_stalls_gives_up_instead_of_waiting_forever()
+    {
+        var handler = new StubHandler(Time());
+        var client = new ReleaseClient(GitHubHttp.CreateClient(handler), new GitHubEndpoints(new GitHubOptions()), "octo/repo-watch")
+        {
+            StallTimeout = TimeSpan.FromMilliseconds(200),
+        };
+        handler.Content(new StalledContent());
+        using var target = new MemoryStream();
+
+        var error = await Assert.ThrowsAsync<TimeoutException>(() => client.DownloadAsync(
+            new Uri("https://github.com/octo/repo-watch/releases/download/v0.3.0/a.zip"), target, 1024, null, TestContext.Current.CancellationToken));
+
+        Assert.Contains("stalled", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Downloads_stop_at_the_size_limit()
     {

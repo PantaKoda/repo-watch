@@ -85,6 +85,12 @@ public sealed class UpdatesOptions
     /// <summary>Hours between automatic checks. 0 checks only when asked (Settings › Check for updates).</summary>
     public int CheckIntervalHours { get; set; } = 24;
 
+    /// <summary>
+    /// The 0.1.0 setting (a page opened by Check for updates). Accepted and ignored, so a per-user file that
+    /// still sets it doesn't stop the app; <see cref="Repository"/> replaces it.
+    /// </summary>
+    public string? ReleasesUrl { get; set; }
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Repository);
 
     /// <summary>The repository's releases page on the GitHub web host.</summary>

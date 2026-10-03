@@ -21,6 +21,8 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
     private readonly UpdateService _updates;
     private readonly IExternalBrowser _browser;
     private readonly IUiDispatcher _dispatcher;
+    private IReadOnlyList<ReleaseInfo>? _shownReleases;
+    private UpdateStage? _shownStage;
 
     public UpdateViewModel(UpdateService updates, IExternalBrowser browser, IUiDispatcher dispatcher)
     {
@@ -60,6 +62,18 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial bool IsBusy { get; private set; }
 
+    /// <summary>A download (or its check) is running and can still be stopped.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
+    public partial bool CanCancel { get; private set; }
+
+    /// <summary>The previous attempt to install an update couldn't be applied; shown until the next install.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPreviousFailure))]
+    public partial string? PreviousFailure { get; private set; }
+
+    public bool HasPreviousFailure => PreviousFailure is not null;
+
     [ObservableProperty]
     public partial bool ShowProgress { get; private set; }
 
@@ -84,29 +98,51 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private Task CheckAgainAsync() => _updates.CheckNowAsync();
 
+    [RelayCommand(CanExecute = nameof(CanCancel))]
+    private void Cancel() => _updates.CancelInstall();
+
     private void OnChanged(object? sender, EventArgs e) => _dispatcher.Post(Refresh);
 
     private void Refresh()
     {
         var latest = _updates.Latest;
-        Heading = latest is null ? "Repo Watch is up to date" : $"Repo Watch {latest.Version} is available";
-        Summary = latest is null
-            ? $"You have version {_updates.Current}. There is no newer release."
-            : _updates.Available.Count == 1
-                ? $"You have version {_updates.Current}. Here is what changed:"
-                : $"You have version {_updates.Current}. {_updates.Available.Count} releases came out since then; here is what changed in each:";
-        Releases = _updates.Available
-            .Select(r => new ReleaseNotesItem(
-                r.Title,
-                r.PublishedAt is { } at ? at.ToLocalTime().ToString("d MMMM yyyy", CultureInfo.CurrentCulture) : "",
-                ReleaseNotesText.ToPlainText(r.Notes)))
-            .ToList();
+        var stage = _updates.Stage;
 
-        IsBusy = _updates.IsBusy;
-        var reason = _updates.CannotInstallReason;
-        CanInstall = latest is not null && reason is null && !IsBusy;
-        InstallHint = latest is not null && reason is not null && !IsBusy ? reason : null;
-        ShowProgress = _updates.Stage == UpdateStage.Downloading;
+        // Download progress raises many small changes: only the progress and status follow those. The notes are
+        // rebuilt only when the release list changes (keeping selection and scroll position), and the install
+        // checks (which touch the disk) run only when the stage changes.
+        if (!ReferenceEquals(_shownReleases, _updates.Available))
+        {
+            _shownReleases = _updates.Available;
+            Heading = latest is null ? "Repo Watch is up to date" : $"Repo Watch {latest.Version} is available";
+            Summary = latest is null
+                ? $"You have version {_updates.Current}. There is no newer release."
+                : _updates.Available.Count == 1
+                    ? $"You have version {_updates.Current}. Here is what changed:"
+                    : $"You have version {_updates.Current}. {_updates.Available.Count} releases came out since then; here is what changed in each:";
+            Releases = _updates.Available
+                .Select(r => new ReleaseNotesItem(
+                    r.Title,
+                    r.PublishedAt is { } at ? at.ToLocalTime().ToString("d MMMM yyyy", CultureInfo.CurrentCulture) : "",
+                    ReleaseNotesText.ToPlainText(r.Notes)))
+                .ToList();
+            _shownStage = null; // a new release list can change what installing needs
+        }
+
+        if (_shownStage != stage)
+        {
+            _shownStage = stage;
+            IsBusy = _updates.IsBusy;
+            CanCancel = _updates.CanCancelInstall;
+            var reason = IsBusy ? null : _updates.CannotInstallReason;
+            CanInstall = latest is not null && reason is null && !IsBusy;
+            InstallHint = latest is not null && reason is not null ? reason : null;
+            PreviousFailure = stage is UpdateStage.Downloading or UpdateStage.Verifying or UpdateStage.Installing or UpdateStage.Restarting
+                ? null
+                : _updates.Install.UpdateFailed;
+        }
+
+        ShowProgress = stage == UpdateStage.Downloading;
         ProgressPercent = Math.Round(_updates.Progress * 100);
         Status = _updates.Stage switch
         {

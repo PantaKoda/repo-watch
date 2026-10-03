@@ -16,10 +16,13 @@
     <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0">
       <ProgressBar IsVisible="{Binding ShowProgress}" Minimum="0" Maximum="100" Value="{Binding ProgressPercent}" Height="4" MinHeight="4" />
       <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding PreviousFailure}" IsVisible="{Binding HasPreviousFailure}" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}" />
       <TextBlock Classes="secondary" Text="{Binding InstallHint}" IsVisible="{Binding HasInstallHint}" TextWrapping="Wrap" TextTrimming="None" />
       <WrapPanel ItemSpacing="8" LineSpacing="8">
         <Button Classes="accent" Content="Install update" Command="{Binding InstallCommand}"
                 ToolTip.Tip="Downloads the release from GitHub, checks it against its published checksum, then restarts into the new version. Your settings and sign-in are kept." />
+        <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}"
+                ToolTip.Tip="Stops the download. Nothing is changed." />
         <Button Content="View on GitHub" Command="{Binding ViewOnGitHubCommand}" />
         <Button Content="Check again" Command="{Binding CheckAgainCommand}" IsEnabled="{Binding !IsBusy}" />
         <Button Content="Later" Click="OnLaterClick" />

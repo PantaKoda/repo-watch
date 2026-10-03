@@ -13,6 +13,7 @@ What changed in each Repo Watch release. The section for a version becomes its G
 ### Changed
 - The moving line under the header now appears only while you wait for a refresh you started or the first load, not during routine background checks.
 - On very narrow widgets the connection label shrinks instead of sliding under the header buttons.
+- The `Updates:ReleasesUrl` setting is no longer used (it is ignored if still set); `Updates:Repository` names where updates come from.
 
 ### Fixed
 - Starting two copies of Repo Watch at exactly the same moment on a new computer could fail to set up the local database.

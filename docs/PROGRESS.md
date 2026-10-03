@@ -959,6 +959,20 @@ The maintainer noticed that switching the repository to public didn't show in th
 - Tests: the metadata interval, and the widget being activated refreshes stale parts at once but not freshly refreshed ones. `dotnet test`: 472 passed, twice.
 - **Decision:** the published app stays on polling plus on-demand refresh; no shared relay. Webhooks belong to the shared GitHub App, so all users would depend on one maintainer-run server, which would also receive their private-repository event payloads. The relay remains an optional self-hosted feature for people who register their own app (docs/relay.md).
 
+**Review of PR #15 (all findings addressed)**
+These fixes ship in 0.2.0, which is the code users run to install their *next* update, so they had to land before the first release.
+- **Progress no longer floods the UI:** progress is reported in whole percent only (at most ~100 updates per download instead of one per network read). The update window rebuilds the release notes only when the release list changes, so text selection and scroll position survive. It runs the install checks (which create probe files) only when the stage changes.
+- **Stalled or unwanted downloads end:**
+  - a read that receives nothing for 30 s fails with "the download stalled";
+  - a **Cancel** button stops the download;
+  - quitting the app cancels it too;
+  - every cancellation or failure ends in `InstallFailed` with the staging folder removed, so *Install update* and *Check again* work again.
+- **Data folder inside the install folder** (e.g. the zip extracted into `%LOCALAPPDATA%`, or `REPOWATCH_DATA_DIR` under the app folder): installing is refused with a clear reason. The staged updater would otherwise sit inside the folder it has to move. The applier also refuses that layout.
+- **Failed hand-overs are visible:** every recovery launch passes `--update-failed <reason>`, and a refused hand-over now also waits for the old app and starts it again. The restarted version shows "The last update couldn't be applied. Open Update for details." and the update window explains the reason and points to `logs\update.log`.
+- **The retired `Updates:ReleasesUrl` setting** is accepted and ignored, so a 0.1.0 per-user file doesn't stop the app. This is noted in the CHANGELOG.
+- **Release workflow:** the tag is passed through `env:` instead of being pasted into the script text.
+- Tests: progress throttling, cancel then retry, data folder inside the install folder, the failure message in the widget and the window, stable release notes during a download, the refused and failed-copy restarts with their flags, the stall timeout, and a legacy setting that loads. `dotnet test`: 481 passed, twice.
+
 **Next concrete task**
 - After PR #15 is reviewed and merged, in a new PR: polling intervals in Settings, in seconds, with the current defaults and a plain description of what each one affects.
 

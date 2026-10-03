@@ -27,7 +27,9 @@ Requirements: the repository must be **public**, so the app can read releases wi
   2. Checks the zip's SHA-256 against the published checksum. On a mismatch nothing is installed.
   3. Unpacks it into the data folder (`%LOCALAPPDATA%\RepoWatch\updates`) and checks that it contains Repo Watch at that version.
   4. Starts the new copy as the updater and quits. The updater waits for Repo Watch to exit, moves the install folder aside as `<folder>.previous`, copies the new version in, and starts it. The new version says "Updated to X" and tidies the staging folder.
-  5. If the copy fails, the previous folder is put back and started again.
+  5. If the copy fails, the previous folder is put back and started again, and it tells the user the update couldn't be applied (the reason is in `logs\update.log`).
+- **Cancel and stalls:** the download can be cancelled from the update window, and one that receives nothing for 30 seconds gives up. Either way nothing is changed and installing can be tried again.
+- **Layout requirement:** the data folder must not be inside the app folder (for example, don't extract the zip directly into `%LOCALAPPDATA%`). In that layout the app explains that it can't update itself.
 - **What is kept:** settings, watchlist, cache and sign-in live outside the app folder and are kept. A start-at-login entry still points to the same folder.
 - **Rolling back:** quit Repo Watch, delete the install folder and rename `<folder>.previous` back. The previous version stays until the next update.
 - **Copies built from source** never replace themselves; the window offers the GitHub page instead. Only a folder extracted from a release zip has the `release.json` marker that allows it.

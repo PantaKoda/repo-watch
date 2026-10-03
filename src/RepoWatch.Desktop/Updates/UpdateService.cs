@@ -62,6 +62,7 @@ public sealed class UpdateService : IDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _stop = new();
     private readonly object _state = new();
+    private CancellationTokenSource? _install;
 
     public UpdateService(RepoWatchOptions options, IReleaseSource source, AppPaths paths, InstallInfo install, IProcessLauncher launcher, TimeProvider time, ILogger<UpdateService> logger)
     {
@@ -117,6 +118,12 @@ public sealed class UpdateService : IDisposable
             if (!Install.IsPortableRelease)
             {
                 return "This copy of Repo Watch wasn't installed from a release zip (for example, it was built from source), so it can't replace itself. Download the update from GitHub instead.";
+            }
+
+            if (IsSameOrInside(_paths.DataDirectory, Install.InstallDirectory))
+            {
+                // The update is unpacked in the data folder; inside the install folder it would have to move itself.
+                return $"Repo Watch keeps its data inside its own folder ({_paths.DataDirectory}), so it can't replace that folder. Move Repo Watch to a folder of its own (for example %LOCALAPPDATA%\\Programs\\RepoWatch), or download the update from GitHub.";
             }
 
             if (Latest is not { } latest)
@@ -203,11 +210,19 @@ public sealed class UpdateService : IDisposable
             return;
         }
 
-        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        if (!await _gate.WaitAsync(0, CancellationToken.None).ConfigureAwait(false))
         {
             return;
         }
 
+        // Cancelled by the user (Cancel), by quitting, or by the caller.
+        using var install = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token);
+        lock (_state)
+        {
+            _install = install;
+        }
+
+        var token = install.Token;
         var release = Latest!;
         var zipName = release.WindowsZip!.Name;
         var root = Path.Combine(_paths.DataDirectory, "updates");
@@ -219,26 +234,22 @@ public sealed class UpdateService : IDisposable
             Directory.CreateDirectory(root);
 
             using var checksumBuffer = new MemoryStream();
-            await _source.DownloadAsync(release.WindowsChecksum!.DownloadUrl, checksumBuffer, 4096, null, cancellationToken).ConfigureAwait(false);
+            await _source.DownloadAsync(release.WindowsChecksum!.DownloadUrl, checksumBuffer, 4096, null, token).ConfigureAwait(false);
             var expected = UpdatePolicy.ParseChecksum(Encoding.UTF8.GetString(checksumBuffer.ToArray()), zipName)
                 ?? throw new InvalidDataException("the release's checksum file is not in the expected format");
 
             var zipPath = Path.Combine(root, zipName);
-            var progress = new Progress<double>(p =>
-            {
-                Progress = p;
-                Changed?.Invoke(this, EventArgs.Empty);
-            });
+            var progress = new ThrottledProgress(this);
             await using (var file = File.Create(zipPath))
             {
-                await _source.DownloadAsync(release.WindowsZip.DownloadUrl, file, MaxDownloadBytes, progress, cancellationToken).ConfigureAwait(false);
+                await _source.DownloadAsync(release.WindowsZip.DownloadUrl, file, MaxDownloadBytes, progress, token).ConfigureAwait(false);
             }
 
             Set(UpdateStage.Verifying, null);
             string actual;
             await using (var file = File.OpenRead(zipPath))
             {
-                actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, cancellationToken).ConfigureAwait(false));
+                actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, token).ConfigureAwait(false));
             }
 
             if (!string.Equals(actual, expected, StringComparison.Ordinal))
@@ -275,7 +286,13 @@ public sealed class UpdateService : IDisposable
             Set(UpdateStage.Restarting, null);
             ExitRequested?.Invoke(this, EventArgs.Empty);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            _logger.LogInformation("Installing update {Version} was cancelled", release.Version);
+            DeleteQuietly(root);
+            Set(UpdateStage.InstallFailed, "The update was cancelled. Nothing was changed.");
+        }
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Installing update {Version} failed", release.Version);
             DeleteQuietly(root);
@@ -283,9 +300,28 @@ public sealed class UpdateService : IDisposable
         }
         finally
         {
+            lock (_state)
+            {
+                _install = null;
+            }
+
             _gate.Release();
         }
     }
+
+    /// <summary>Stops a download in progress (the Cancel button). Once the new version has taken over, it's too late.</summary>
+    public void CancelInstall()
+    {
+        lock (_state)
+        {
+            if (Stage is UpdateStage.Downloading or UpdateStage.Verifying)
+            {
+                _install?.Cancel();
+            }
+        }
+    }
+
+    public bool CanCancelInstall => Stage is UpdateStage.Downloading or UpdateStage.Verifying;
 
     public void Dispose()
     {
@@ -329,6 +365,33 @@ public sealed class UpdateService : IDisposable
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static bool IsSameOrInside(string path, string folder)
+    {
+        var inner = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        var outer = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+        return string.Equals(inner, outer, StringComparison.OrdinalIgnoreCase)
+            || inner.StartsWith(outer + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Reports download progress in whole percent only: a download reads thousands of small chunks, and each
+    /// <see cref="Changed"/> makes the UI do work.
+    /// </summary>
+    private sealed class ThrottledProgress(UpdateService owner) : IProgress<double>
+    {
+        private int _percent = -1;
+
+        public void Report(double value)
+        {
+            var percent = (int)Math.Clamp(value * 100, 0, 100);
+            if (Interlocked.Exchange(ref _percent, percent) != percent)
+            {
+                owner.Progress = percent / 100.0;
+                owner.Changed?.Invoke(owner, EventArgs.Empty);
+            }
+        }
     }
 
     private static bool CanWrite(string? directory)

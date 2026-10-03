@@ -25,9 +25,11 @@ jobs:
 
       - name: Check the tag matches the version
         shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           $version = (dotnet msbuild src/RepoWatch.Desktop/RepoWatch.Desktop.csproj -getProperty:Version -p:TargetFramework=net10.0-windows10.0.19041.0).Trim()
-          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} doesn't match Version $version in Directory.Build.props." }
+          if ("v$version" -ne $env:TAG) { throw "Tag $env:TAG doesn't match Version $version in Directory.Build.props." }
           "VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Release notes from CHANGELOG.md
@@ -42,8 +44,9 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" `
+          gh release create $env:TAG `
             "artifacts/release/RepoWatch-$env:VERSION-win-x64.zip" `
             "artifacts/release/RepoWatch-$env:VERSION-win-x64.zip.sha256" `
             --title "Repo Watch $env:VERSION" --notes-file release-notes.md --verify-tag

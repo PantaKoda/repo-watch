@@ -21,14 +21,29 @@ internal sealed class FakeReleaseSource : IReleaseSource
 
     public Dictionary<Uri, byte[]> Files { get; } = [];
 
+    /// <summary>Progress reports per download, like a real download reading many small chunks.</summary>
+    public int ProgressSteps { get; set; } = 1;
+
+    /// <summary>When set, zip downloads wait for this (or cancellation) after reporting their progress.</summary>
+    public TaskCompletionSource? HoldZip { get; set; }
+
     public Task<ReleaseListResult> GetReleasesAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Error is null ? new ReleaseListResult(Releases.ToList(), null) : new ReleaseListResult(null, Error));
 
     public async Task DownloadAsync(Uri url, Stream destination, long maxBytes, IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var bytes = Files[url];
+        for (var step = 1; step <= ProgressSteps; step++)
+        {
+            progress?.Report((double)step / ProgressSteps);
+        }
+
+        if (HoldZip is not null && url.AbsolutePath.EndsWith(".zip", StringComparison.Ordinal))
+        {
+            await HoldZip.Task.WaitAsync(cancellationToken);
+        }
+
         await destination.WriteAsync(bytes, cancellationToken);
-        progress?.Report(1);
     }
 
     /// <summary>Publishes a release whose zip holds a real-looking RepoWatch folder (exe + release.json).</summary>
@@ -85,13 +100,15 @@ internal sealed class RecordingLauncher : IProcessLauncher
 /// <summary>A data folder and an install folder ("…/Programs/RepoWatch") in a temporary directory.</summary>
 internal sealed class UpdateKit : IDisposable
 {
-    public UpdateKit(string version = "0.2.0", bool portable = true)
+    public UpdateKit(string version = "0.2.0", bool portable = true, string? dataDirectory = null, string? updateFailed = null)
     {
         Directory.CreateDirectory(InstallDirectory);
         File.WriteAllText(Path.Combine(InstallDirectory, "RepoWatch.exe"), "old exe");
         AppVersion.TryParse(version, out var current);
-        Paths = new AppPaths(Path.Combine(Root, "data"), "d.json", "u.json", Path.Combine(Root, "data", "logs"));
-        Service = new UpdateService(new RepoWatchOptions(), Source, Paths, new InstallInfo(current, InstallDirectory, portable), Launcher,
+        var data = dataDirectory is null ? Path.Combine(Root, "data") : Path.Combine(Root, dataDirectory);
+        Paths = new AppPaths(data, "d.json", "u.json", Path.Combine(data, "logs"));
+        Service = new UpdateService(new RepoWatchOptions(), Source, Paths,
+            new InstallInfo(current, InstallDirectory, portable, UpdateFailed: InstallInfo.FailureMessage(updateFailed, current)), Launcher,
             TimeProvider.System, NullLogger<UpdateService>.Instance);
         Service.ExitRequested += (_, _) => ExitRequests++;
     }
@@ -218,6 +235,95 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task Download_progress_is_reported_in_whole_percent_only()
+    {
+        using var kit = new UpdateKit("0.2.0");
+        kit.Source.Publish("0.3.0");
+        kit.Source.ProgressSteps = 5000; // thousands of chunk reads
+        await kit.Service.CheckNowAsync(TestContext.Current.CancellationToken);
+        var changes = 0;
+        kit.Service.Changed += (_, _) => changes++;
+
+        await kit.Service.InstallAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(UpdateStage.Restarting, kit.Service.Stage);
+        Assert.InRange(changes, 1, 110); // ~one per percent plus the stage changes, not one per chunk
+    }
+
+    [Fact]
+    public async Task A_download_can_be_cancelled_and_then_tried_again()
+    {
+        using var kit = new UpdateKit("0.2.0");
+        kit.Source.Publish("0.3.0");
+        kit.Source.HoldZip = new TaskCompletionSource(); // a stalled connection
+        await kit.Service.CheckNowAsync(TestContext.Current.CancellationToken);
+
+        var install = kit.Service.InstallAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(UpdateStage.Downloading, kit.Service.Stage);
+        Assert.True(kit.Service.CanCancelInstall);
+        kit.Service.CancelInstall();
+        await install;
+
+        Assert.Equal(UpdateStage.InstallFailed, kit.Service.Stage);
+        Assert.Equal("The update was cancelled. Nothing was changed.", kit.Service.Message);
+        Assert.False(Directory.Exists(Path.Combine(kit.Paths.DataDirectory, "updates")));
+        Assert.Empty(kit.Launcher.Started);
+
+        kit.Source.HoldZip = null; // the connection is fine again
+        await kit.Service.InstallAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(UpdateStage.Restarting, kit.Service.Stage);
+    }
+
+    [Theory]
+    [InlineData(@"Programs\RepoWatch")]
+    [InlineData(@"Programs\RepoWatch\data")]
+    public async Task A_data_folder_inside_the_install_folder_prevents_installing(string dataDirectory)
+    {
+        using var kit = new UpdateKit("0.2.0", dataDirectory: dataDirectory);
+        kit.Source.Publish("0.3.0");
+        await kit.Service.CheckNowAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("keeps its data inside its own folder", kit.Service.CannotInstallReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task After_a_failed_hand_over_the_widget_and_the_update_window_say_so()
+    {
+        using var kit = new UpdateKit("0.2.0", updateFailed: UpdateFailures.CouldNotMove);
+        kit.Source.Publish("0.3.0");
+        using var widget = new WidgetViewModel(new MonitorHost(TimeProvider.System), TestServices.Settings(), new FakeShell(), new RecordingBrowser(), TimeProvider.System,
+            new ImmediateDispatcher(), new RepoWatchOptions(), updates: kit.Service);
+        await kit.Service.CheckNowAsync(TestContext.Current.CancellationToken);
+        using var window = new UpdateViewModel(kit.Service, new RecordingBrowser(), new ImmediateDispatcher());
+
+        Assert.Equal("The last update couldn't be applied. Open Update for details.", widget.Notice);
+        Assert.StartsWith("The last update couldn't be applied: Repo Watch's folder couldn't be moved aside", window.PreviousFailure, StringComparison.Ordinal);
+        Assert.Contains("You're still on version 0.2.0", window.PreviousFailure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Progress_updates_keep_the_release_notes_list_as_it_is()
+    {
+        using var kit = new UpdateKit("0.2.0");
+        kit.Source.Publish("0.3.0");
+        kit.Source.ProgressSteps = 50;
+        kit.Source.HoldZip = new TaskCompletionSource();
+        await kit.Service.CheckNowAsync(TestContext.Current.CancellationToken);
+        using var viewModel = new UpdateViewModel(kit.Service, new RecordingBrowser(), new ImmediateDispatcher());
+        var notes = viewModel.Releases;
+
+        var install = viewModel.InstallCommand.ExecuteAsync(null);
+
+        Assert.Same(notes, viewModel.Releases); // selection and scroll position survive the download
+        Assert.Equal(100, viewModel.ProgressPercent);
+        Assert.True(viewModel.CanCancel);
+        viewModel.CancelCommand.Execute(null);
+        await install;
+        Assert.False(viewModel.CanCancel);
+        Assert.Same(notes, viewModel.Releases);
+    }
+
+    [Fact]
     public async Task Settings_says_when_there_is_no_newer_release()
     {
         using var kit = new UpdateKit("0.2.0");
@@ -341,6 +447,19 @@ public sealed class UpdateApplierTests : IDisposable
     }
 
     [Fact]
+    public void A_refused_hand_over_starts_the_previous_version_again_and_says_why()
+    {
+        File.Delete(Path.Combine(Staged, "RepoWatch.exe")); // an unusable staged copy
+
+        var code = Applier().Apply(Staged, Target, 1234, "0.2.0");
+
+        Assert.Equal(1, code);
+        var (executable, arguments) = Assert.Single(_launcher.Started);
+        Assert.Equal(Path.Combine(Target, "RepoWatch.exe"), executable);
+        Assert.Equal([UpdateArguments.UpdateFailed, UpdateFailures.Refused], arguments);
+    }
+
+    [Fact]
     public void Nothing_changes_when_the_old_app_doesnt_quit()
     {
         var code = Applier(exits: false).Apply(Staged, Target, 1234, "0.2.0");
@@ -367,7 +486,9 @@ public sealed class UpdateApplierTests : IDisposable
 
         Assert.Equal("old", File.ReadAllText(Path.Combine(Target, "RepoWatch.exe")));
         Assert.True(File.Exists(Path.Combine(Target, "old-only.dll")));
-        Assert.Equal(Path.Combine(Target, "RepoWatch.exe"), Assert.Single(_launcher.Started).Executable);
+        var (executable, arguments) = Assert.Single(_launcher.Started);
+        Assert.Equal(Path.Combine(Target, "RepoWatch.exe"), executable);
+        Assert.Equal([UpdateArguments.UpdateFailed, UpdateFailures.CopyFailed], arguments);
         Assert.Contains(_log, l => l.Contains("restoring the previous version", StringComparison.Ordinal));
     }
 }

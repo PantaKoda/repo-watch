@@ -55,9 +55,15 @@ public sealed class UpdateApplier(Func<int, TimeSpan, bool> waitForExit, IProces
         var staged = Path.TrimEndingDirectorySeparator(Path.GetFullPath(stagedDirectory));
         var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(targetDirectory));
         var backup = target + ".previous";
-        if (string.Equals(staged, target, StringComparison.OrdinalIgnoreCase) || !File.Exists(Path.Combine(staged, InstallInfo.ExecutableName)))
+        if (string.Equals(staged, target, StringComparison.OrdinalIgnoreCase) || !File.Exists(Path.Combine(staged, InstallInfo.ExecutableName))
+            || staged.StartsWith(target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
             log($"Refusing to update '{target}' from '{staged}'.");
+            if (waitForExit(waitForPid, ExitTimeout))
+            {
+                Restart(target, UpdateFailures.Refused); // the old app has quit for the update: bring it back
+            }
+
             return 1;
         }
 
@@ -79,7 +85,7 @@ public sealed class UpdateApplier(Func<int, TimeSpan, bool> waitForExit, IProces
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             log($"Couldn't move '{target}' aside ({ex.Message}); the update was not applied.");
-            launcher.Start(Path.Combine(target, InstallInfo.ExecutableName), []);
+            Restart(target, UpdateFailures.CouldNotMove);
             return 3;
         }
 
@@ -102,11 +108,11 @@ public sealed class UpdateApplier(Func<int, TimeSpan, bool> waitForExit, IProces
             catch (Exception restore) when (restore is IOException or UnauthorizedAccessException)
             {
                 log($"Restoring failed too ({restore.Message}). The previous version is in '{backup}'.");
-                launcher.Start(Path.Combine(backup, InstallInfo.ExecutableName), []);
+                Restart(backup, UpdateFailures.RestoreFailed);
                 return 5;
             }
 
-            launcher.Start(Path.Combine(target, InstallInfo.ExecutableName), []);
+            Restart(target, UpdateFailures.CopyFailed);
             return 4;
         }
 
@@ -114,6 +120,10 @@ public sealed class UpdateApplier(Func<int, TimeSpan, bool> waitForExit, IProces
         launcher.Start(Path.Combine(target, InstallInfo.ExecutableName), [UpdateArguments.UpdatedFrom, fromVersion]);
         return 0;
     }
+
+    /// <summary>Starts the previous version again and tells it why, so the user isn't silently offered the same update.</summary>
+    private void Restart(string folder, string failure) =>
+        launcher.Start(Path.Combine(folder, InstallInfo.ExecutableName), [UpdateArguments.UpdateFailed, failure]);
 
     private static string? Value(string[] args, string name)
     {

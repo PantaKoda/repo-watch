@@ -43,6 +43,11 @@ internal static class Program
             logger.LogInformation("Updated from {From} to {Version}", from, install.Version);
         }
 
+        if (install.UpdateFailed is { } failure)
+        {
+            logger.LogWarning("Started again after a failed update: {Failure}", failure);
+        }
+
         using var services = CompositionRoot.Build(paths, configuration, loggerFactory, instance, install);
         try
         {

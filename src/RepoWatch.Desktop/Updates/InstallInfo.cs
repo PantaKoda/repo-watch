@@ -8,7 +8,7 @@ namespace RepoWatch.Desktop.Updates;
 /// (which carries <see cref="ManifestFile"/>, written by scripts/publish-windows.ps1) can update itself;
 /// a build from source never overwrites its own output folder.
 /// </summary>
-public sealed record InstallInfo(AppVersion Version, string InstallDirectory, bool IsPortableRelease, string? UpdatedFrom = null)
+public sealed record InstallInfo(AppVersion Version, string InstallDirectory, bool IsPortableRelease, string? UpdatedFrom = null, string? UpdateFailed = null)
 {
     public const string ManifestFile = "release.json";
     public const string ExecutableName = "RepoWatch.exe";
@@ -19,9 +19,39 @@ public sealed record InstallInfo(AppVersion Version, string InstallDirectory, bo
         AppVersion.TryParse(AppInfo.Version, out var version);
         var directory = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
         var portable = OperatingSystem.IsWindows() && ReadManifestVersion(directory) is { } manifest && manifest == version;
-        var index = args.ToList().IndexOf(UpdateArguments.UpdatedFrom);
-        var updatedFrom = index >= 0 && index + 1 < args.Count ? args[index + 1] : null;
-        return new InstallInfo(version, directory, portable, updatedFrom);
+        return new InstallInfo(version, directory, portable, Value(args, UpdateArguments.UpdatedFrom), FailureMessage(Value(args, UpdateArguments.UpdateFailed), version));
+    }
+
+    /// <summary>What to tell the user after the updater put this version back (see <see cref="UpdateApplier"/>).</summary>
+    public static string? FailureMessage(string? code, AppVersion version)
+    {
+        if (code is null)
+        {
+            return null;
+        }
+
+        var reason = code switch
+        {
+            UpdateFailures.Refused => "the downloaded copy wasn't usable",
+            UpdateFailures.CouldNotMove => "Repo Watch's folder couldn't be moved aside, probably because a file in it was in use",
+            UpdateFailures.CopyFailed => "copying the new version failed, so the previous one was put back",
+            UpdateFailures.RestoreFailed => "copying the new version failed and the previous version is running from its backup folder",
+            _ => "something went wrong",
+        };
+        return $"The last update couldn't be applied: {reason}. You're still on version {version}. Details are in logs\\update.log in the data folder.";
+    }
+
+    private static string? Value(IReadOnlyList<string> args, string name)
+    {
+        for (var i = 0; i < args.Count - 1; i++)
+        {
+            if (args[i] == name)
+            {
+                return args[i + 1];
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The version recorded in a release folder's manifest, or null when there is none.</summary>
@@ -51,6 +81,18 @@ public static class UpdateArguments
 
     /// <summary>Passed to the updated app on its first start, so it can say what happened and tidy up.</summary>
     public const string UpdatedFrom = "--updated-from";
+
+    /// <summary>Passed to the previous version when the hand-over failed and it was started again: <c>--update-failed CODE</c>.</summary>
+    public const string UpdateFailed = "--update-failed";
+}
+
+/// <summary>Why a hand-over failed (the value of <see cref="UpdateArguments.UpdateFailed"/>).</summary>
+public static class UpdateFailures
+{
+    public const string Refused = "refused";
+    public const string CouldNotMove = "move";
+    public const string CopyFailed = "copy";
+    public const string RestoreFailed = "restore";
 }
 
 /// <summary>Starts a process. Abstracted so the update hand-over can be tested without starting anything.</summary>
