@@ -45,7 +45,11 @@ public sealed record CommitStatus
     public required DateTimeOffset CreatedAt { get; init; }
 }
 
-public sealed record CommitChecksSummary(string Sha, IReadOnlyList<CheckRun> CheckRuns, IReadOnlyList<CommitStatus> Statuses, CheckRollup Rollup);
+public sealed record CommitChecksSummary(string Sha, IReadOnlyList<CheckRun> CheckRuns, IReadOnlyList<CommitStatus> Statuses, CheckRollup Rollup)
+{
+    /// <summary>False when GitHub reported more checks than were loaded; the rollup then covers only those loaded.</summary>
+    public bool IsComplete { get; init; } = true;
+}
 
 public static class CommitChecks
 {

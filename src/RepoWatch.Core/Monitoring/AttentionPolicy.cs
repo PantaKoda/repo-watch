@@ -8,11 +8,11 @@ namespace RepoWatch.Core.Monitoring;
 public enum AttentionLevel
 {
     Quiet = 0,
-    /// <summary>Workflows are running or queued on the default branch.</summary>
+    /// <summary>Workflows are running or queued on a tracked branch.</summary>
     Active,
     /// <summary>A section could not be loaded, access was lost, or an open pull request has failing checks.</summary>
     Warning,
-    /// <summary>The default branch's current commit is failing or needs action.</summary>
+    /// <summary>A tracked branch's current commit is failing or needs action.</summary>
     Failure,
 }
 
@@ -22,8 +22,8 @@ public static class AttentionPolicy
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var defaultBranch = snapshot.Actions.Value?.DefaultBranch?.Rollup.State;
-        if (defaultBranch is RollupState.Failing or RollupState.ActionRequired)
+        var branches = snapshot.Actions.Value?.TrackedBranches.Select(b => b.Rollup.State).ToList() ?? [];
+        if (branches.Any(s => s is RollupState.Failing or RollupState.ActionRequired))
         {
             return AttentionLevel.Failure;
         }
@@ -36,7 +36,7 @@ public static class AttentionPolicy
             return AttentionLevel.Warning;
         }
 
-        return defaultBranch == RollupState.Pending ? AttentionLevel.Active : AttentionLevel.Quiet;
+        return branches.Contains(RollupState.Pending) ? AttentionLevel.Active : AttentionLevel.Quiet;
     }
 
     /// <summary>

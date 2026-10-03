@@ -100,7 +100,7 @@ public sealed partial class PullRequestItemViewModel(IExternalBrowser browser, i
         {
             { Value: { } checks } => ("Checks: " + StatusPresentation.Label(checks.Rollup.State), StatusPresentation.Tone(checks.Rollup.State)),
             { LastError: not null } => ("Checks: couldn't load", StatusTone.Warning),
-            _ => ("Checks: loading", StatusTone.Unknown),
+            _ => ("Checks: not loaded", StatusTone.Unknown), // only the most recent pull requests' checks are loaded
         };
 
         ReviewLabel = entry.Reviews.Value is { } reviews ? DescribeReviews(reviews) : "Reviews: unknown";
@@ -161,10 +161,10 @@ public sealed class ActionsSectionViewModel() : SectionViewModel<RunItemViewMode
     "No workflow runs yet.", "GitHub Actions is disabled or unavailable for this repository.");
 
 public sealed class PullRequestsSectionViewModel() : SectionViewModel<PullRequestItemViewModel>(
-    "No open pull requests.", "Pull requests are unavailable for this repository.");
+    "No open pull requests to show.", "Pull requests are turned off for this repository in Repo Watch.");
 
 public sealed class IssuesSectionViewModel() : SectionViewModel<IssueItemViewModel>(
-    "No open issues.", "Issues are turned off for this repository.");
+    "No open issues.", "Issues are turned off for this repository (on GitHub or in Repo Watch).");
 
 /// <summary>
 /// One independently refreshed section (Actions, pull requests or issues): its items plus the
@@ -211,7 +211,8 @@ public abstract partial class SectionViewModel<TItem> : ObservableObject
         Func<TSource, TKey> sourceKey,
         Func<TItem, TKey> itemKey,
         Func<TSource, TItem> create,
-        Action<TItem, TSource> update)
+        Action<TItem, TSource> update,
+        Func<TValue, ItemCount>? count = null)
         where TValue : class
         where TKey : notnull
     {
@@ -220,15 +221,31 @@ public abstract partial class SectionViewModel<TItem> : ObservableObject
         CollectionReconciler.Reconcile(Items, sources, sourceKey, itemKey, create, update, allowReorder);
 
         var updated = resource.LastSuccessAt is { } success ? TimeText.Ago(success, now) : null;
+        var retry = resource.LastError?.RetryAt is { } retryAt && retryAt > now
+            ? " · retrying at " + retryAt.ToLocalTime().ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture)
+            : "";
         (StatusText, StatusTone) = Freshness switch
         {
             Freshness.Fresh => ($"Updated {updated}", StatusTone.None),
             Freshness.Cached => ($"Cached · updated {updated}", StatusTone.Warning),
-            Freshness.Stale when resource.LastError is { } error => ($"Stale · updated {updated ?? "never"} · {error.Message}", StatusTone.Warning),
+            Freshness.Stale when resource.LastError is { } error => ($"Stale · updated {updated ?? "never"} · {error.Message}{retry}", StatusTone.Warning),
             Freshness.Stale => ($"Stale · updated {updated}", StatusTone.Warning),
-            Freshness.Failed => (resource.LastError?.Message ?? "Couldn't load", StatusTone.Failure),
+            Freshness.Failed => ((resource.LastError?.Message ?? "Couldn't load") + retry, StatusTone.Failure),
             _ => (isRefreshing ? "Loading…" : "Not loaded yet", StatusTone.Unknown),
         };
+
+        // A first page is not the whole list: say how much is shown.
+        if (resource.Value is { } shown && count?.Invoke(shown) is { } total && Freshness is Freshness.Fresh or Freshness.Cached or Freshness.Stale)
+        {
+            var listed = sources.Count;
+            var note = !total.IsExact ? $"showing {listed} · more may exist"
+                : total.Value > listed ? $"showing {listed} most recent of {total.Value}"
+                : null;
+            if (note is not null)
+            {
+                StatusText += " · " + note;
+            }
+        }
 
         Message = resource switch
         {

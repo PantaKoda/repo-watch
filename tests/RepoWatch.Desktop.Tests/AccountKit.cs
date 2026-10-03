@@ -102,6 +102,9 @@ internal sealed class AccountKit
 
     public MonitorCoordinator Coordinator { get; private set; } = null!;
 
+    /// <summary>Optional monitor factory handed to the coordinator; null lists repositories without loading them.</summary>
+    public IRepositoryMonitorFactory? MonitorFactory { get; set; }
+
     public static string DeviceCodeJson =>
         """{"device_code":"3584d83530557fdd1f46af8289938c8ef79f9dc5","user_code":"WDJB-MJHT","verification_uri":"https://github.com/login/device","expires_in":900,"interval":5}""";
 
@@ -122,7 +125,7 @@ internal sealed class AccountKit
         Accounts = new AccountService(Options, endpoints, http, Credentials, Settings, new ImmediateDispatcher(), Time, NullLoggerFactory.Instance);
         Watchlist = new WatchlistService(Settings, Accounts);
         Catalog = new AccessCatalogService(Accounts, Watchlist, http, endpoints, new ImmediateDispatcher(), Time, NullLogger<AccessCatalogService>.Instance);
-        Coordinator = new MonitorCoordinator(Accounts, Watchlist, Monitors);
+        Coordinator = new MonitorCoordinator(Accounts, Watchlist, Monitors, MonitorFactory);
         return this;
     }
 

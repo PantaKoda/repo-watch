@@ -105,7 +105,10 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         {
             { Availability: ResourceAvailability.AccessLost } => "No access",
             { Availability: ResourceAvailability.FeatureUnavailable } => "Actions unavailable",
-            { Value.DefaultBranch: { } health } => $"{metadata?.DefaultBranch ?? "default branch"}: {StatusPresentation.Label(health.Rollup.State)}",
+            { Value: { } actions } when actions.TrackedBranches.Any() || actions.MissingBranches.Count > 0 => string.Join(" · ", actions.TrackedBranches
+                .Select(b => $"{b.Branch ?? metadata?.DefaultBranch ?? "default branch"}: {StatusPresentation.Label(b.Rollup.State)}")
+                .Concat(actions.MissingBranches.Select(b => $"{b}: not found"))),
+            { Value: not null } => "No tracked branch",
             { LastError: not null } => "Actions: couldn't load",
             _ => "Actions: not loaded",
         };
@@ -116,9 +119,9 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         Actions.Apply(snapshot.Actions, now, isRefreshing, allowReorder,
             a => a.RecentRuns, r => r.Id, vm => vm.Id, r => Create(new RunItemViewModel(_browser, r.Id), vm => vm.Update(r, now)), (vm, r) => vm.Update(r, now));
         PullRequests.Apply(snapshot.PullRequests, now, isRefreshing, allowReorder,
-            p => p.Items, e => e.PullRequest.Number, vm => vm.Number, e => Create(new PullRequestItemViewModel(_browser, e.PullRequest.Number), vm => vm.Update(e)), (vm, e) => vm.Update(e));
+            p => p.Items, e => e.PullRequest.Number, vm => vm.Number, e => Create(new PullRequestItemViewModel(_browser, e.PullRequest.Number), vm => vm.Update(e)), (vm, e) => vm.Update(e), p => p.OpenCount);
         Issues.Apply(snapshot.Issues, now, isRefreshing, allowReorder,
-            i => i.Items, i => i.Number, vm => vm.Number, i => Create(new IssueItemViewModel(_browser, i.Number), vm => vm.Update(i, now)), (vm, i) => vm.Update(i, now));
+            i => i.Items, i => i.Number, vm => vm.Number, i => Create(new IssueItemViewModel(_browser, i.Number), vm => vm.Update(i, now)), (vm, i) => vm.Update(i, now), i => i.OpenCount);
 
         var worst = new[] { Actions.Freshness, PullRequests.Freshness, Issues.Freshness };
         FreshnessWarning = worst.Contains(Freshness.Failed) ? "Some data couldn't be loaded"

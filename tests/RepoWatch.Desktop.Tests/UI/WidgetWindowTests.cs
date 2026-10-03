@@ -131,7 +131,7 @@ public sealed class WidgetWindowTests
         Assert.Contains("no longer has access", retired.Actions.Message, StringComparison.Ordinal);
 
         var dotfiles = viewModel.Repositories.First(r => r.Name == "demo-user/dotfiles");
-        Assert.Equal("Issues are turned off for this repository.", dotfiles.Issues.Message);
+        Assert.Equal("Issues are turned off for this repository (on GitHub or in Repo Watch).", dotfiles.Issues.Message);
         Assert.Equal("main: No checks", dotfiles.BranchStatus);
 
         viewModel.ShowRepositoryCommand.Execute(legacy);

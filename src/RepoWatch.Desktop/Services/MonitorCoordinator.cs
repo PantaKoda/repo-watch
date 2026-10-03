@@ -29,11 +29,14 @@ public sealed class MonitorCoordinator : IDisposable
     private readonly AccountService _accounts;
     private readonly WatchlistService _watchlist;
     private readonly MonitorHost _monitors;
+    private readonly IRepositoryMonitorFactory? _factory;
     private (AccountState State, AccountKey? Account, AccountSettings Settings)? _applied;
     private IWatchlistAwareMonitor? _current;
 
-    public MonitorCoordinator(AccountService accounts, WatchlistService watchlist, MonitorHost monitors)
+    /// <param name="factory">Creates the GitHub polling monitor; without one (tests), watched repositories are listed but never loaded.</param>
+    public MonitorCoordinator(AccountService accounts, WatchlistService watchlist, MonitorHost monitors, IRepositoryMonitorFactory? factory = null)
     {
+        _factory = factory;
         _accounts = accounts;
         _watchlist = watchlist;
         _monitors = monitors;
@@ -65,14 +68,20 @@ public sealed class MonitorCoordinator : IDisposable
         var sameAccountAndState = _applied is { } last && last.State == inputs.State && last.Account == inputs.Account;
         _applied = inputs;
 
-        if (sameAccountAndState && !removed && _current is not null && _current.Account == inputs.Account)
+        // A placeholder monitor is upgraded to polling once there is something to poll.
+        var upgrade = _current is WatchlistMonitor && _factory is not null && inputs.Current.Watchlist.Count > 0;
+        if (sameAccountAndState && !removed && !upgrade && _current is not null && _current.Account == inputs.Account)
         {
             _current.ApplyWatchlist(inputs.Current);
             return;
         }
 
-        var watchlistMonitor = _accounts.State switch
+        // Nothing watched: no monitor and no requests, just the account state.
+        IWatchlistAwareMonitor? watchlistMonitor = _accounts.State switch
         {
+            AccountState.SignedIn or AccountState.Offline when _watchlist.Account is { } account && _watchlist.Current.Watchlist.Count > 0
+                => _factory?.Create(account, _watchlist.Current)
+                    ?? new WatchlistMonitor(_accounts.State == AccountState.Offline ? ConnectionState.Offline : ConnectionState.SignedInIdle, account, _watchlist.Current),
             AccountState.SignedIn when _watchlist.Account is { } account => new WatchlistMonitor(ConnectionState.SignedInIdle, account, _watchlist.Current),
             AccountState.Offline when _watchlist.Account is { } account => new WatchlistMonitor(ConnectionState.Offline, account, _watchlist.Current),
             _ => null,
@@ -92,7 +101,7 @@ public sealed class MonitorCoordinator : IDisposable
 
 /// <summary>
 /// Shows the watched repositories in the user's order without loading anything; every section is
-/// "not loaded". Replaced by the polling monitor in Stage 06. Makes no requests.
+/// "not loaded". Used when there is nothing to poll or no GitHub session. Makes no requests.
 /// </summary>
 public sealed class WatchlistMonitor : IWatchlistAwareMonitor
 {

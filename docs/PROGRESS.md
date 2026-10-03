@@ -9,7 +9,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 03 | Functional desktop shell | completed |
 | 04 | Sign in with GitHub | completed |
 | 05 | Repository access and watchlist picker | completed |
-| 06 | Fetch and normalize real GitHub data | pending |
+| 06 | Fetch and normalize real GitHub data | completed |
 | 07 | Durable caching and efficient synchronization | pending |
 | 08 | Modern visuals and real transparency | pending |
 | 09 | Desktop behavior and notifications | pending |
@@ -270,8 +270,99 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
 - Installing or changing access through the app's links was done by the maintainer on GitHub, not through Repo Watch's buttons.
 
 **Next concrete task**
-- Stage 06: replace `WatchlistMonitor` with real data. Load workflow runs, PRs (reviews, checks) and issues for watched repositories using `GitHubApiClient`, per section and independently, with the access classification feeding the widget.
+- Stage 06 (done below).
 
+## Stage 06 — Fetch and normalize real GitHub data: completed
+
+**Implemented**
+- `RepositoryDataClient` (GitHub project), read-only:
+  - **Metadata:** `GET /repositories/{id}`. Loading by ID follows renames and transfers.
+  - **Actions (REST):**
+    - Recent runs: `GET /actions/runs?per_page=20`.
+    - Per tracked branch: the head commit from `GET /commits/{branch}/status`, then that commit's runs from `GET /actions/runs?head_sha=`.
+    - Current-commit selection keeps the latest attempt per run, the newest run per workflow, event and branch, and that branch only.
+    - Workflow filters apply to both the recent runs and branch health.
+    - A 404 on the run list means Actions is unavailable. A missing branch is skipped.
+  - **Pull requests:** one GraphQL query per repository returns reviews, pending review requests and `mergeable`.
+    - **All:** the 30 most recently updated open PRs, with an exact `totalCount`.
+    - **Mine:** two GraphQL searches, `author:me` and `review-requested:me`, deduplicated, so older PRs aren't missed. The count is exact only when both searches returned everything; otherwise it is a lower bound ("1+").
+    - **Checks:** loaded over REST (`/commits/{sha}/check-runs` + `/status`) for the 10 most recent listed PRs. A live run showed that GraphQL commit data (`statusCheckRollup`) is denied without Contents access.
+  - **Pull request rules:**
+    - Reviews, checks and mergeability stay separate.
+    - An incomplete check list never rolls up to Passing.
+    - A GraphQL error for one PR (by path) fails only that PR's reviews; an error not tied to a PR fails all reviews. A denied or failed check request shows "couldn't load", never "No checks".
+    - "Mine" means authored by me, or my review requested directly. Team requests don't count, because membership isn't established.
+    - Nothing is shown as "ready to merge".
+    - Partial lists are labeled ("showing 30 most recent of 45", "more may exist"). Rate-limited sections say when polling resumes.
+  - **Issues:** one GraphQL query returns the 20 most recently updated open issues, an exact `totalCount` (which excludes pull requests), and `hasIssuesEnabled`.
+  - **Errors:** GraphQL errors are classified (NOT_FOUND, FORBIDDEN, RATE_LIMITED). A GraphQL rate limit uses the `x-ratelimit-reset` header. A connection reset while reading a body (`IOException`) is a network error. Messages never echo repository names. `GitHubApiClient` gained `PostGraphQLAsync`.
+  - **Missing branches:** a missing tracked branch is listed (`release: not found`). It is never silently replaced as the primary branch.
+- `PollingRepositoryMonitor` (Desktop) replaces the placeholder `WatchlistMonitor` whenever an account is signed in and its watchlist is non-empty (`IRepositoryMonitorFactory` → `GitHubMonitorFactory`).
+  - **Loop:** one background loop refreshes one repository at a time.
+  - **Intervals:** active work 20 s, normal 90 s, after a failure 60 s. Manual refresh and option changes refresh at once. A result for superseded options is discarded.
+  - **Rate limits:** pause all polling until the reset (at most 1 h). A manual refresh during the pause answers at once.
+  - **Resilience:** an unexpected exception in one refresh is logged and recorded on that repository (values kept), and polling continues.
+  - **Access restored:** sections lose their "access lost" state as soon as metadata loads again, so a later failure shows its own error.
+  - **Connection state:** Offline when every repository's last refresh failed on the network; otherwise Polling.
+  - **Lifetime:** runs on the session `Lifetime`. Sign-out, account change or a removal disposes it.
+- `RepositoryRefresh`: metadata first. 404/403/SSO on the repository means access lost, and every section's cached content is withheld. Otherwise Actions, pull requests and issues load and fail independently, each keeping its last good value. Pull requests set to "None" and issues turned off (in Repo Watch or on GitHub) make no request.
+- **Multi-branch health:** `ActionsState.Branches` holds every tracked branch's health. Attention considers all of them. The row shows `main: Passing · release: Failing`.
+
+**Checks run**
+- `dotnet test --solution RepoWatch.slnx`: 282 passed before the review fixes (296 after).
+- 13 new HTTP-contract tests (`RepositoryDataTests`):
+  - metadata by ID, and a lost repository;
+  - branch head and latest attempt;
+  - workflow filters;
+  - missing branch, and disabled Actions;
+  - a failing branch lookup;
+  - pull requests: the GraphQL request shape, re-run supersession, legacy status, reviews on older commits, team requests, the "Mine" filter, incomplete checks and draft PRs;
+  - GraphQL NOT_FOUND;
+  - exact issue counts, a ghost author and disabled issues;
+  - GraphQL rate limits.
+- 11 monitor tests (`PollingMonitorTests`, `CoordinatorPollingTests`):
+  - section independence and keeping the last good value;
+  - access loss;
+  - network failure → Offline with cached values;
+  - turned-off sections make no requests;
+  - only watched repositories are requested, and removed ones stop;
+  - superseded options are discarded;
+  - the rate-limit pause;
+  - dispose stops requests;
+  - active repositories refresh sooner;
+  - the coordinator starts polling only for a non-empty watchlist, applies options in place, and rebuilds on removal or sign-out.
+- **Live smoke check** against github.com (PantaKoda, 97 accessible repositories, approved by device flow on the maintainer's phone). The harness scanned every repository and refreshed three private ones exactly as the app does: hexDumper (failed runs), DataBaseModels (one open PR) and 24go. It then compared the results with plain REST:
+  - open PRs from `/pulls`: matched;
+  - open issues from `/issues` minus pull requests: matched. DataBaseModels' REST issue list contains its PR, and Repo Watch correctly counts 0 issues.
+  - The first live run found that `GET /git/ref/heads/{branch}` and `/branches/{branch}` return 403 without Contents access. Branch heads now come from `/commits/{branch}/status`; the probe confirmed 200 for that endpoint and 404 for a missing branch.
+  - After the fix, hexDumper showed its 6 recent runs including 2 failed. Its `master` head commit has no runs, so it shows "No checks", not the older failure.
+  - The real app (Debug build, frosted dark) restored the session and showed the three repositories with real data and a "Polling" badge. Screenshots are in `artifacts/screenshots/stage06/` (not committed).
+  - The test session was signed out afterwards: the credential was removed and the data folder deleted.
+
+**Review of PR #6 (all seven findings fixed)**
+- Polling survives unexpected exceptions; body read resets are network errors.
+- "Mine" uses search, with honest counts.
+- GraphQL partial errors are mapped per PR.
+- Manual refresh no longer waits during a rate-limit pause.
+- A missing primary branch is explicit.
+- "No access" is cleared once access returns.
+- GraphQL rate limits use the reset header.
+- Each fix has a regression test. `dotnet test`: 296 passed.
+- **Live re-check:** the new "Mine" search and the "All" query both returned DataBaseModels #1 with its reviews. The same run proved the reviewer's point: `statusCheckRollup` came back as a FORBIDDEN partial error, which the old code would have shown as "No checks". Checks now use REST endpoints already confirmed live (`check-runs` and `status` return 200 with this app's permissions). A live run of the REST check path on a PR is still pending; it needs another device-flow approval.
+
+**Remaining limitations**
+- **Workflow jobs:** not fetched yet. No UI shows them; add them when run rows can expand.
+- **PR checks:** loaded for the 10 most recent listed PRs only (two REST requests each); the rest show "Checks: not loaded".
+- **GitHub search:** results can lag the live state by a short time, so a new PR may appear in "Mine" slightly later.
+- **Live coverage:**
+  - None of the accessible repositories has open issues, so live issue counts were verified only at 0. Contract fixtures cover non-zero counts.
+  - No accessible open PR has check runs, so live PR checks have not been seen with real results.
+  - Organization, SSO and team paths are fixture-only.
+- **Pull request window:** "Mine" and the items list consider the 30 most recently updated open PRs. The count is always the exact total.
+- **Caching:** no ETags, persistence of snapshots, wake/network-recovery triggers or "Pause monitoring" yet (Stage 07). Data shows "Not loaded yet" after a restart until the first refresh.
+
+**Next concrete task**
+- Stage 07: one bounded, account-aware scheduler with ETag conditional requests, SQLite snapshot caching with account isolation, wake/network recovery, hidden/battery slow-down, and a Pause monitoring control.
 ## Stage 08 — Visuals pulled forward (user request, before Stage 06): partial
 
 The user asked for a UI uplift ahead of order: optional transparency with a slider, motion, a "radiating" state for in-progress work, and a futuristic space-station look. Stage 06 remains the next stage in order. The rest of Stage 08 is still pending: density, the accent option, a full manual light/dark × material × background matrix with DPI checks, and the high-contrast/remote fallbacks observed on a real machine.
