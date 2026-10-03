@@ -31,6 +31,7 @@ public sealed partial class WatchedItemViewModel : ObservableObject
     private readonly AccessCatalogService _catalog;
     private readonly IExternalBrowser _browser;
     private bool _loading;
+    private bool _branchesEdited;
 
     public WatchedItemViewModel(WatchedRepository entry, WatchlistService watchlist, AccessCatalogService catalog, IExternalBrowser browser)
     {
@@ -81,7 +82,11 @@ public sealed partial class WatchedItemViewModel : ObservableObject
         PullRequests = entry.PullRequests;
         ShowIssues = entry.ShowIssues;
         NotificationsEnabled = entry.NotificationsEnabled;
-        Branches = string.Join(", ", entry.Branches);
+        if (!_branchesEdited)
+        {
+            Branches = string.Join(", ", entry.Branches); // never overwrite text the user hasn't saved yet
+        }
+
         WorkflowSummary = entry.WorkflowIds.Count == 0 ? "All workflows" : $"{entry.WorkflowIds.Count} selected workflow(s)";
         foreach (var workflow in Workflows)
         {
@@ -102,6 +107,7 @@ public sealed partial class WatchedItemViewModel : ObservableObject
                 WatchedAccess.NotGranted => ("GitHub hasn't granted Repo Watch access to this repository (or the access was removed). Grant it on GitHub, or remove it here.", StatusTone.Failure, _catalog.InstallationUrl),
                 WatchedAccess.Suspended => ("The owner's Repo Watch installation is suspended.", StatusTone.Failure, installation?.Installation.ManageUrl),
                 WatchedAccess.SsoRequired => ("The organization requires single sign-on before Repo Watch can see this repository.", StatusTone.Warning, installation?.Error?.ActionUrl),
+                _ when catalog.SsoHidesInstallations => ("Access couldn't be confirmed: GitHub hid organizations that require single sign-on. Authorize SSO on GitHub, then refresh.", StatusTone.Unknown, null),
                 _ => ("Access couldn't be confirmed because the repository list is incomplete. Refresh to try again.", StatusTone.Unknown, null),
             };
         }
@@ -133,13 +139,30 @@ public sealed partial class WatchedItemViewModel : ObservableObject
     private async Task LoadWorkflowsAsync()
     {
         var entry = _watchlist.Repositories.FirstOrDefault(w => w.RepositoryId == Id);
-        if (entry is null || entry.Owner.Length == 0)
+        var account = _watchlist.Account;
+        if (entry is null || account is null)
         {
             return;
         }
 
+        // Use the repository's current name from the catalog (matched by ID) so a rename or
+        // transfer doesn't send the request to the old name.
+        var current = _catalog.Catalog?.Repositories.FirstOrDefault(r => r.Id == Id);
+        var (owner, name) = current is not null ? (current.Owner, current.Name) : (entry.Owner, entry.Name);
+        if (owner.Length == 0)
+        {
+            WorkflowStatus = "Refresh the repository list first.";
+            return;
+        }
+
         WorkflowStatus = "Loading workflows…";
-        var result = await _catalog.ListWorkflowsAsync(entry.Owner, entry.Name, CancellationToken.None);
+        var result = await _catalog.ListWorkflowsAsync(owner, name, CancellationToken.None);
+        if (_watchlist.Account != account || !_watchlist.IsWatched(Id))
+        {
+            WorkflowStatus = null; // signed out, switched account or removed meanwhile: discard
+            return;
+        }
+
         if (!result.IsSuccess)
         {
             WorkflowStatus = $"Couldn't load workflows: {result.Error!.Message}";
@@ -161,11 +184,23 @@ public sealed partial class WatchedItemViewModel : ObservableObject
 
     partial void OnNotificationsEnabledChanged(bool value) => Save(w => w with { NotificationsEnabled = value });
 
-    [RelayCommand]
-    private void SaveBranches() => Save(w => w with
+    partial void OnBranchesChanged(string value)
     {
-        Branches = Branches.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal).ToList(),
-    });
+        if (!_loading)
+        {
+            _branchesEdited = true;
+        }
+    }
+
+    [RelayCommand]
+    private void SaveBranches()
+    {
+        _branchesEdited = false;
+        Save(w => w with
+        {
+            Branches = Branches.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal).ToList(),
+        });
+    }
 
     private void ToggleWorkflow(long workflowId, bool selected)
     {
@@ -201,13 +236,17 @@ public sealed partial class WatchlistViewModel : ObservableObject, IDisposable
     {
         _watchlist = watchlist;
         _catalog = catalog;
-        _browser = browser;
+        Links = new LinkNotice(browser);
+        _browser = Links;
         _watchlist.Changed += OnChanged;
         _catalog.Changed += OnChanged;
         Sync();
     }
 
     public ObservableCollection<WatchedItemViewModel> Items { get; } = [];
+
+    /// <summary>Feedback when a Manage access link could not be opened.</summary>
+    public LinkNotice Links { get; }
 
     [ObservableProperty] public partial bool IsEmpty { get; private set; }
 

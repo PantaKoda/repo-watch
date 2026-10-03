@@ -26,6 +26,7 @@ public sealed class AccessCatalogClient(GitHubApiClient api, TimeProvider time)
 
         var access = new List<InstallationAccess>();
         var repositories = new Dictionary<long, AccessibleRepository>();
+        ResourceError? rateLimit = null;
         foreach (var dto in installations.Value!.Items)
         {
             var installation = ToInstallation(dto);
@@ -35,12 +36,24 @@ public sealed class AccessCatalogClient(GitHubApiClient api, TimeProvider time)
                 continue;
             }
 
+            // Once rate limited, further requests would hit the same limit: report the rest as not listed.
+            if (rateLimit is not null)
+            {
+                access.Add(new InstallationAccess(installation, InstallationHealth.Unavailable, RepositoriesComplete: false, rateLimit));
+                continue;
+            }
+
             var page = await api.GetAllPagesAsync(api.ApiUri($"user/installations/{installation.Id}/repositories"), AccessJsonContext.Default.RepositoriesPage,
                 p => p.Repositories, cancellationToken).ConfigureAwait(false);
             if (!page.IsSuccess)
             {
                 var health = page.Error!.Kind == ResourceErrorKind.SsoRequired ? InstallationHealth.SsoRequired : InstallationHealth.Unavailable;
                 access.Add(new InstallationAccess(installation, health, RepositoriesComplete: false, page.Error));
+                if (page.Error.Kind == ResourceErrorKind.RateLimited)
+                {
+                    rateLimit = page.Error;
+                }
+
                 continue;
             }
 
@@ -49,14 +62,18 @@ public sealed class AccessCatalogClient(GitHubApiClient api, TimeProvider time)
                 repositories.TryAdd(repository.Id, repository); // de-duplicate across installations by ID
             }
 
-            access.Add(new InstallationAccess(installation, InstallationHealth.Ok, page.Value.IsComplete));
+            access.Add(new InstallationAccess(installation, InstallationHealth.Ok, page.Value.IsComplete) { SsoPartial = page.Value.SsoPartial });
         }
 
         var ordered = repositories.Values
             .OrderBy(r => r.Owner, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        return ApiResult<AccessCatalog>.Ok(new AccessCatalog(access, ordered, installations.Value.IsComplete, time.GetUtcNow()));
+        return ApiResult<AccessCatalog>.Ok(new AccessCatalog(access, ordered, installations.Value.IsComplete, time.GetUtcNow())
+        {
+            SsoHidesInstallations = installations.Value.SsoPartial,
+            SsoHiddenOrganizationIds = installations.Value.SsoHiddenOrganizationIds,
+        });
     }
 
     /// <summary>Workflows of one repository (GET /repos/{owner}/{repo}/actions/workflows), for per-repository filters.</summary>

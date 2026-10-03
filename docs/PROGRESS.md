@@ -252,8 +252,21 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
 4. Watched two private repositories; after a restart both were still watched, in order.
 5. Sign-out removed the credential (none left in Credential Manager) and kept the 2 watchlist entries for the next sign-in.
 
+**Review fixes (PR #4)**
+- **Picker rows are reused by repository ID** across catalog refreshes, so the visible checkboxes always follow the watchlist after *Refresh list*, *Add all* or a removal on the Watched tab, and renamed repositories are added under their new name.
+- `X-GitHub-SSO: partial-results` on **successful** responses is now honored. `PagedList.SsoPartial` records it with any organization IDs it names. The catalog marks `SsoHidesInstallations`, or `InstallationAccess.SsoPartial` per installation, and is incomplete. Affected watched repositories show "access couldn't be confirmed … authorize SSO", never "not granted". The Access tab explains it.
+- `TokenUnavailableException` from token renewal, including after a 401, is converted to a `Network` `ApiResult` in `GitHubApiClient`, so *Choose workflows…* can't crash the app.
+- Workflow listing runs on the session lifetime (sign-out cancels it and gives a result, never an exception), uses the repository's current name from the catalog by ID, and discards results if the account changed or the repository was removed meanwhile.
+- A rate-limited repository listing stops the loop: the remaining installations are reported as unavailable with the same `RetryAt`.
+- Reconnect no longer reopens full onboarding; only a first-time user (onboarding never finished and no account) gets it. Onboarding opened while signed in loads existing access immediately.
+- Link buttons in the picker, the Access tab and the watchlist editor show a notice when a link is refused or the browser can't start (`LinkNotice`).
+- The picker no longer says "GitHub no longer lists"; it says "no longer grants" only for a complete list and "access couldn't be confirmed" otherwise.
+- Unsaved Branches text survives other option changes.
+- `MonitorCoordinator` updates the current monitor in place for option, order, name and addition changes, and rebuilds only on account/state changes or removals (`IWatchlistAwareMonitor`). In Stage 06, toggling an option won't restart polling, and removal still stops work immediately.
+- 15 regression tests; 243 tests passing.
+
 **Not verified live**
-- Organization repositories, suspended installations, SSO and pending organization approval: the maintainer account has no organization installation. These are covered by contract fixtures only.
+- Organization repositories, suspended installations, SSO (including partial results) and pending organization approval: the maintainer account has no organization installation. These are covered by contract fixtures only. That GitHub App user tokens receive `X-GitHub-SSO: partial-results` is documented for tokens generally but not confirmed for this app.
 - Installing or changing access through the app's links was done by the maintainer on GitHub, not through Repo Watch's buttons.
 
 **Next concrete task**

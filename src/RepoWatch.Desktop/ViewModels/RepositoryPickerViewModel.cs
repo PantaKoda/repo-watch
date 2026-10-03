@@ -18,39 +18,52 @@ public sealed partial class RepositoryChoiceViewModel : ObservableObject
 
     public RepositoryChoiceViewModel(AccessibleRepository repository, bool isSelected, Action<RepositoryChoiceViewModel, bool> toggle)
     {
+        Id = repository.Id;
         Repository = repository;
         _toggle = toggle;
-        _syncing = true;
-        IsSelected = isSelected;
-        _syncing = false;
-
-        var badges = new List<string>();
-        if (repository.IsPrivate)
-        {
-            badges.Add("private");
-        }
-
-        badges.Add(repository.OwnerKind == RepositoryOwnerKind.Organization ? "organization" : "personal");
-        if (repository.IsArchived)
-        {
-            badges.Add("archived");
-        }
-
-        Badges = string.Join(" · ", badges);
+        Sync(isSelected);
     }
 
-    public AccessibleRepository Repository { get; }
+    /// <summary>Stable identity; the row is reused for this repository across catalog refreshes.</summary>
+    public long Id { get; }
 
-    public long Id => Repository.Id;
+    /// <summary>Current repository data (owner/name can change after a rename or transfer).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FullName), nameof(Badges), nameof(Description), nameof(HasDescription))]
+    public partial AccessibleRepository Repository { get; private set; }
 
     public string FullName => Repository.FullName;
 
-    public string Badges { get; }
+    public string Badges
+    {
+        get
+        {
+            var badges = new List<string>();
+            if (Repository.IsPrivate)
+            {
+                badges.Add("private");
+            }
+
+            badges.Add(Repository.OwnerKind == RepositoryOwnerKind.Organization ? "organization" : "personal");
+            if (Repository.IsArchived)
+            {
+                badges.Add("archived");
+            }
+
+            return string.Join(" · ", badges);
+        }
+    }
 
     /// <summary>Untrusted repository text; displayed as plain text only.</summary>
     public string? Description => Repository.Description;
 
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    internal void Update(AccessibleRepository repository, bool isSelected)
+    {
+        Repository = repository;
+        Sync(isSelected);
+    }
 
     [ObservableProperty]
     public partial bool IsSelected { get; set; }
@@ -88,6 +101,7 @@ public sealed partial class RepositoryPickerViewModel : ObservableObject, IDispo
     public RepositoryPickerViewModel(AccessCatalogService catalog, WatchlistService watchlist, IExternalBrowser browser, TimeProvider time)
     {
         _time = time;
+        Links = new LinkNotice(browser);
         _catalog = catalog;
         _watchlist = watchlist;
         _browser = browser;
@@ -95,6 +109,9 @@ public sealed partial class RepositoryPickerViewModel : ObservableObject, IDispo
         _watchlist.Changed += OnWatchlistChanged;
         Rebuild();
     }
+
+    /// <summary>Feedback when a link (e.g. Grant access) could not be opened.</summary>
+    public LinkNotice Links { get; }
 
     public ObservableCollection<RepositoryChoiceViewModel> Shown { get; } = [];
 
@@ -167,7 +184,7 @@ public sealed partial class RepositoryPickerViewModel : ObservableObject, IDispo
     {
         if (_catalog.InstallationUrl is { } url)
         {
-            await _browser.OpenAsync(url);
+            await Links.OpenAsync(url);
         }
     }
 
@@ -215,10 +232,23 @@ public sealed partial class RepositoryPickerViewModel : ObservableObject, IDispo
             _ => null,
         };
 
+        // Reuse one row per repository ID so the visible rows (Shown) are always the same
+        // instances that watchlist changes update.
+        var existing = _all.ToDictionary(c => c.Id);
         _all.Clear();
-        if (catalog is not null)
+        foreach (var repository in catalog?.Repositories ?? [])
         {
-            _all.AddRange(catalog.Repositories.Select(r => new RepositoryChoiceViewModel(r, _watchlist.IsWatched(r.Id), Toggle)));
+            var watched = _watchlist.IsWatched(repository.Id);
+            if (existing.TryGetValue(repository.Id, out var choice))
+            {
+                choice.Update(repository, watched);
+            }
+            else
+            {
+                choice = new RepositoryChoiceViewModel(repository, watched, Toggle);
+            }
+
+            _all.Add(choice);
         }
 
         var owners = catalog?.Owners ?? [];
@@ -246,9 +276,13 @@ public sealed partial class RepositoryPickerViewModel : ObservableObject, IDispo
 
         var total = _all.Count;
         var selected = _all.Count(c => c.IsSelected);
-        var notShownSelected = _catalog.Catalog is null ? 0 : _watchlist.Repositories.Count - selected;
-        SelectedCountText = string.Create(CultureInfo.InvariantCulture, $"{selected} of {total} repositories selected for the widget")
-            + (notShownSelected > 0 ? $" (plus {notShownSelected} watched repositories GitHub no longer lists)" : "");
+        var notListed = _catalog.Catalog is null ? 0 : _watchlist.Repositories.Count - selected;
+        var noun = notListed == 1 ? "repository" : "repositories";
+        var notListedText = notListed <= 0 ? ""
+            : _catalog.Catalog!.IsComplete
+                ? $" (plus {notListed} watched {noun} GitHub no longer grants)"
+                : $" (plus {notListed} watched {noun} whose access couldn't be confirmed)";
+        SelectedCountText = string.Create(CultureInfo.InvariantCulture, $"{selected} of {total} repositories selected for the widget") + notListedText;
         ShownText = filter.IsFiltered ? $"Showing {shown.Count} of {total}" : $"Showing all {total}";
 
         var toAdd = shown.Count(c => !c.IsSelected);

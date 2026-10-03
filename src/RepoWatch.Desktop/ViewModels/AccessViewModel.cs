@@ -20,7 +20,7 @@ public sealed partial class InstallationItemViewModel(InstallationAccess access,
 
     public StatusTone Tone => access.Health switch
     {
-        InstallationHealth.Ok when access.Installation.MissingPermissions.Count > 0 => StatusTone.Warning,
+        InstallationHealth.Ok when access.Installation.MissingPermissions.Count > 0 || access.SsoPartial => StatusTone.Warning,
         InstallationHealth.Ok => StatusTone.Success,
         InstallationHealth.Unavailable => StatusTone.Warning,
         _ => StatusTone.Failure,
@@ -33,6 +33,7 @@ public sealed partial class InstallationItemViewModel(InstallationAccess access,
         InstallationHealth.Unavailable => $"Couldn't list repositories: {access.Error?.Message}",
         _ when access.Installation.MissingPermissions.Count > 0 =>
             $"Missing read permissions: {string.Join(", ", access.Installation.MissingPermissions)}. An owner may need to accept updated permissions on GitHub.",
+        _ when access.SsoPartial => "Some repositories are hidden until you authorize single sign-on for this organization on GitHub. They're not removed; refresh after authorizing.",
         _ when !access.RepositoriesComplete => "Only part of the repository list could be loaded.",
         _ => "Access granted.",
     };
@@ -69,12 +70,19 @@ public sealed partial class AccessViewModel : ObservableObject, IDisposable
     public AccessViewModel(AccessCatalogService catalog, IExternalBrowser browser)
     {
         _catalog = catalog;
-        _browser = browser;
+        Links = new LinkNotice(browser);
+        _browser = Links;
         _catalog.Changed += OnChanged;
         Refresh();
     }
 
     public ObservableCollection<InstallationItemViewModel> Installations { get; } = [];
+
+    /// <summary>Feedback when Grant access, Manage access or an SSO link could not be opened.</summary>
+    public LinkNotice Links { get; }
+
+    /// <summary>GitHub left out organizations that require single sign-on (X-GitHub-SSO: partial-results).</summary>
+    [ObservableProperty] public partial string? SsoHiddenText { get; private set; }
 
     [ObservableProperty] public partial bool IsLoading { get; private set; }
 
@@ -112,6 +120,9 @@ public sealed partial class AccessViewModel : ObservableObject, IDisposable
         }
 
         HasInstallations = Installations.Count > 0;
+        SsoHiddenText = _catalog.Catalog is { SsoHidesInstallations: true }
+            ? "GitHub hid installations from organizations that require single sign-on. Authorize single sign-on for those organizations on GitHub, then refresh. Their watched repositories show \"access couldn't be confirmed\"; they aren't removed."
+            : null;
         ShowNoInstallations = _catalog.Status == CatalogStatus.Loaded && !HasInstallations;
         StatusText = _catalog.Status switch
         {

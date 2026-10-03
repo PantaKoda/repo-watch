@@ -26,8 +26,18 @@ public sealed record ApiResult<T>(T? Value, ResourceError? Error)
     public static ApiResult<T> Fail(ResourceError error) => new(default, error);
 }
 
-/// <summary>All pages of a list, or as many as the page limit allowed.</summary>
-public sealed record PagedList<T>(IReadOnlyList<T> Items, bool IsComplete);
+/// <summary>
+/// All pages of a list, or as many as the page limit allowed. <see cref="SsoPartial"/> means GitHub
+/// left out results from organizations that require SAML single sign-on (<c>X-GitHub-SSO: partial-results</c>),
+/// so the list is incomplete even though every page loaded.
+/// </summary>
+public sealed record PagedList<T>(IReadOnlyList<T> Items, bool IsComplete)
+{
+    public bool SsoPartial { get; init; }
+
+    /// <summary>IDs of the organizations GitHub left out, when it named them.</summary>
+    public IReadOnlyList<long> SsoHiddenOrganizationIds { get; init; } = [];
+}
 
 /// <summary>
 /// Authenticated GET requests to the REST API with error classification and safe pagination.
@@ -61,12 +71,18 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
         Uri first, JsonTypeInfo<TPage> typeInfo, Func<TPage, IEnumerable<TItem>> items, CancellationToken cancellationToken, int maxPages = DefaultMaxPages)
     {
         var all = new List<TItem>();
+        var ssoPartial = false;
+        var hiddenOrganizations = new HashSet<long>();
         Uri? next = WithPageSize(first);
         for (var page = 0; next is not null; page++)
         {
             if (page == maxPages)
             {
-                return ApiResult<PagedList<TItem>>.Ok(new PagedList<TItem>(all, IsComplete: false));
+                return ApiResult<PagedList<TItem>>.Ok(new PagedList<TItem>(all, IsComplete: false)
+                {
+                    SsoPartial = ssoPartial,
+                    SsoHiddenOrganizationIds = hiddenOrganizations.Order().ToList(),
+                });
             }
 
             var response = await SendAsync(next, cancellationToken).ConfigureAwait(false);
@@ -83,10 +99,48 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
             }
 
             all.AddRange(items(parsed.Value!));
+            if (PartialSsoResults(message.Headers) is { } hidden)
+            {
+                ssoPartial = true;
+                hiddenOrganizations.UnionWith(hidden);
+            }
+
             next = NextLink(message.Headers);
         }
 
-        return ApiResult<PagedList<TItem>>.Ok(new PagedList<TItem>(all, IsComplete: true));
+        return ApiResult<PagedList<TItem>>.Ok(new PagedList<TItem>(all, IsComplete: !ssoPartial)
+        {
+            SsoPartial = ssoPartial,
+            SsoHiddenOrganizationIds = hiddenOrganizations.Order().ToList(),
+        });
+    }
+
+    /// <summary>
+    /// Organization IDs from <c>X-GitHub-SSO: partial-results; organizations=1,2</c> on a successful response
+    /// (empty when GitHub did not name them), or null when the results are not partial.
+    /// </summary>
+    public static IReadOnlyList<long>? PartialSsoResults(HttpResponseHeaders headers)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        if (!headers.TryGetValues("X-GitHub-SSO", out var values))
+        {
+            return null;
+        }
+
+        var header = string.Join(";", values);
+        if (!header.Contains("partial-results", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var organizations = header.Split(';').Select(p => p.Trim())
+            .FirstOrDefault(p => p.StartsWith("organizations=", StringComparison.OrdinalIgnoreCase));
+        return organizations is null
+            ? []
+            : organizations["organizations=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(id => long.TryParse(id, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : 0)
+                .Where(id => id > 0)
+                .ToList();
     }
 
     /// <summary>The rel="next" URL from a Link header, if it points at the API host.</summary>
@@ -130,7 +184,17 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
 
     private async Task<(HttpResponseMessage? Message, ResourceError? Error)> SendAsync(Uri uri, CancellationToken cancellationToken)
     {
-        var token = await tokens.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        string? token;
+        try
+        {
+            token = await tokens.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Auth.TokenUnavailableException ex)
+        {
+            // Renewal was due but GitHub couldn't be reached: a classified network error, never an exception.
+            return (null, Error(ResourceErrorKind.Network, ex.Message));
+        }
+
         if (token is null)
         {
             return (null, Error(ResourceErrorKind.Unauthorized, "Not signed in to GitHub."));
@@ -156,7 +220,15 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
             if (message.StatusCode == HttpStatusCode.Unauthorized && attempt == 0)
             {
                 message.Dispose();
-                token = await tokens.HandleUnauthorizedAsync(token, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    token = await tokens.HandleUnauthorizedAsync(token, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Auth.TokenUnavailableException ex)
+                {
+                    return (null, Error(ResourceErrorKind.Network, ex.Message));
+                }
+
                 if (token is null)
                 {
                     return (null, Error(ResourceErrorKind.Unauthorized, "GitHub no longer accepts this sign-in."));

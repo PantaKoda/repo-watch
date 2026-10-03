@@ -219,7 +219,9 @@ public sealed class AppShell(
     /// </summary>
     public void BeginSignIn()
     {
-        if (!settings.App.OnboardingCompleted)
+        // Only a first-time user (never finished onboarding, no account yet) gets the full onboarding;
+        // reconnecting goes straight to sign-in in settings.
+        if (!settings.App.OnboardingCompleted && settings.App.ActiveAccount is null)
         {
             OpenOnboarding();
             return;

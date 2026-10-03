@@ -6,6 +6,8 @@
              x:DataType="vm:AccessViewModel">
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
+      <TextBlock Text="{Binding Links.Notice}" IsVisible="{Binding Links.HasNotice}" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}" />
+      <TextBlock Text="{Binding SsoHiddenText}" IsVisible="{Binding SsoHiddenText, Converter={x:Static ObjectConverters.IsNotNull}}" TextWrapping="Wrap" FontWeight="SemiBold" />
       <WrapPanel>
         <Button Content="Grant access on GitHub" Classes="accent" Command="{Binding GrantAccessCommand}" IsVisible="{Binding CanGrantAccess}" Margin="0,0,8,6" />
         <Button Content="Refresh list" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsLoading}" Margin="0,0,8,6" />

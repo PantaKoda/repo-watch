@@ -75,14 +75,27 @@ public sealed class AccessCatalogService : IDisposable
     /// <summary>Loads once if nothing is loaded yet.</summary>
     public Task EnsureLoadedAsync() => Status is CatalogStatus.NotLoaded or CatalogStatus.Failed ? RefreshAsync() : _loading ?? Task.CompletedTask;
 
+    /// <summary>
+    /// Workflows of one repository. Runs on the session's lifetime, so signing out or switching
+    /// accounts cancels it; never throws for cancellation or network problems.
+    /// </summary>
     public async Task<ApiResult<PagedList<Workflow>>> ListWorkflowsAsync(string owner, string name, CancellationToken cancellationToken)
     {
-        if (CreateClient() is not { } client)
+        var session = _accounts.Session;
+        if (session is null || CreateClient() is not { } client)
         {
             return ApiResult<PagedList<Workflow>>.Fail(new ResourceError(ResourceErrorKind.Unauthorized, "Sign in to GitHub first.", _time.GetUtcNow()));
         }
 
-        return await client.ListWorkflowsAsync(owner, name, cancellationToken).ConfigureAwait(false);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, session.Lifetime);
+        try
+        {
+            return await client.ListWorkflowsAsync(owner, name, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return ApiResult<PagedList<Workflow>>.Fail(new ResourceError(ResourceErrorKind.Unauthorized, "Cancelled because you signed out.", _time.GetUtcNow()));
+        }
     }
 
     public void Dispose() => _accounts.Changed -= OnAccountChanged;

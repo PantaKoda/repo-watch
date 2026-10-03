@@ -5,6 +5,7 @@
              x:DataType="vm:RepositoryPickerViewModel">
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,6">
+      <TextBlock Text="{Binding Links.Notice}" IsVisible="{Binding Links.HasNotice}" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}" />
       <TextBox PlaceholderText="Search repositories" Text="{Binding SearchText}" AutomationProperties.Name="Search repositories" />
       <WrapPanel>
         <ComboBox ItemsSource="{Binding Owners}" SelectedItem="{Binding OwnerFilter}" MinWidth="160" Margin="0,0,8,6"

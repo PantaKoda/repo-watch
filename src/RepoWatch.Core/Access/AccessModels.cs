@@ -80,8 +80,14 @@ public enum InstallationHealth
     Unavailable,
 }
 
-/// <summary>One installation and whether its repositories could be listed.</summary>
-public sealed record InstallationAccess(AppInstallation Installation, InstallationHealth Health, bool RepositoriesComplete, ResourceError? Error = null);
+/// <summary>
+/// One installation and whether its repositories could be listed. <see cref="SsoPartial"/>: GitHub left out
+/// repositories that require SAML single sign-on, so the list is incomplete.
+/// </summary>
+public sealed record InstallationAccess(AppInstallation Installation, InstallationHealth Health, bool RepositoriesComplete, ResourceError? Error = null)
+{
+    public bool SsoPartial { get; init; }
+}
 
 /// <summary>Everything the signed-in user has granted Repo Watch, as of <see cref="LoadedAt"/>.</summary>
 public sealed record AccessCatalog(
@@ -90,8 +96,18 @@ public sealed record AccessCatalog(
     bool InstallationsComplete,
     DateTimeOffset LoadedAt)
 {
-    /// <summary>True when every installation and every repository page was loaded.</summary>
-    public bool IsComplete => InstallationsComplete && Installations.All(i => i.Health == InstallationHealth.Ok && i.RepositoriesComplete);
+    /// <summary>
+    /// GitHub left out installations of organizations that require SAML single sign-on
+    /// (<c>X-GitHub-SSO: partial-results</c>). Their repositories are hidden, not ungranted.
+    /// </summary>
+    public bool SsoHidesInstallations { get; init; }
+
+    /// <summary>IDs of the organizations GitHub left out, when it named them.</summary>
+    public IReadOnlyList<long> SsoHiddenOrganizationIds { get; init; } = [];
+
+    /// <summary>True when every installation and every repository page was loaded, and nothing was hidden by SSO.</summary>
+    public bool IsComplete => InstallationsComplete && !SsoHidesInstallations
+        && Installations.All(i => i.Health == InstallationHealth.Ok && i.RepositoriesComplete && !i.SsoPartial);
 
     public IReadOnlyList<string> Owners => Repositories.Select(r => r.Owner).Distinct(StringComparer.OrdinalIgnoreCase)
         .Order(StringComparer.OrdinalIgnoreCase).ToList();

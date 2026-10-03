@@ -48,6 +48,11 @@ public sealed partial class OnboardingViewModel : ObservableObject, IDisposable
         _applyingAppearance = false;
 
         Step = accounts.State is AccountState.SignedIn or AccountState.Offline ? OnboardingStep.GrantAccess : OnboardingStep.SignIn;
+        if (Step == OnboardingStep.GrantAccess)
+        {
+            _ = _catalog.EnsureLoadedAsync(); // opened while signed in: show existing access straight away
+        }
+
         Update();
     }
 
