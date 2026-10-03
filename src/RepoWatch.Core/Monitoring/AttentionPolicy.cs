@@ -40,15 +40,60 @@ public static class AttentionPolicy
     }
 
     /// <summary>
-    /// Orders repositories for display. Attention-first sorts by level, keeping manual order within a level.
+    /// Orders repositories for display. Attention-first sorts by level and recent activity sorts by
+    /// <see cref="LastActivity"/> (unknown last); both keep manual order for ties.
     /// </summary>
     public static IReadOnlyList<MonitoredRepository> Order(IEnumerable<MonitoredRepository> repositories, RepositoryOrdering ordering)
     {
         ArgumentNullException.ThrowIfNull(repositories);
         var byManual = repositories.OrderBy(r => r.ManualIndex);
-        return ordering == RepositoryOrdering.AttentionFirst
-            ? byManual.OrderByDescending(r => Evaluate(r.Snapshot)).ToList()
-            : byManual.ToList();
+        return ordering switch
+        {
+            RepositoryOrdering.AttentionFirst => byManual.OrderByDescending(r => Evaluate(r.Snapshot)).ToList(),
+            RepositoryOrdering.RecentActivity => byManual.OrderByDescending(r => LastActivity(r.Snapshot) ?? DateTimeOffset.MinValue).ToList(),
+            _ => byManual.ToList(),
+        };
+    }
+
+    /// <summary>
+    /// The latest known activity: the last push, or a newer workflow run, pull request or issue update.
+    /// Uses whatever data is loaded (cached values included); null when nothing is known yet.
+    /// </summary>
+    public static DateTimeOffset? LastActivity(RepositorySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        DateTimeOffset?[] candidates =
+        [
+            snapshot.Metadata.Value?.PushedAt,
+            snapshot.Actions.Value?.RecentRuns.Select(r => (DateTimeOffset?)r.UpdatedAt).Max(),
+            snapshot.PullRequests.Value?.Items.Select(p => (DateTimeOffset?)p.PullRequest.UpdatedAt).Max(),
+            snapshot.Issues.Value?.Items.Select(i => (DateTimeOffset?)i.UpdatedAt).Max(),
+        ];
+        return candidates.Max();
+    }
+
+    /// <summary>
+    /// Nothing to look at: no failures or problems, nothing running, no open pull requests (in the
+    /// watched scope) and no open issues. A section that hasn't loaded yet, or whose latest refresh
+    /// failed (its "nothing open" may be out of date), is not idle: such a repository is never hidden.
+    /// </summary>
+    public static bool IsIdle(RepositorySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (Evaluate(snapshot) != AttentionLevel.Quiet
+            || snapshot.Metadata.LastError is not null || snapshot.Actions.LastError is not null
+            || snapshot.PullRequests.LastError is not null || snapshot.Issues.LastError is not null)
+        {
+            return false;
+        }
+
+        var actionsIdle = snapshot.Actions.Availability == ResourceAvailability.FeatureUnavailable
+            || snapshot.Actions.Value is { } actions && !actions.RecentRuns.Any(r => r.Outcome is CheckOutcome.Queued or CheckOutcome.Waiting or CheckOutcome.Running);
+        var pullRequestsIdle = snapshot.PullRequests.Availability == ResourceAvailability.FeatureUnavailable
+            || snapshot.PullRequests.Value is { OpenCount.Value: 0 };
+        var issuesIdle = snapshot.Issues.Availability == ResourceAvailability.FeatureUnavailable
+            || snapshot.Issues.Value is { OpenCount.Value: 0 };
+        return actionsIdle && pullRequestsIdle && issuesIdle;
     }
 
     private static bool HasProblem<T>(Resource<T> resource) where T : class =>

@@ -46,7 +46,7 @@ public sealed class RepositoryDataTests
     public async Task Metadata_is_loaded_by_id_and_follows_renames()
     {
         var (client, handler) = Create();
-        handler.Json("""{"id":1296269,"name":"hello-renamed","full_name":"new-owner/hello-renamed","owner":{"login":"new-owner","type":"Organization"},"private":true,"archived":false,"has_issues":false,"default_branch":"trunk","html_url":"https://github.com/new-owner/hello-renamed"}""");
+        handler.Json("""{"id":1296269,"name":"hello-renamed","full_name":"new-owner/hello-renamed","owner":{"login":"new-owner","type":"Organization"},"private":true,"archived":false,"has_issues":false,"default_branch":"trunk","html_url":"https://github.com/new-owner/hello-renamed","pushed_at":"2026-10-02T08:30:00Z"}""");
 
         var result = await client.GetRepositoryAsync(Key, TestContext.Current.CancellationToken);
 
@@ -57,6 +57,7 @@ public sealed class RepositoryDataTests
         Assert.True(info.Metadata.IsPrivate);
         Assert.Equal("trunk", info.Metadata.DefaultBranch);
         Assert.False(info.HasIssues);
+        Assert.Equal(new DateTimeOffset(2026, 10, 2, 8, 30, 0, TimeSpan.Zero), info.Metadata.PushedAt);
     }
 
     [Fact]

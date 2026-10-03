@@ -9,6 +9,7 @@
       <TextBlock Text="{Binding Links.Notice}" IsVisible="{Binding Links.HasNotice}" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}" />
       <TextBlock Text="Order in the widget" FontWeight="SemiBold" />
       <RadioButton GroupName="order" Content="Needs attention first (failures, then problems, then running)" IsChecked="{Binding AttentionFirst}" />
+      <RadioButton GroupName="order" Content="Most recent activity first (pushes, runs, pull requests, issues)" IsChecked="{Binding RecentActivityFirst}" />
       <RadioButton GroupName="order" Content="My order (use Move up / Move down)" IsChecked="{Binding ManualOrder}" />
     </StackPanel>
 

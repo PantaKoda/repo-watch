@@ -75,6 +75,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
             DefaultBranch = string.IsNullOrEmpty(dto.DefaultBranch) ? "main" : dto.DefaultBranch,
             HtmlUrl = html,
             HasIssues = dto.HasIssues,
+            PushedAt = dto.PushedAt,
         };
         return ApiResult<RepositoryInfo>.Ok(new RepositoryInfo(metadata, dto.HasIssues));
     }

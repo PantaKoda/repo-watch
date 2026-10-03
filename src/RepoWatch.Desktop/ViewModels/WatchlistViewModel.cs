@@ -254,6 +254,8 @@ public sealed partial class WatchlistViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] public partial bool ManualOrder { get; set; }
 
+    [ObservableProperty] public partial bool RecentActivityFirst { get; set; }
+
     /// <summary>Raised when the user asks to add repositories from the empty state.</summary>
     public event EventHandler? AddRequested;
 
@@ -282,6 +284,14 @@ public sealed partial class WatchlistViewModel : ObservableObject, IDisposable
         }
     }
 
+    partial void OnRecentActivityFirstChanged(bool value)
+    {
+        if (value && !_syncing)
+        {
+            _watchlist.SetOrdering(RepositoryOrdering.RecentActivity);
+        }
+    }
+
     private void OnChanged(object? sender, EventArgs e) => Sync();
 
     private void Sync()
@@ -298,7 +308,8 @@ public sealed partial class WatchlistViewModel : ObservableObject, IDisposable
 
         IsEmpty = Items.Count == 0;
         AttentionFirst = _watchlist.Current.Ordering == RepositoryOrdering.AttentionFirst;
-        ManualOrder = !AttentionFirst;
+        ManualOrder = _watchlist.Current.Ordering == RepositoryOrdering.Manual;
+        RecentActivityFirst = _watchlist.Current.Ordering == RepositoryOrdering.RecentActivity;
         _syncing = false;
     }
 }

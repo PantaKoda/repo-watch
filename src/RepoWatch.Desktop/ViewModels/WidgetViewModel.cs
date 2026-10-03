@@ -7,14 +7,23 @@ using RepoWatch.Core.Identity;
 using RepoWatch.Core.Monitoring;
 using RepoWatch.Core.Platform;
 using RepoWatch.Core.Settings;
+using RepoWatch.Core.State;
 using RepoWatch.Desktop.Presentation;
 using RepoWatch.Desktop.Services;
 
 namespace RepoWatch.Desktop.ViewModels;
 
+/// <summary>A choice in the widget's sort menu.</summary>
+public sealed record SortOption(RepositoryOrdering Ordering, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>
 /// The floating widget. Observes the current monitor and issues commands; it never polls.
 /// While the user interacts with a list, rows keep their positions and reorder afterwards.
+/// The list can be narrowed by a name filter and by hiding idle repositories; both only affect
+/// what is shown, never what is monitored.
 /// </summary>
 public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 {
@@ -24,12 +33,24 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     private readonly IExternalBrowser _browser;
     private readonly TimeProvider _time;
     private readonly IUiDispatcher _dispatcher;
+    private readonly WatchlistService? _watchlist;
     private IRepositoryMonitor _monitor;
+    private bool _syncing;
+
+    // Demo data ignores the account's saved order, so the sort menu applies for this session only.
+    private RepositoryOrdering? _demoOrdering;
+
+    // The first load ends once any repository's metadata has an outcome (data, error or lost access)
+    // or a refresh pass finishes, so repositories that never get metadata can't keep the line running.
+    private bool _firstLoadDone;
+    private bool _wasRefreshing;
 
     private static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(8);
 
-    public WidgetViewModel(MonitorHost monitors, SettingsService settings, IShell shell, IExternalBrowser browser, TimeProvider time, IUiDispatcher dispatcher, RepoWatchOptions options)
+    public WidgetViewModel(MonitorHost monitors, SettingsService settings, IShell shell, IExternalBrowser browser, TimeProvider time, IUiDispatcher dispatcher, RepoWatchOptions options,
+        WatchlistService? watchlist = null)
     {
+        _watchlist = watchlist;
         IsSignInConfigured = options.GitHub.IsSignInConfigured;
         _monitors = monitors;
         _settings = settings;
@@ -59,10 +80,63 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     public partial StatusTone ConnectionTone { get; private set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChangeSort))]
     public partial bool IsDemo { get; private set; }
 
+    /// <summary>The monitor is refreshing something, including routine background polls.</summary>
     [ObservableProperty]
     public partial bool IsRefreshing { get; private set; }
+
+    /// <summary>A refresh the user asked for (Refresh / F5) is still running.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowActivity))]
+    public partial bool IsManualRefreshing { get; private set; }
+
+    /// <summary>Repositories are being loaded for the first time (no data and no cache yet).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowActivity))]
+    public partial bool IsLoadingFirstData { get; private set; }
+
+    /// <summary>
+    /// The header's moving line: only while the user waits for something (a manual refresh or the
+    /// first load). Routine background polling stays silent; freshness labels report its results.
+    /// </summary>
+    public bool ShowActivity => IsManualRefreshing || IsLoadingFirstData;
+
+    /// <summary>Filters the list by repository name (owner/name), case-insensitively.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSearchText))]
+    public partial string SearchText { get; set; } = "";
+
+    public bool HasSearchText => !string.IsNullOrWhiteSpace(SearchText);
+
+    /// <summary>Hide repositories with no open pull requests or issues, nothing running and no problems.</summary>
+    [ObservableProperty]
+    public partial bool HideIdle { get; set; }
+
+    public IReadOnlyList<SortOption> SortOptions { get; } =
+    [
+        new(RepositoryOrdering.AttentionFirst, "Needs attention"),
+        new(RepositoryOrdering.RecentActivity, "Recent activity"),
+        new(RepositoryOrdering.Manual, "My order"),
+    ];
+
+    [ObservableProperty]
+    public partial SortOption? SelectedSort { get; set; }
+
+    /// <summary>Sorting is changed through the watchlist (it is a per-account preference).</summary>
+    public bool CanChangeSort => _watchlist is not null || _monitor.State == ConnectionState.Demo;
+
+    /// <summary>Watched repositories hidden by the filters.</summary>
+    [ObservableProperty]
+    public partial int HiddenCount { get; private set; }
+
+    /// <summary>Repositories are watched, but the filters hide all of them.</summary>
+    [ObservableProperty]
+    public partial bool ShowNoMatches { get; private set; }
+
+    [ObservableProperty]
+    public partial string NoMatchesText { get; private set; } = "";
 
     [ObservableProperty]
     public partial string SummaryText { get; private set; } = "";
@@ -86,8 +160,10 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         ? "Repo Watch shows GitHub Actions, pull requests and issues for repositories you choose. Sign in with GitHub to get started."
         : "Repo Watch shows GitHub Actions, pull requests and issues for repositories you choose. GitHub sign-in is not configured in this build (no GitHub App client ID).";
 
+    /// <summary>At least one repository is watched (it may be hidden by the filters).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowList))]
+    [NotifyPropertyChangedFor(nameof(ShowToolbar))]
     public partial bool HasRepositories { get; private set; }
 
     [ObservableProperty]
@@ -96,9 +172,13 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     /// <summary>True when the selected repository's details replace the list (expanded mode only).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowList))]
+    [NotifyPropertyChangedFor(nameof(ShowToolbar))]
     public partial bool ShowDetails { get; private set; }
 
     public bool ShowList => HasRepositories && !ShowDetails;
+
+    /// <summary>The filter bar above the list.</summary>
+    public bool ShowToolbar => HasRepositories && !ShowDetails;
 
     [ObservableProperty]
     public partial bool AlwaysOnTop { get; private set; }
@@ -159,7 +239,57 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private Task RefreshAsync() => _monitor.RefreshAsync();
+    private async Task RefreshAsync()
+    {
+        IsManualRefreshing = true;
+        try
+        {
+            await _monitor.RefreshAsync();
+        }
+        finally
+        {
+            IsManualRefreshing = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ClearFilters()
+    {
+        SearchText = "";
+        HideIdle = false;
+    }
+
+    partial void OnSearchTextChanged(string value) => Sync(filtersChanged: true);
+
+    partial void OnHideIdleChanged(bool value)
+    {
+        if (!_syncing && _settings.App.Window.HideIdleRepositories != value)
+        {
+            _settings.UpdateApp(s => s with { Window = s.Window with { HideIdleRepositories = value } });
+        }
+
+        Sync(filtersChanged: true);
+    }
+
+    partial void OnSelectedSortChanged(SortOption? value)
+    {
+        if (_syncing || value is null || value.Ordering == Ordering)
+        {
+            return;
+        }
+
+        if (_monitor.State == ConnectionState.Demo)
+        {
+            _demoOrdering = value.Ordering;
+            Sync();
+        }
+        else
+        {
+            _watchlist?.SetOrdering(value.Ordering); // the monitor picks it up and raises Changed
+        }
+    }
+
+    private RepositoryOrdering Ordering => _monitor.State == ConnectionState.Demo ? _demoOrdering ?? _monitor.Ordering : _monitor.Ordering;
 
     [RelayCommand]
     private void ToggleExpanded() => _settings.UpdateApp(s => s with { Window = s.Window with { Expanded = !s.Window.Expanded } });
@@ -193,13 +323,17 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     /// <summary>The repository whose details are open is refreshed first and more often.</summary>
     private void UpdateFocus() => _monitor.SetFocus(ShowDetails ? SelectedRepository?.Key : null);
 
-    /// <summary>Escape: leave details first, then collapse the widget.</summary>
+    /// <summary>Escape: leave details first, then clear the name filter, then collapse the widget.</summary>
     [RelayCommand]
     private void Collapse()
     {
         if (ShowDetails)
         {
             ShowDetails = false;
+        }
+        else if (HasSearchText)
+        {
+            SearchText = "";
         }
         else if (IsExpanded)
         {
@@ -225,7 +359,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ExitDemo() => _monitors.ExitDemo();
 
-    private void OnMonitorChanged(object? sender, EventArgs e) => _dispatcher.Post(Sync);
+    private void OnMonitorChanged(object? sender, EventArgs e) => _dispatcher.Post(() => Sync());
 
     private void OnCurrentMonitorChanged(object? sender, EventArgs e)
     {
@@ -233,6 +367,9 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         _monitor = _monitors.Current;
         _monitor.Changed += OnMonitorChanged;
         Repositories.Clear();
+        _demoOrdering = null;
+        _firstLoadDone = false;
+        _wasRefreshing = false;
         SelectedRepository = null;
         ShowDetails = false;
         Sync();
@@ -242,7 +379,8 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     private void OnSettingsChanged(object? sender, AppSettingsChangedEventArgs e)
     {
         var (before, after) = (e.Previous.Window, e.Current.Window);
-        if (before.Expanded != after.Expanded || before.AlwaysOnTop != after.AlwaysOnTop || before.PositionLocked != after.PositionLocked)
+        if (before.Expanded != after.Expanded || before.AlwaysOnTop != after.AlwaysOnTop || before.PositionLocked != after.PositionLocked
+            || before.HideIdleRepositories != after.HideIdleRepositories)
         {
             _dispatcher.Post(ApplySettings);
         }
@@ -293,20 +431,53 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         IsExpanded = window.Expanded;
         AlwaysOnTop = window.AlwaysOnTop;
         PositionLocked = window.PositionLocked;
+        _syncing = true;
+        HideIdle = window.HideIdleRepositories;
+        _syncing = false;
         if (!IsExpanded)
         {
             ShowDetails = false;
         }
     }
 
-    private void Sync()
+    /// <param name="filtersChanged">
+    /// The user changed the filters: their result applies at once. Otherwise (a status change) a row
+    /// that just became idle stays while the user interacts with the list, like a deferred reorder.
+    /// </param>
+    private void Sync(bool filtersChanged = false)
     {
         var now = _time.GetUtcNow();
         var refreshing = _monitor.IsRefreshing;
         var allowReorder = !IsInteracting;
+        var all = _monitor.Repositories;
+        var search = SearchText.Trim();
+        var keepShownIdle = !allowReorder && !filtersChanged;
+        var shown = keepShownIdle ? Repositories.Select(r => r.Key).ToHashSet() : [];
+        var deferredRemoval = false;
 
-        var ordered = AttentionPolicy.Order(_monitor.Repositories, _monitor.Ordering);
-        HasPendingReorder = !CollectionReconciler.Reconcile(
+        bool Visible(MonitoredRepository r)
+        {
+            if (search.Length > 0 && !r.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!HideIdle || !AttentionPolicy.IsIdle(r.Snapshot) || (ShowDetails && SelectedRepository?.Key == r.Key))
+            {
+                return true; // a repository whose details are open stays visible
+            }
+
+            if (shown.Contains(r.Key))
+            {
+                deferredRemoval = true; // became idle under the pointer or focus: remove after the interaction
+                return true;
+            }
+
+            return false;
+        }
+
+        var ordered = AttentionPolicy.Order(all, Ordering).Where(Visible).ToList();
+        HasPendingReorder = deferredRemoval | !CollectionReconciler.Reconcile(
             Repositories,
             ordered,
             r => r.Key,
@@ -331,16 +502,34 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         ConnectionTone = _monitor.IsRateLimited ? StatusTone.Warning : tone;
         IsDemo = _monitor.State == ConnectionState.Demo;
         IsRefreshing = refreshing;
-        HasRepositories = Repositories.Count > 0;
+        _firstLoadDone |= (_wasRefreshing && !refreshing)
+            || all.Any(r => r.Snapshot.Metadata.Value is not null || r.Snapshot.Metadata.LastError is not null
+                || r.Snapshot.Metadata.Availability == ResourceAvailability.AccessLost);
+        _wasRefreshing = refreshing;
+        IsLoadingFirstData = !_firstLoadDone && refreshing && all.Count > 0;
+        HasRepositories = all.Count > 0;
+        HiddenCount = all.Count - Repositories.Count;
+        ShowNoMatches = HasRepositories && Repositories.Count == 0;
+        NoMatchesText = HasSearchText
+            ? $"No watched repository matches \u201c{search}\u201d."
+            : "All quiet: the hidden repositories have no open pull requests or issues, nothing running and no problems.";
         ShowSignedOutState = _monitor.State == ConnectionState.NotSignedIn;
         ShowReconnectState = _monitor.State == ConnectionState.ReconnectRequired && !HasRepositories;
         ShowConnectingState = _monitor.State == ConnectionState.Connecting && !HasRepositories;
         ShowEmptyWatchlist = !ShowSignedOutState && !ShowReconnectState && !ShowConnectingState && !HasRepositories;
 
-        var failing = Repositories.Count(r => r.Attention == AttentionLevel.Failure);
-        var warnings = Repositories.Count(r => r.Attention == AttentionLevel.Warning);
+        _syncing = true;
+        SelectedSort = SortOptions.FirstOrDefault(o => o.Ordering == Ordering);
+        _syncing = false;
+
+        // Counted over every watched repository, so filtering never hides that something is failing.
+        var levels = all.Select(r => AttentionPolicy.Evaluate(r.Snapshot)).ToList();
+        var failing = levels.Count(l => l == AttentionLevel.Failure);
+        var warnings = levels.Count(l => l == AttentionLevel.Warning);
         SummaryText = HasRepositories
-            ? string.Create(CultureInfo.InvariantCulture, $"{Repositories.Count} repositories")
+            ? (HiddenCount > 0
+                ? string.Create(CultureInfo.InvariantCulture, $"{Repositories.Count} of {all.Count} shown")
+                : string.Create(CultureInfo.InvariantCulture, $"{all.Count} repositories"))
                 + (failing > 0 ? $" · {failing} failing" : "")
                 + (warnings > 0 ? $" · {warnings} need attention" : "")
             : "";

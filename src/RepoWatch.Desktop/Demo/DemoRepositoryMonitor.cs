@@ -131,7 +131,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
             ],
         };
 
-        return Repository(key, "demo-org", "web-app", isPrivate: false, isArchived: false, index, now,
+        return Repository(key, "demo-org", "web-app", isPrivate: false, isArchived: false, index, now, now.AddMinutes(-8),
             actions: Resource<ActionsState>.NotLoaded.Succeeded(new ActionsState
             {
                 RecentRuns = runs,
@@ -166,7 +166,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
             Run(5999, 4, "CodeQL", 120, 1, head, "main", "push", CheckOutcome.Success, now.AddMinutes(-3)),
         };
 
-        return Repository(key, "demo-org", "api-service", isPrivate: true, isArchived: false, index, now,
+        return Repository(key, "demo-org", "api-service", isPrivate: true, isArchived: false, index, now, now.AddMinutes(-2),
             actions: Resource<ActionsState>.NotLoaded.Succeeded(new ActionsState { RecentRuns = runs, DefaultBranch = WorkflowRunSelection.ForCommit(runs, head, "main") }, now),
             pullRequests: Resource<PullRequestsState>.NotLoaded.Succeeded(new PullRequestsState { OpenCount = ItemCount.Exact(0) }, now),
             issues: Resource<IssuesState>.NotLoaded.Succeeded(new IssuesState
@@ -180,7 +180,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
     private static MonitoredRepository Dotfiles(DateTimeOffset now, int index)
     {
         var key = new RepositoryKey(DemoAccount, 103);
-        return Repository(key, "demo-user", "dotfiles", isPrivate: true, isArchived: false, index, now,
+        return Repository(key, "demo-user", "dotfiles", isPrivate: true, isArchived: false, index, now, now.AddDays(-12),
             actions: Resource<ActionsState>.NotLoaded.Succeeded(new ActionsState
             {
                 DefaultBranch = WorkflowRunSelection.ForCommit([], "abc0000000000000000000000000000000000001"),
@@ -208,7 +208,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
             }, now.AddMinutes(-45))
             .Failed(new ResourceError(ResourceErrorKind.ServerError, "GitHub returned a server error (demo).", now.AddMinutes(-1)));
 
-        return Repository(key, "demo-org", "legacy-tool", isPrivate: false, isArchived: true, index, now,
+        return Repository(key, "demo-org", "legacy-tool", isPrivate: false, isArchived: true, index, now, now.AddDays(-95),
             actions: Resource<ActionsState>.NotLoaded.Succeeded(new ActionsState { RecentRuns = runs, DefaultBranch = WorkflowRunSelection.ForCommit(runs, head, "main") }, now),
             pullRequests: stalePullRequests,
             issues: Resource<IssuesState>.NotLoaded.Succeeded(new IssuesState { OpenCount = ItemCount.Exact(0) }, now));
@@ -224,7 +224,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
     }
 
     private static MonitoredRepository Repository(
-        RepositoryKey key, string owner, string name, bool isPrivate, bool isArchived, int index, DateTimeOffset now,
+        RepositoryKey key, string owner, string name, bool isPrivate, bool isArchived, int index, DateTimeOffset now, DateTimeOffset pushedAt,
         Resource<ActionsState> actions, Resource<PullRequestsState> pullRequests, Resource<IssuesState> issues)
     {
         var metadata = new RepositoryMetadata
@@ -237,6 +237,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
             IsArchived = isArchived,
             DefaultBranch = "main",
             HtmlUrl = RepoDocs,
+            PushedAt = pushedAt,
         };
 
         var snapshot = new RepositorySnapshot(key)

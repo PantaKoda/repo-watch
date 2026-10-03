@@ -20,6 +20,8 @@ public enum RepositoryOrdering
 {
     AttentionFirst,
     Manual,
+    /// <summary>Most recent activity first: pushes, runs, pull requests and issues.</summary>
+    RecentActivity,
 }
 
 public enum PullRequestScope
