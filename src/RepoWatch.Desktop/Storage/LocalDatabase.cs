@@ -86,14 +86,19 @@ public sealed class LocalDatabase
     public static int LatestSchemaVersion => Migrations.Length;
 
     /// <summary>
-    /// Creates the file if needed and applies pending migrations. Safe when several processes
-    /// initialize the same new database at once: each step takes the write lock (BEGIN IMMEDIATE)
-    /// and re-reads the version inside it.
+    /// Creates the file if needed and applies pending migrations. Safe when several threads or
+    /// processes initialize the same new database at once: they take turns through a named mutex
+    /// for this file. Each step also takes the write lock (BEGIN IMMEDIATE) and re-reads the version.
+    /// <para>
+    /// The mutex is needed because a concurrent switch to WAL can make BEGIN IMMEDIATE fail with a
+    /// plain "SQL logic error" (SQLITE_ERROR), which the busy timeout does not retry.
+    /// </para>
     /// </summary>
     /// <exception cref="DatabaseVersionException">The database was created by a newer version of the app.</exception>
     public void Initialize()
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
+        using var turn = InitializationLock.Acquire(Path);
         using var connection = Open();
 
         while (true)
@@ -143,6 +148,47 @@ public sealed class LocalDatabase
         command.Transaction = transaction;
         command.CommandText = sql;
         command.ExecuteNonQuery();
+    }
+}
+
+/// <summary>One initializer at a time per database file, across threads and processes.</summary>
+internal sealed class InitializationLock : IDisposable
+{
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+    private readonly Mutex _mutex;
+
+    private InitializationLock(Mutex mutex) => _mutex = mutex;
+
+    public static InitializationLock Acquire(string path)
+    {
+        // Named after a hash of the normalized path: mutex names can't contain path separators.
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(path.ToUpperInvariant())))[..32];
+        var mutex = new Mutex(false, $"RepoWatch-db-{key}");
+        try
+        {
+            if (!mutex.WaitOne(Timeout))
+            {
+                throw new TimeoutException($"Another Repo Watch process kept the database '{path}' busy for {Timeout.TotalSeconds:0} seconds.");
+            }
+        }
+        catch (AbandonedMutexException)
+        {
+            // A previous holder exited mid-initialization; migrations are transactional, so continue.
+        }
+        catch
+        {
+            mutex.Dispose();
+            throw;
+        }
+
+        return new InitializationLock(mutex);
+    }
+
+    public void Dispose()
+    {
+        _mutex.ReleaseMutex();
+        _mutex.Dispose();
     }
 }
 

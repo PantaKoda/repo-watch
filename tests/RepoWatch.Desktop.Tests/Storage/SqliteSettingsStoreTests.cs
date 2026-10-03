@@ -161,9 +161,13 @@ public sealed class SqliteSettingsStoreTests : IDisposable
             threads.ForEach(t => t.Join());
 
             // Name the failures, so an intermittent one (seen once under full-suite load) can be diagnosed.
-            Assert.True(errors.IsEmpty, $"round {round}: " + string.Join("; ", errors.Select(e => $"{e.GetType().Name}: {e.Message}")));
+            Assert.True(errors.IsEmpty, $"round {round}: " + string.Join("; ", errors.Select(e => $"{e.GetType().Name}: {e.Message} at {Where(e)}")));
         }
     }
+
+    // The LocalDatabase frame that failed, e.g. "LocalDatabase.Initialize() in ...:line 120".
+    private static string? Where(Exception e) =>
+        e.StackTrace?.Split('\n').FirstOrDefault(l => l.Contains("LocalDatabase.", StringComparison.Ordinal))?.Trim();
 
     [Fact]
     public void A_newer_database_is_not_modified()

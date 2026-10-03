@@ -867,6 +867,7 @@ Requested by the maintainer after using 0.1.0:
 - **Footer counts:** failing and needs-attention counts include repositories hidden by the filters.
 - **First load is latched:** it ends once any repository's metadata has an outcome (data, error or lost access) or a refresh pass finishes. Repositories that never get metadata no longer bring the header line back on every poll.
 - Stage 08 wording updated.
+- **The intermittent database test is fixed.** `Concurrent_first_run_initialization_does_not_fail` (Stage 10 limitations) was reproduced in a stress loop: 1 failure in about 20–45 runs. The error was SQLite error 1 ("SQL logic error") from `BEGIN IMMEDIATE` in `LocalDatabase.Initialize` while another connection switched the file to WAL; the busy timeout doesn't retry that. Initialization of one database file is now serialized across threads and processes by a named mutex (hash of the path). After the fix: 0 failures in 100 stress runs, and the full suite (427) passed twice. The test now reports the failing `LocalDatabase` frame.
 
 **Next concrete task**
 - Rebuild the installed app from main after merge. Further UI changes as requested. Stage 12 (macOS/Linux) is a later release.
