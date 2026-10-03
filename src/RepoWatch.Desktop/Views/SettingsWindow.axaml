@@ -92,11 +92,13 @@
       <TextBlock Classes="heading" Text="About" />
       <TextBlock Text="{Binding Version, StringFormat='Repo Watch {0}'}" />
       <SelectableTextBlock Text="{Binding DataDirectory, StringFormat='Data folder: {0}'}" TextWrapping="Wrap" />
-      <StackPanel Orientation="Horizontal" Spacing="8">
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Check for updates" Command="{Binding CheckForUpdatesCommand}" IsVisible="{Binding CanCheckForUpdates}"
+                ToolTip.Tip="Opens the releases page in your browser. Repo Watch never downloads or installs updates by itself." />
         <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />
         <Button Content="Export diagnostics" Command="{Binding ExportDiagnosticsCommand}" IsVisible="{Binding CanExportDiagnostics}" />
         <Button Content="Quit Repo Watch" Command="{Binding QuitCommand}" />
-      </StackPanel>
+      </WrapPanel>
       <TextBlock Text="{Binding ActionMessage}" IsVisible="{Binding HasActionMessage}" TextWrapping="Wrap" Classes="secondary" />
     </StackPanel>
   </ScrollViewer>

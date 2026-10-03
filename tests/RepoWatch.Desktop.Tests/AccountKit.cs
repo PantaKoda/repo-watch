@@ -6,6 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 using RepoWatch.Core.Accounts;
 using RepoWatch.Core.Configuration;
 using RepoWatch.Core.Identity;
+using RepoWatch.Core.Platform;
 using RepoWatch.Desktop.Infrastructure;
 using RepoWatch.Desktop.Platform;
 using RepoWatch.Desktop.Services;
@@ -164,7 +165,7 @@ internal sealed class AccountKit
 internal static class SettingsViewModels
 {
     public static SettingsViewModel Create(SettingsService settings, MonitorHost monitors, FakeShell shell, RepoWatchOptions? options = null,
-        DesktopIntegration? integration = null)
+        DesktopIntegration? integration = null, IExternalBrowser? browser = null)
     {
         options ??= new RepoWatchOptions();
         var endpoints = new GitHubEndpoints(options.GitHub);
@@ -174,6 +175,6 @@ internal static class SettingsViewModels
         var account = new AccountViewModel(accounts, shell, new RecordingBrowser(), new AvatarLoader(http, NullLogger<AvatarLoader>.Instance),
             endpoints, new ImmediateDispatcher(), TimeProvider.System);
         var paths = new AppPaths(Path.GetTempPath(), "d.json", "u.json", "logs");
-        return new SettingsViewModel(settings, monitors, shell, new ImmediateDispatcher(), account, new WatchlistService(settings, accounts), paths, new VisualStateService(), integration);
+        return new SettingsViewModel(settings, monitors, shell, new ImmediateDispatcher(), account, new WatchlistService(settings, accounts), paths, new VisualStateService(), integration, browser, options);
     }
 }

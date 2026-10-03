@@ -61,6 +61,21 @@ public sealed class RepoWatchOptionsValidatorTests
         Assert.Equal(valid, RepoWatchOptionsValidator.Validate(options).Count == 0);
     }
 
+    [Theory]
+    [InlineData("https://github.com/owner/repo/releases", true)]
+    [InlineData("", true)]
+    [InlineData("http://github.com/owner/repo/releases", false)]
+    [InlineData("https://example.com/releases", false)]
+    public void The_releases_page_must_be_an_https_GitHub_page(string url, bool valid)
+    {
+        var options = new RepoWatchOptions { Updates = { ReleasesUrl = url } };
+
+        var errors = RepoWatchOptionsValidator.Validate(options);
+
+        Assert.Equal(valid, errors.Count == 0);
+        Assert.All(errors, e => Assert.Equal("Updates:ReleasesUrl", e.Key));
+    }
+
     [Fact]
     public void Reports_every_out_of_range_interval()
     {

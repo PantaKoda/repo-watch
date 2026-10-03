@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RepoWatch.Core.Configuration;
+using RepoWatch.Core.Platform;
 using RepoWatch.Core.Settings;
 using RepoWatch.Desktop.Infrastructure;
 using RepoWatch.Desktop.Presentation;
@@ -7,7 +9,7 @@ using RepoWatch.Desktop.Services;
 
 namespace RepoWatch.Desktop.ViewModels;
 
-/// <summary>Settings window. Shows only settings that work in this build; later stages add more.</summary>
+/// <summary>Settings window: account, repositories, monitoring, notifications, desktop behavior, appearance and About.</summary>
 public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 {
     private readonly SettingsService _settings;
@@ -17,10 +19,15 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly WatchlistService _watchlist;
     private readonly VisualStateService _visuals;
     private readonly DesktopIntegration? _integration;
+    private readonly IExternalBrowser? _browser;
+    private readonly Uri? _releasesUrl;
     private bool _applying;
 
-    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths, VisualStateService visuals, DesktopIntegration? integration = null)
+    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths, VisualStateService visuals, DesktopIntegration? integration = null,
+        IExternalBrowser? browser = null, RepoWatchOptions? options = null)
     {
+        _browser = browser;
+        _releasesUrl = options?.Updates.IsConfigured == true && Uri.TryCreate(options.Updates.ReleasesUrl, UriKind.Absolute, out var releases) ? releases : null;
         _integration = integration;
         if (_integration is not null)
         {
@@ -38,7 +45,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _watchlist.Changed += OnWatchlistChanged;
         UpdateRepositoriesSummary();
 
-        Version = AppInfo.Version;
+        Version = AppInfo.Display;
         DataDirectory = paths.DataDirectory;
 
         _settings.AppChanged += OnSettingsChanged;
@@ -309,6 +316,24 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         ActionMessage = await _shell.OpenDataFolderAsync()
             ? null
             : "Couldn't open the data folder in a file manager. Its path is shown above.";
+    }
+
+    /// <summary>True when a releases page is configured. Updates are never downloaded or installed by the app.</summary>
+    public bool CanCheckForUpdates => _browser is not null && _releasesUrl is not null;
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        if (_browser is null || _releasesUrl is null)
+        {
+            return;
+        }
+
+        ActionMessage = await _browser.OpenAsync(_releasesUrl) switch
+        {
+            LinkOpenResult.Opened => $"Opened the releases page. You have Repo Watch {Version}; download a newer release there if one is listed.",
+            _ => $"Couldn't open a browser. Releases are listed at {_releasesUrl}",
+        };
     }
 
     [RelayCommand]

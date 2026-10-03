@@ -25,7 +25,7 @@ internal static class Program
 
         var configuration = ConfigurationLoader.Load(paths);
         logger.LogInformation("Repo Watch {Version} starting on {OS}; data directory {DataDirectory}",
-            AppInfo.Version, Environment.OSVersion, paths.DataDirectory);
+            AppInfo.Display, Environment.OSVersion, paths.DataDirectory);
         foreach (var error in configuration.Errors)
         {
             logger.LogError("Configuration error: {Error}", error);

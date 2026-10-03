@@ -48,6 +48,17 @@ public static partial class RepoWatchOptionsValidator
         // Plain HTTP is accepted only for a relay on this machine during development.
         ValidateHttpsUrl(errors, "Relay:BaseUrl", options.Relay.BaseUrl, required: false, allowLoopbackHttp: true);
 
+        // The browser adapter opens only GitHub web links, so the releases page must live there too.
+        var errorCount = errors.Count;
+        ValidateHttpsUrl(errors, "Updates:ReleasesUrl", options.Updates.ReleasesUrl, required: false, allowLoopbackHttp: false);
+        if (errors.Count == errorCount && options.Updates.IsConfigured
+            && Uri.TryCreate(options.GitHub.WebBaseUrl, UriKind.Absolute, out var web)
+            && !Platform.ExternalLinkPolicy.IsAllowed(new Uri(options.Updates.ReleasesUrl!), web))
+        {
+            errors.Add(new("Updates:ReleasesUrl", $"'{options.Updates.ReleasesUrl}' is not on {web.Host}.",
+                "Point it at the repository's releases page on GitHub, e.g. https://github.com/owner/repo/releases, or leave it empty to hide Check for updates."));
+        }
+
         return errors;
     }
 
