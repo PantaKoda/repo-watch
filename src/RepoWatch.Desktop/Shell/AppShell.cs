@@ -112,6 +112,7 @@ public sealed class AppShell(
         _visualsWatcher.Changed += (_, _) => QueueVisuals();
         _widget.Closing += OnWidgetClosing;
         _widget.Deactivated += (_, _) => _widgetDeactivatedAt = DateTimeOffset.UtcNow;
+        _widget.Activated += (_, _) => conditions.NotifyWidgetActivated(); // looking at it refreshes what's older than 30 s
         // Started by the OS at sign-in with "Start minimized": stay in the tray until asked.
         var startedAtLogin = desktop.Args?.Contains(Platform.Startup.StartupArguments.AtLogin, StringComparer.OrdinalIgnoreCase) == true;
         if (!(startedAtLogin && settings.App.Startup.StartMinimized && CanHideToTray))

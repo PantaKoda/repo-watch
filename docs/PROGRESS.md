@@ -950,3 +950,11 @@ The maintainer chose to make `PantaKoda/repo-watch` **public**, so releases are 
 **Next concrete task**
 - After merge: the maintainer makes the repository public and pushes tag `v0.2.0`. Verify the Release workflow, then confirm a 0.2.0 copy finds the release (the installed pre-0.2.0 copy has no updater, so it is replaced by hand once).
 
+**Faster status updates without the relay (same branch)**
+The maintainer noticed that switching the repository to public didn't show in the widget for minutes, while a new PR appeared quickly.
+- **Cause:** repository metadata, including visibility, refreshed on the "quiet" interval: 3 minutes, and up to ×8 slower when the widget is hidden or on battery. Pull requests refresh every 90 s.
+- **Metadata now refreshes on the pull-request interval** (90 s; 20 s for the repository whose details are open). Conditional requests make an unchanged answer free against the rate limit.
+- **Bringing the widget to the front refreshes at once** every part older than 30 s (`PollingIntervals.StaleOnFocus`). Failing parts keep their backoff, and pausing is respected.
+- **Limit:** within-seconds updates need the Stage 10 relay deployed and the GitHub App webhook configured. Both are maintainer actions; see docs/relay.md.
+- Tests: the metadata interval, and the widget being activated refreshes stale parts at once but not freshly refreshed ones. `dotnet test`: 472 passed, twice.
+
