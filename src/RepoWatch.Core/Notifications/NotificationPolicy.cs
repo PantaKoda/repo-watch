@@ -1,4 +1,5 @@
 using System.Globalization;
+using RepoWatch.Core.Actions;
 using RepoWatch.Core.Identity;
 using RepoWatch.Core.PullRequests;
 using RepoWatch.Core.Settings;
@@ -50,7 +51,7 @@ public static class NotificationPolicy
     /// <item>Merged: a pull request that was in the tracked list is now among the recently merged.</item>
     /// </list>
     /// </summary>
-    public static IReadOnlyList<NotificationEvent> Detect(RepositorySnapshot? previous, RepositorySnapshot current, string login)
+    public static IReadOnlyList<NotificationEvent> Detect(RepositorySnapshot? previous, RepositorySnapshot current, string login, IReadOnlySet<int>? recentlyTracked = null)
     {
         ArgumentNullException.ThrowIfNull(current);
         var events = new List<NotificationEvent>();
@@ -64,16 +65,23 @@ public static class NotificationPolicy
 
         if (current.Actions.Value is { } actions)
         {
-            var ciBaseline = previous?.Actions.Value is null;
+            var ciBaseline = IsBaseline(previous?.Actions);
             var before = previous?.Actions.Value?.TrackedBranches.GroupBy(b => b.Branch ?? "", StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal) ?? [];
             foreach (var branch in actions.TrackedBranches)
             {
                 var branchName = branch.Branch ?? metadata.DefaultBranch;
                 if (branch.Rollup.State is RollupState.Failing)
                 {
-                    var failing = branch.Runs.Where(r => r.Outcome is CheckOutcome.Failure or CheckOutcome.TimedOut).OrderBy(r => r.Id).ToList();
-                    var attempts = string.Join(",", failing.Select(r => string.Create(CultureInfo.InvariantCulture, $"{r.Id}.{r.RunAttempt}")));
-                    var url = failing.FirstOrDefault()?.HtmlUrl ?? new Uri(metadata.HtmlUrl, "actions");
+                    // Only failures not already failing before count: a re-run that passes (fewer failures) is progress, not news.
+                    var failedBefore = before.TryGetValue(branch.Branch ?? "", out var prior) ? Failing(prior).Select(Attempt).ToHashSet(StringComparer.Ordinal) : [];
+                    var failing = Failing(branch).Where(r => ciBaseline || !failedBefore.Contains(Attempt(r))).OrderBy(r => r.Id).ToList();
+                    if (failing.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var attempts = string.Join(",", failing.Select(Attempt));
+                    var url = failing[0].HtmlUrl;
                     events.Add(new NotificationEvent(NotificationKind.CiFailure, current.Key, $"ci-failure:{id}:{branchName}:{branch.HeadSha}:{attempts}",
                         name, branchName, url, metadata.IsPrivate, ciBaseline));
                 }
@@ -88,17 +96,20 @@ public static class NotificationPolicy
 
         if (current.PullRequests.Value is { } pulls)
         {
-            var prBaseline = previous?.PullRequests.Value is null;
-            foreach (var entry in pulls.Items.Where(e => e.PullRequest.RequestedReviewers.Any(r =>
-                r.Kind == ReviewerKind.User && string.Equals(r.Login, login, StringComparison.OrdinalIgnoreCase))))
+            var prBaseline = IsBaseline(previous?.PullRequests);
+            var requestedBefore = previous?.PullRequests.Value?.Items.Where(e => RequestsMe(e.PullRequest, login)).Select(e => e.PullRequest.Number).ToHashSet() ?? [];
+            foreach (var entry in pulls.Items.Where(e => RequestsMe(e.PullRequest, login) && (prBaseline || !requestedBefore.Contains(e.PullRequest.Number))))
             {
+                // The change from "not requested" to "requested" is the event; pushes to the pull request are not.
+                // Keyed by the pull request's update time at that change, so a later re-request is a new event.
                 var pr = entry.PullRequest;
                 events.Add(new NotificationEvent(NotificationKind.ReviewRequested, current.Key,
-                    string.Create(CultureInfo.InvariantCulture, $"review:{id}:{pr.Number}:{pr.HeadSha}"),
+                    string.Create(CultureInfo.InvariantCulture, $"review:{id}:{pr.Number}:{pr.UpdatedAt.ToUnixTimeSeconds()}"),
                     name, string.Create(CultureInfo.InvariantCulture, $"#{pr.Number} {pr.Title}"), pr.HtmlUrl, metadata.IsPrivate, prBaseline));
             }
 
             var tracked = previous?.PullRequests.Value?.Items.Select(e => e.PullRequest.Number).ToHashSet() ?? [];
+            tracked.UnionWith(recentlyTracked ?? new HashSet<int>()); // a pull request can leave the open list a poll before it shows as merged
             foreach (var merged in pulls.RecentlyMerged.Where(m => tracked.Contains(m.Number)))
             {
                 events.Add(new NotificationEvent(NotificationKind.PullRequestMerged, current.Key,
@@ -109,6 +120,20 @@ public static class NotificationPolicy
 
         return events;
     }
+
+    /// <summary>
+    /// No live baseline yet: nothing seen, or only data restored from the local cache. Comparing against
+    /// cached data would announce everything that happened while Repo Watch was closed.
+    /// </summary>
+    private static bool IsBaseline<T>(Resource<T>? previous) where T : class => previous is not { Value: not null, IsFromCache: false };
+
+    private static IEnumerable<WorkflowRun> Failing(CommitWorkflowSummary branch) =>
+        branch.Runs.Where(r => r.Outcome is CheckOutcome.Failure or CheckOutcome.TimedOut);
+
+    private static string Attempt(WorkflowRun run) => string.Create(CultureInfo.InvariantCulture, $"{run.Id}.{run.RunAttempt}");
+
+    private static bool RequestsMe(PullRequest pullRequest, string login) =>
+        pullRequest.RequestedReviewers.Any(r => r.Kind == ReviewerKind.User && string.Equals(r.Login, login, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Whether the user's settings allow announcing this event now (quiet hours are checked separately).</summary>
     public static bool IsWanted(NotificationEvent notification, NotificationSettings settings, bool repositoryEnabled)

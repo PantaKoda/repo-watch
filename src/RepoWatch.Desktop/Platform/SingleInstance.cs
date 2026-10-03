@@ -19,7 +19,10 @@ public sealed class SingleInstance : IDisposable
     public SingleInstance(string dataDirectory)
     {
         var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(dataDirectory).ToUpperInvariant())))[..16];
-        _pipeName = $"RepoWatch-{Environment.UserName}-{id}";
+        // The mutex is per session ("Local\"); the pipe name includes the session too, so the same user
+        // signed in twice (console and remote desktop) gets two independent instances.
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        _pipeName = $"RepoWatch-{Environment.UserName}-{process.SessionId}-{id}";
         _mutex = new Mutex(initiallyOwned: true, $"Local\\RepoWatch-{id}", out _owned);
     }
 
@@ -67,9 +70,17 @@ public sealed class SingleInstance : IDisposable
             {
                 return;
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A client that disconnected early; keep listening.
+                // A client that disconnected early, or the name is briefly busy: wait a moment instead of spinning.
+                try
+                {
+                    await Task.Delay(500, _stop.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
             }
         }
     });
@@ -77,12 +88,10 @@ public sealed class SingleInstance : IDisposable
     public void Dispose()
     {
         _stop.Cancel();
-        if (_owned)
-        {
-            _mutex.ReleaseMutex();
-            _owned = false;
-        }
 
+        // Closing the handle is enough: ownership is decided by whether the named mutex exists, never by
+        // waiting on it, and ReleaseMutex would throw if Dispose runs on another thread than the constructor.
+        _owned = false;
         _mutex.Dispose();
         _stop.Dispose();
     }

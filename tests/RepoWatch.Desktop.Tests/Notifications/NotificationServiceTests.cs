@@ -140,6 +140,27 @@ public sealed class NotificationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public void After_a_restart_events_that_happened_while_closed_are_not_announced()
+    {
+        // The monitor first shows data restored from the cache (as after a restart)...
+        var cached = Repository("aaa", CheckOutcome.Success);
+        cached = cached with
+        {
+            Snapshot = cached.Snapshot with { Actions = Resource<ActionsState>.FromCache(cached.Snapshot.Actions.Value!, _time.GetUtcNow().AddDays(-2)) },
+        };
+        _monitor.Repositories = [cached];
+        using var service = Service();
+
+        // ...then the first live refresh shows a failure that happened while Repo Watch was closed: silent.
+        _monitor.Publish(Repository("bbb", CheckOutcome.Failure));
+        Assert.Empty(_sink.Shown);
+
+        // From now on, changes are news.
+        _monitor.Publish(Repository("ccc", CheckOutcome.Success));
+        Assert.Equal("CI recovered in octo/hello", Assert.Single(_sink.Shown).Title);
+    }
+
+    [Fact]
     public void Quiet_hours_skip_events_without_saving_them_for_later()
     {
         _kit.Settings.UpdateApp(s => s with { Notifications = s.Notifications with { QuietHours = new QuietHours { Enabled = true, Start = new(11, 0), End = new(13, 0) } } });

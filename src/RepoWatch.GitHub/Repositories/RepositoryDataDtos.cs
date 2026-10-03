@@ -151,7 +151,7 @@ internal sealed record MyPullRequestsResponse(
 internal sealed record MyPullRequestsData(
     [property: JsonPropertyName("authored")] SearchConnection? Authored,
     [property: JsonPropertyName("requested")] SearchConnection? Requested,
-    [property: JsonPropertyName("merged")] Connection<MergedNode>? Merged = null);
+    [property: JsonPropertyName("repository")] PullRequestsRepository? Repository = null);
 
 internal sealed record SearchConnection(
     [property: JsonPropertyName("issueCount")] int IssueCount,

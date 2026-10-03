@@ -83,13 +83,12 @@ public sealed class NotificationPolicyTests
         var rerunFailing = Snapshot([Run(2, "bbb", CheckOutcome.Failure, attempt: 2)], sha: "bbb");
 
         var first = Assert.Single(NotificationPolicy.Detect(previous, failing, "octo-test"));
-        var again = Assert.Single(NotificationPolicy.Detect(failing, failing, "octo-test"));
         var rerun = Assert.Single(NotificationPolicy.Detect(failing, rerunFailing, "octo-test"));
 
         Assert.Equal(NotificationKind.CiFailure, first.Kind);
         Assert.False(first.IsBaseline);
         Assert.Equal("ci-failure:7:main:bbb:2.1", first.Key);
-        Assert.Equal(first.Key, again.Key); // same event: the history suppresses it
+        Assert.Empty(NotificationPolicy.Detect(failing, failing, "octo-test")); // still failing the same way: nothing new
         Assert.Equal("ci-failure:7:main:bbb:2.2", rerun.Key); // a re-run that fails again is a new event
         Assert.Equal(new Uri("https://github.com/octo/hello/actions/runs/2"), first.Url);
     }
@@ -127,8 +126,69 @@ public sealed class NotificationPolicyTests
         ]);
 
         var review = Assert.Single(NotificationPolicy.Detect(previous, current, "octo-test"));
-        Assert.Equal("review:7:4:head4", review.Key);
+        Assert.Equal($"review:7:4:{T0.ToUnixTimeSeconds()}", review.Key);
         Assert.Equal("#4 Change 4", review.Subject);
+    }
+
+    [Fact]
+    public void Data_restored_from_the_cache_is_a_baseline_not_a_previous_state()
+    {
+        // After a restart the monitor shows cached data first; the first live refresh must not announce
+        // everything that happened while Repo Watch was closed.
+        var cached = Snapshot([Run(1, "aaa", CheckOutcome.Success)], pulls: [Pull(4)]);
+        cached = cached with
+        {
+            Actions = Resource<ActionsState>.FromCache(cached.Actions.Value!, T0),
+            PullRequests = Resource<PullRequestsState>.FromCache(cached.PullRequests.Value!, T0),
+        };
+        var live = Snapshot([Run(2, "bbb", CheckOutcome.Failure)], sha: "bbb",
+            pulls: [Pull(5, new ReviewRequest(ReviewerKind.User, "octo-test"))],
+            merged: [new MergedPullRequest(4, "Change 4", new Uri("https://github.com/octo/hello/pull/4"), T0)]);
+
+        var events = NotificationPolicy.Detect(cached, live, "octo-test");
+
+        Assert.Equal(3, events.Count);
+        Assert.All(events, e => Assert.True(e.IsBaseline));
+    }
+
+    [Fact]
+    public void A_push_to_a_pull_request_does_not_repeat_its_review_request_but_a_re_request_does()
+    {
+        var requested = Snapshot(pulls: [Pull(4, new ReviewRequest(ReviewerKind.User, "octo-test"))]);
+        var pushed = Snapshot(pulls: [Pull(4, new ReviewRequest(ReviewerKind.User, "octo-test")) with
+        {
+            PullRequest = Pull(4).PullRequest with { HeadSha = "newhead", UpdatedAt = T0.AddHours(1), RequestedReviewers = [new ReviewRequest(ReviewerKind.User, "octo-test")] },
+        }]);
+        var reviewed = Snapshot(pulls: [Pull(4)]);
+        var reRequested = Snapshot(pulls: [Pull(4) with
+        {
+            PullRequest = Pull(4).PullRequest with { UpdatedAt = T0.AddHours(2), RequestedReviewers = [new ReviewRequest(ReviewerKind.User, "octo-test")] },
+        }]);
+
+        Assert.Empty(NotificationPolicy.Detect(requested, pushed, "octo-test"));
+        Assert.Empty(NotificationPolicy.Detect(pushed, reviewed, "octo-test"));
+        var again = Assert.Single(NotificationPolicy.Detect(reviewed, reRequested, "octo-test"));
+        Assert.Equal($"review:7:4:{T0.AddHours(2).ToUnixTimeSeconds()}", again.Key);
+    }
+
+    [Fact]
+    public void Fewer_failures_after_a_re_run_are_not_announced()
+    {
+        var twoFailing = Snapshot([Run(1, "aaa", CheckOutcome.Failure), Run(2, "aaa", CheckOutcome.Failure) with { WorkflowId = 2, WorkflowName = "Docs" }]);
+        var oneFixed = Snapshot([Run(1, "aaa", CheckOutcome.Success, attempt: 2), Run(2, "aaa", CheckOutcome.Failure) with { WorkflowId = 2, WorkflowName = "Docs" }]);
+
+        Assert.Empty(NotificationPolicy.Detect(twoFailing, oneFixed, "octo-test"));
+    }
+
+    [Fact]
+    public void A_merge_is_caught_even_if_it_shows_a_poll_after_the_pull_request_left_the_list()
+    {
+        var previous = Snapshot(pulls: []); // #4 already left the open list
+        var current = Snapshot(pulls: [], merged: [new MergedPullRequest(4, "Change 4", new Uri("https://github.com/octo/hello/pull/4"), T0)]);
+
+        Assert.Empty(NotificationPolicy.Detect(previous, current, "octo-test"));
+        var merged = Assert.Single(NotificationPolicy.Detect(previous, current, "octo-test", recentlyTracked: new HashSet<int> { 4 }));
+        Assert.Equal("merged:7:4", merged.Key);
     }
 
     [Fact]

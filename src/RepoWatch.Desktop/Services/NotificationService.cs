@@ -25,6 +25,10 @@ public sealed class NotificationService : IDisposable
     private readonly ILogger<NotificationService> _logger;
     private readonly object _gate = new();
     private readonly Dictionary<long, RepositorySnapshot> _previous = [];
+
+    /// <summary>Open pull requests seen lately per repository, so a merge is caught even if it shows a poll late.</summary>
+    private readonly Dictionary<long, Dictionary<int, DateTimeOffset>> _recentlyTracked = [];
+    private static readonly TimeSpan TrackedMemory = TimeSpan.FromHours(1);
     private IRepositoryMonitor? _monitor;
     private (AccountKey Account, AccountCache Cache)? _history;
 
@@ -71,6 +75,7 @@ public sealed class NotificationService : IDisposable
             // A new monitor (account change, sign-out, removal) starts a fresh, silent baseline, with a
             // history handle for the current sign-in (one taken before a sign-out writes nothing).
             _previous.Clear();
+            _recentlyTracked.Clear();
             _history = null;
             _monitor = _monitors.IsDemo ? null : _monitors.Current;
             if (_monitor is not null)
@@ -99,13 +104,15 @@ public sealed class NotificationService : IDisposable
             foreach (var removed in _previous.Keys.Except(repositories.Select(r => r.Key.RepositoryId)).ToList())
             {
                 _previous.Remove(removed); // removed repositories never notify
+                _recentlyTracked.Remove(removed);
             }
 
             foreach (var repository in repositories.Where(r => r.Key.Account == identity.Account))
             {
                 _previous.TryGetValue(repository.Key.RepositoryId, out var previous);
                 _previous[repository.Key.RepositoryId] = repository.Snapshot;
-                foreach (var notification in NotificationPolicy.Detect(previous, repository.Snapshot, identity.Login))
+                var tracked = RecentlyTracked(repository.Key.RepositoryId, previous);
+                foreach (var notification in NotificationPolicy.Detect(previous, repository.Snapshot, identity.Login, tracked))
                 {
                     Handle(history, notification, repository.Watch.NotificationsEnabled);
                 }
@@ -144,6 +151,32 @@ public sealed class NotificationService : IDisposable
         {
             _logger.LogInformation("A {Kind} notification was not shown ({Availability})", notification.Kind, _sink.Availability);
         }
+    }
+
+    /// <summary>Pull requests that were open in the last hour (from live data), before this observation.</summary>
+    private HashSet<int> RecentlyTracked(long repositoryId, RepositorySnapshot? previous)
+    {
+        var now = _time.GetUtcNow();
+        if (!_recentlyTracked.TryGetValue(repositoryId, out var seen))
+        {
+            _recentlyTracked[repositoryId] = seen = [];
+        }
+
+        foreach (var number in seen.Where(p => now - p.Value > TrackedMemory).Select(p => p.Key).ToList())
+        {
+            seen.Remove(number);
+        }
+
+        var result = seen.Keys.ToHashSet();
+        if (previous?.PullRequests is { Value: { } pulls, IsFromCache: false })
+        {
+            foreach (var entry in pulls.Items)
+            {
+                seen[entry.PullRequest.Number] = now;
+            }
+        }
+
+        return result;
     }
 
     private AccountCache HistoryFor(AccountKey account)

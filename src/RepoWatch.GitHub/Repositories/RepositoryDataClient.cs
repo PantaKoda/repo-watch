@@ -167,7 +167,8 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
             {
                 ["authored"] = $"{scope} author:{login}",
                 ["requested"] = $"{scope} review-requested:{login}",
-                ["merged"] = $"is:pr is:merged repo:{owner}/{name} author:{login} sort:updated-desc",
+                ["owner"] = owner,
+                ["name"] = name,
             });
             var result = await api.PostGraphQLAsync(request, RepositoryDataJsonContext.Default.GraphQLRequest, RepositoryDataJsonContext.Default.MyPullRequestsResponse, cancellationToken).ConfigureAwait(false);
             if (!result.IsSuccess)
@@ -181,7 +182,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
             }
 
             nodes = [.. Indexed("authored", authored.Nodes), .. Indexed("requested", requested.Nodes)];
-            merged = ToMerged(result.Value.Data.Merged);
+            merged = ToMerged(result.Value.Data.Repository?.Merged);
             errors = result.Value.Errors ?? [];
             var complete = authored.IssueCount <= (authored.Nodes?.Count ?? 0) && requested.IssueCount <= (requested.Nodes?.Count ?? 0);
             count = complete ? null : ItemCount.AtLeast(0); // resolved below from the matched pull requests
@@ -545,10 +546,15 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
         """ + "\n" + PullRequestFields;
 
     internal const string MyPullRequestsQuery = """
-        query($authored: String!, $requested: String!, $merged: String!) {
+        query($authored: String!, $requested: String!, $owner: String!, $name: String!) {
           authored: search(type: ISSUE, query: $authored, first: 50) { issueCount nodes { ...PullRequestFields } }
           requested: search(type: ISSUE, query: $requested, first: 50) { issueCount nodes { ...PullRequestFields } }
-          merged: search(type: ISSUE, query: $merged, first: 10) { issueCount nodes { ... on PullRequest { number title url mergedAt } } }
+          repository(owner: $owner, name: $name) {
+            merged: pullRequests(states: MERGED, first: 10, orderBy: {field: UPDATED_AT, direction: DESC}) {
+              totalCount
+              nodes { number title url mergedAt }
+            }
+          }
         }
         """ + "\n" + PullRequestFields;
 
