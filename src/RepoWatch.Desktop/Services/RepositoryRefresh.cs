@@ -6,64 +6,78 @@ using RepoWatch.GitHub.Repositories;
 namespace RepoWatch.Desktop.Services;
 
 /// <summary>
-/// One refresh of one repository. Metadata is loaded first (by ID, so renames are followed);
-/// losing access to it withholds every section's cached content. Otherwise each section is loaded
-/// and recorded independently: a failure keeps that section's last good value and never touches
-/// the others.
+/// One refresh of some parts of one repository. Metadata is loaded when due, or when nothing is known
+/// yet (by ID, so renames are followed); losing access to it withholds every section's cached content.
+/// Otherwise each due section is loaded and recorded independently: a failure keeps that section's last
+/// good value and never touches the others. Sections that are not due keep their current data.
 /// </summary>
 public static class RepositoryRefresh
 {
     public static async Task<RepositorySnapshot> RunAsync(IRepositoryDataSource source, RepositorySnapshot snapshot, WatchedRepository watch, string login,
-        TimeProvider time, CancellationToken cancellationToken, Action<RepositorySnapshot>? progress = null)
+        TimeProvider time, CancellationToken cancellationToken, Action<RepositorySnapshot>? progress = null, RefreshParts parts = RefreshParts.All)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(watch);
         ArgumentNullException.ThrowIfNull(time);
 
-        var info = await source.GetRepositoryAsync(snapshot.Key, cancellationToken).ConfigureAwait(false);
-        if (!info.IsSuccess)
+        var metadata = snapshot.Metadata.Value;
+        if (parts.HasFlag(RefreshParts.Metadata) || metadata is null || snapshot.Metadata.Availability == ResourceAvailability.AccessLost)
         {
-            var error = info.Error!;
-            return LosesAccess(error.Kind) ? snapshot.WithAccessLost(error) : FailedAll(snapshot, error);
+            var info = await source.GetRepositoryAsync(snapshot.Key, cancellationToken).ConfigureAwait(false);
+            if (!info.IsSuccess)
+            {
+                var error = info.Error!;
+                return LosesAccess(error.Kind) ? snapshot.WithAccessLost(error) : FailedAll(snapshot, error);
+            }
+
+            metadata = info.Value!.Metadata;
+            // Access is back: clear "access lost" so a section's next failure shows its own error, not "No access".
+            snapshot = snapshot with
+            {
+                Metadata = snapshot.Metadata.Succeeded(metadata, time.GetUtcNow()),
+                Actions = Restored(snapshot.Actions),
+                PullRequests = Restored(snapshot.PullRequests),
+                Issues = Restored(snapshot.Issues),
+            };
+            progress?.Invoke(snapshot);
         }
 
-        var metadata = info.Value!.Metadata;
-        // Access is back: clear "access lost" so a section's next failure shows its own error, not "No access".
-        snapshot = snapshot with
+        if (parts.HasFlag(RefreshParts.Actions))
         {
-            Metadata = snapshot.Metadata.Succeeded(metadata, time.GetUtcNow()),
-            Actions = Restored(snapshot.Actions),
-            PullRequests = Restored(snapshot.PullRequests),
-            Issues = Restored(snapshot.Issues),
-        };
-        progress?.Invoke(snapshot);
-
-        var branches = watch.Branches.Count > 0 ? watch.Branches : [metadata.DefaultBranch];
-        var actions = await source.GetActionsAsync(new ActionsRequest(metadata.Owner, metadata.Name, branches, watch.WorkflowIds), cancellationToken).ConfigureAwait(false);
-        snapshot = snapshot with { Actions = Apply(snapshot.Actions, actions, time) };
-        progress?.Invoke(snapshot);
-        if (actions.Error?.Kind == ResourceErrorKind.RateLimited)
-        {
-            return snapshot; // further requests would hit the same limit
+            var branches = watch.Branches.Count > 0 ? watch.Branches : [metadata.DefaultBranch];
+            var actions = await source.GetActionsAsync(new ActionsRequest(metadata.Owner, metadata.Name, branches, watch.WorkflowIds), cancellationToken).ConfigureAwait(false);
+            snapshot = snapshot with { Actions = Apply(snapshot.Actions, actions, time) };
+            progress?.Invoke(snapshot);
+            if (actions.Error?.Kind == ResourceErrorKind.RateLimited)
+            {
+                return snapshot; // further requests would hit the same limit
+            }
         }
 
-        var pullRequests = watch.PullRequests == PullRequestScope.None
-            ? SectionResult<Core.PullRequests.PullRequestsState>.Unavailable()
-            : await source.GetPullRequestsAsync(metadata.Owner, metadata.Name, watch.PullRequests == PullRequestScope.Mine, login, time.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-        snapshot = snapshot with { PullRequests = Apply(snapshot.PullRequests, pullRequests, time) };
-        progress?.Invoke(snapshot);
-        if (pullRequests.Error?.Kind == ResourceErrorKind.RateLimited)
+        if (parts.HasFlag(RefreshParts.PullRequests))
         {
-            return snapshot;
+            var pullRequests = watch.PullRequests == PullRequestScope.None
+                ? SectionResult<Core.PullRequests.PullRequestsState>.Unavailable()
+                : await source.GetPullRequestsAsync(metadata.Owner, metadata.Name, watch.PullRequests == PullRequestScope.Mine, login, time.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+            snapshot = snapshot with { PullRequests = Apply(snapshot.PullRequests, pullRequests, time) };
+            progress?.Invoke(snapshot);
+            if (pullRequests.Error?.Kind == ResourceErrorKind.RateLimited)
+            {
+                return snapshot;
+            }
         }
 
-        var issues = !watch.ShowIssues || !info.Value.HasIssues
-            ? SectionResult<Core.Issues.IssuesState>.Unavailable()
-            : await source.GetIssuesAsync(metadata.Owner, metadata.Name, cancellationToken).ConfigureAwait(false);
-        return snapshot with { Issues = Apply(snapshot.Issues, issues, time) };
+        if (parts.HasFlag(RefreshParts.Issues))
+        {
+            var issues = !watch.ShowIssues || !metadata.HasIssues
+                ? SectionResult<Core.Issues.IssuesState>.Unavailable()
+                : await source.GetIssuesAsync(metadata.Owner, metadata.Name, cancellationToken).ConfigureAwait(false);
+            snapshot = snapshot with { Issues = Apply(snapshot.Issues, issues, time) };
+        }
+
+        return snapshot;
     }
-
     /// <summary>Records one failure on every section, keeping their values (e.g. offline, or an unexpected error).</summary>
     public static RepositorySnapshot FailedAll(RepositorySnapshot snapshot, ResourceError error)
     {

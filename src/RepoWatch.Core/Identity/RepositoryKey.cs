@@ -48,5 +48,8 @@ public sealed record RepositoryMetadata
 
     public required Uri HtmlUrl { get; init; }
 
+    /// <summary>Whether GitHub has issues turned on for the repository.</summary>
+    public bool HasIssues { get; init; } = true;
+
     public string FullName => $"{Owner}/{Name}";
 }

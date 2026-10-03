@@ -50,23 +50,63 @@ public sealed record PagedList<T>(IReadOnlyList<T> Items, bool IsComplete)
 /// Tokens go only in the Authorization header. Pagination follows GitHub's Link "next" URLs as given,
 /// but only on the configured API host.
 /// </summary>
-public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, IAccessTokenSource tokens, TimeProvider time)
+/// <param name="cache">ETag cache for single GET requests (conditional requests); null disables them.</param>
+/// <param name="budget">Receives the rate-limit headers of every response; null ignores them.</param>
+public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, IAccessTokenSource tokens, TimeProvider time,
+    IConditionalCache? cache = null, RateBudget? budget = null)
 {
     public const int PageSize = 100;
     public const int DefaultMaxPages = 50;
 
     public Uri ApiUri(string relative) => new(endpoints.ApiBase, relative);
 
+    /// <summary>
+    /// GET with a conditional request when a cached ETag exists: 304 Not Modified reuses the cached body.
+    /// A new 200 response with an ETag replaces the cache entry.
+    /// </summary>
     public async Task<ApiResult<T>> GetAsync<T>(Uri uri, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)
     {
-        var response = await SendAsync(token => GitHubHttp.ApiRequest(HttpMethod.Get, uri, token), cancellationToken).ConfigureAwait(false);
+        var cached = cache?.Get(uri);
+        var response = await SendAsync(token =>
+        {
+            var request = GitHubHttp.ApiRequest(HttpMethod.Get, uri, token);
+            if (cached is not null)
+            {
+                request.Headers.TryAddWithoutValidation("If-None-Match", cached.ETag);
+            }
+
+            return request;
+        }, cancellationToken).ConfigureAwait(false);
         if (response.Error is not null)
         {
             return ApiResult<T>.Fail(response.Error);
         }
 
         using var message = response.Message!;
-        return await ReadAsync(message, typeInfo, cancellationToken).ConfigureAwait(false);
+        if (message.StatusCode == HttpStatusCode.NotModified)
+        {
+            return cached is null
+                ? ApiResult<T>.Fail(Error(ResourceErrorKind.InvalidResponse, "GitHub answered \"not modified\" to a request Repo Watch had not cached."))
+                : Parse(cached.Body, typeInfo);
+        }
+
+        string body;
+        try
+        {
+            body = await message.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            return ApiResult<T>.Fail(Error(ResourceErrorKind.Network, $"The connection to GitHub was interrupted: {ex.Message}"));
+        }
+
+        var parsed = Parse(body, typeInfo);
+        if (parsed.IsSuccess && cache is not null && message.Headers.ETag is { } etag)
+        {
+            cache.Put(uri, new CachedResponse(etag.ToString(), body));
+        }
+
+        return parsed;
     }
 
     /// <summary>
@@ -286,7 +326,8 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
                 continue;
             }
 
-            if (message.IsSuccessStatusCode)
+            budget?.Observe(message.Headers);
+            if (message.IsSuccessStatusCode || message.StatusCode == HttpStatusCode.NotModified)
             {
                 return (message, null);
             }
@@ -315,6 +356,21 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
         {
             // A reset while reading the body (ResponseHeadersRead) surfaces as HttpIOException, an IOException.
             return ApiResult<T>.Fail(Error(ResourceErrorKind.Network, $"The connection to GitHub was interrupted: {ex.Message}"));
+        }
+    }
+
+    private ApiResult<T> Parse<T>(string body, JsonTypeInfo<T> typeInfo)
+    {
+        try
+        {
+            var value = JsonSerializer.Deserialize(body, typeInfo);
+            return value is null
+                ? ApiResult<T>.Fail(Error(ResourceErrorKind.InvalidResponse, "GitHub returned an empty response."))
+                : ApiResult<T>.Ok(value);
+        }
+        catch (JsonException)
+        {
+            return ApiResult<T>.Fail(Error(ResourceErrorKind.InvalidResponse, "GitHub returned a response Repo Watch couldn't read."));
         }
     }
 

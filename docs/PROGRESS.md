@@ -10,7 +10,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 04 | Sign in with GitHub | completed |
 | 05 | Repository access and watchlist picker | completed |
 | 06 | Fetch and normalize real GitHub data | completed |
-| 07 | Durable caching and efficient synchronization | pending |
+| 07 | Durable caching and efficient synchronization | completed |
 | 08 | Modern visuals and real transparency | pending |
 | 09 | Desktop behavior and notifications | pending |
 | 10 | Near-real-time delivery (relay) | pending |
@@ -359,10 +359,77 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
   - No accessible open PR has check runs, so live PR checks have not been seen with real results.
   - Organization, SSO and team paths are fixture-only.
 - **Pull request window:** "Mine" and the items list consider the 30 most recently updated open PRs. The count is always the exact total.
-- **Caching:** no ETags, persistence of snapshots, wake/network-recovery triggers or "Pause monitoring" yet (Stage 07). Data shows "Not loaded yet" after a restart until the first refresh.
+- **Caching:** delivered in Stage 07.
 
 **Next concrete task**
-- Stage 07: one bounded, account-aware scheduler with ETag conditional requests, SQLite snapshot caching with account isolation, wake/network recovery, hidden/battery slow-down, and a Pause monitoring control.
+- Stage 07 (done below).
+
+## Stage 07 — Durable caching and efficient synchronization: completed
+
+**Implemented**
+- **One scheduler per account** (`PollingRepositoryMonitor`). A single loop refreshes one repository at a time.
+  - Metadata, Actions, pull requests and issues each have their own due time. Duplicate requests (manual refresh, option edits, focus, wake) coalesce into those due times. Parts due within 10 s are batched into one pass.
+  - Priority goes to the repository whose details are open (`IRepositoryMonitor.SetFocus`), then to repositories with active runs, then to the earliest due.
+  - A wake-up version counter guarantees that a signal arriving while the loop decides is never lost (found by a parallel test run).
+- **Intervals** (`PollingPolicy`, from `Polling` options):
+  - Actions: 20 s while running or focused, otherwise 180 s.
+  - Pull requests: 90 s (20 s when focused). Issues: 120 s (90 s when focused). Metadata: 180 s.
+  - **Slowdown:** hidden widget ×3, battery ×2, low request budget ×2, at most ×8 and at most 1 h.
+  - **Failures:** bounded exponential backoff with ±20% jitter (60 s × 2ⁿ, at most 15 min). 404/403/SSO are answers, not failures.
+  - **Rate limits** pause everything until the reset (`RetryAt` from Retry-After or `x-ratelimit-reset`, also for GraphQL).
+  - `RateBudget` tracks `x-ratelimit-remaining/limit/reset` per resource (core, graphql) and slows polling below 10% left.
+  - `X-Poll-Interval` is only sent by endpoints Repo Watch doesn't use (events, notifications), so it isn't consumed.
+- **ETag conditional requests:** single REST GETs (metadata, run lists, branch status, check runs) send `If-None-Match`. A 304 reuses the cached body. A new 200 with an ETag replaces the entry. Errors and GraphQL are never cached.
+- **SQLite caches** (migration 2, `RepositoryCache`), keyed by account:
+  - `repository_snapshots` holds the last good data per watched repository, in a versioned JSON format; unreadable or mismatched rows are discarded.
+  - `http_cache` holds ETag plus body.
+  - At start, cached snapshots appear at once labeled "Cached", so there is no false empty state. They are saved after every refresh.
+  - Access loss deletes the repository's snapshot.
+  - Retention: 30 days, and only watched repositories.
+  - Sign-out removes the account's snapshots and ETag bodies (`AccountService`). Storage errors are logged and the app continues without the cache.
+- **Wake and network recovery** (`PollingConditions`):
+  - A 30 s timer detects a sleep gap; `NetworkChange.NetworkAvailabilityChanged` detects the network returning.
+  - Either one resets backoff and refreshes everything promptly.
+  - Battery comes from `GetSystemPowerStatus` on Windows (otherwise treated as plugged in). Widget visibility comes from the shell.
+- **Pause monitoring:** a Settings checkbox and a tray-menu toggle (`MonitoringPaused` setting).
+  - While paused, no requests are made, the badge shows "Paused", cached data stays visible, and manual refresh returns at once.
+  - Resuming refreshes overdue parts.
+- **Stale and revoked data:** during network errors, values stay and are labeled stale or offline. Revoked credentials or lost permission stop protected access: the coordinator replaces the monitor, and access loss withholds content. Results for removed repositories or superseded options are rejected.
+
+**Checks run**
+- `dotnet test --solution RepoWatch.slnx`: 325 passed (three consecutive full runs were green after the race fix).
+- New contract tests (`ConditionalRequestTests`):
+  - 304 served from cache with `If-None-Match`;
+  - a changed ETag replaces the entry;
+  - errors and GraphQL are not cached;
+  - the per-resource budget goes low and recovers after reset;
+  - a rate-limited 403 is not confused with a 304.
+- Cache tests (`RepositoryCacheTests`):
+  - a full domain snapshot round-trips and is restored as Cached;
+  - access loss deletes the snapshot;
+  - account isolation, and sign-out clearing only that account (through `AccountService`);
+  - ETags persist across restarts;
+  - retention removes unwatched and old entries;
+  - corrupt and mismatched rows are discarded;
+  - a version-1 database upgrades and keeps its settings.
+- Scheduling tests (`SchedulingTests`, `PollingMonitorTests`):
+  - per-part intervals, the slowdown factors and caps, and backoff growth, cap and jitter;
+  - sleep-gap, battery and pause detection;
+  - pause stops requests and resume restarts them;
+  - network return retries at once instead of waiting out the backoff;
+  - focus refreshes that repository first;
+  - cached data shows before GitHub answers and is saved afterwards;
+  - only Actions repeat on the active interval;
+  - plus the Stage 06 cases: offline, throttling, out-of-order results and partial failures.
+- **Real app:** the Debug build started with a fresh data folder in demo mode; the database migrated to version 2 with no warnings or errors in the log.
+
+**Remaining limitations**
+- **Not run live:** ETag 304s against github.com and restoring the cache after a real restart haven't been run live. That needs a device-flow sign-in. Request counts and idle CPU/network under live polling are not measured yet; Stage 09 asks for them.
+- **Sleep detection** relies on a timer gap; macOS and Linux power events come in Stage 12.
+- **Notification history** has no table yet; it is added with notifications in Stage 09, along with notification timestamps that stay separate from refresh timestamps.
+
+**Next concrete task**
+- Stage 08 remainder: density and accent options, the light/dark × material matrix check with DPI, and observing the high-contrast and remote fallbacks.
 ## Stage 08 — Visuals pulled forward (user request, before Stage 06): partial
 
 The user asked for a UI uplift ahead of order: optional transparency with a slider, motion, a "radiating" state for in-progress work, and a futuristic space-station look. Stage 06 remains the next stage in order. The rest of Stage 08 is still pending: density, the accent option, a full manual light/dark × material × background matrix with DPI checks, and the high-contrast/remote fallbacks observed on a real machine.

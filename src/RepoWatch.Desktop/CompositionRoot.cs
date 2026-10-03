@@ -37,6 +37,7 @@ internal static class CompositionRoot
             return database;
         });
         services.AddSingleton<ISettingsStore, SqliteSettingsStore>();
+        services.AddSingleton<RepositoryCache>();
         services.AddSingleton(sp => new SettingsService(
             () => sp.GetRequiredService<ISettingsStore>(),
             sp.GetRequiredService<ILogger<SettingsService>>()));
@@ -50,6 +51,7 @@ internal static class CompositionRoot
         services.AddSingleton<AccountService>();
         services.AddSingleton<WatchlistService>();
         services.AddSingleton<AccessCatalogService>();
+        services.AddSingleton<PollingConditions>(sp => new PollingConditions(sp.GetRequiredService<SettingsService>(), sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IRepositoryMonitorFactory, GitHubMonitorFactory>();
         services.AddSingleton<MonitorCoordinator>();
         services.AddSingleton<AvatarLoader>();

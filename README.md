@@ -92,7 +92,7 @@ Unknown keys, wrongly typed values, malformed JSON and invalid values stop start
 | --- | --- |
 | `%LOCALAPPDATA%\RepoWatch\repowatch.config.json` | Optional configuration override |
 | Windows Credential Manager, `RepoWatch:github/<host>/<userId>` | GitHub access and refresh tokens. The only place tokens are stored. Removed on sign-out. |
-| `%LOCALAPPDATA%\RepoWatch\repowatch.db` | SQLite database: settings now, cached snapshots later. Never contains tokens. |
+| `%LOCALAPPDATA%\RepoWatch\repowatch.db` | SQLite database: settings, plus per-account caches of watched repositories' last data and REST ETags (private repository content). The caches are removed for an account on sign-out and pruned after 30 days or when a repository is no longer watched. Never contains tokens. |
 | `%LOCALAPPDATA%\RepoWatch\logs\` | Daily rolling logs, newest 7 files kept. Tokens and private content must never be logged. |
 
 ## Repository layout

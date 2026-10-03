@@ -83,7 +83,16 @@ public sealed class AppShell(
         }
 
         var icon = AppIconFactory.Create();
-        tray.Initialize(application, icon, ToggleWidget, ShowWidget, OpenSettings, Quit);
+        var conditions = services.GetRequiredService<PollingConditions>();
+        tray.Initialize(application, icon, ToggleWidget, ShowWidget, OpenSettings, Quit,
+            () => conditions.SetPaused(!conditions.IsPaused), conditions.IsPaused);
+        settings.AppChanged += (_, e) =>
+        {
+            if (e.Previous.MonitoringPaused != e.Current.MonitoringPaused)
+            {
+                Dispatcher.UIThread.Post(() => tray.SetPaused(e.Current.MonitoringPaused));
+            }
+        };
         desktop.ShutdownMode = CanHideToTray ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnMainWindowClose;
 
         _widgetViewModel = ActivatorUtilities.CreateInstance<WidgetViewModel>(services, this);
@@ -323,6 +332,7 @@ public sealed class AppShell(
 
         var onScreen = _widget.IsVisible && _widget.WindowState != WindowState.Minimized;
         _widget.Classes.Set("reduce-motion", !motion || !onScreen);
+        services.GetRequiredService<PollingConditions>().SetWidgetVisible(onScreen); // hidden widget: poll less often
 
         services.GetRequiredService<VisualStateService>().Publish(applied, motion);
         if (applied == _lastApplied && motion == _lastMotion)

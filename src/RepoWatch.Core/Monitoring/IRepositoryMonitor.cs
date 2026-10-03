@@ -50,6 +50,11 @@ public interface IRepositoryMonitor
     /// <summary>Raised when any of the above changes. May be raised on any thread.</summary>
     event EventHandler? Changed;
 
+    /// <summary>The repository whose details the user is looking at, so it can be refreshed first; null for none.</summary>
+    void SetFocus(RepositoryKey? repository)
+    {
+    }
+
     /// <summary>Requests a refresh of one repository, or all when null. Completes when the refresh ends.</summary>
     Task RefreshAsync(RepositoryKey? repository = null, CancellationToken cancellationToken = default);
 }

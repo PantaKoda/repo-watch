@@ -46,12 +46,15 @@ public sealed class AccountService : IDisposable
     private ICredentialStore _store;
     private AccountSession? _session;
     private CancellationTokenSource? _flowCancel;
+    private readonly Storage.RepositoryCache? _cache;
     private int _generation;
 
+    /// <param name="cache">Cached repository content, cleared for the account on sign-out.</param>
     public AccountService(
         RepoWatchOptions options, GitHubEndpoints endpoints, HttpClient http, ICredentialStore store,
-        SettingsService settings, IUiDispatcher dispatcher, TimeProvider time, ILoggerFactory loggers)
+        SettingsService settings, IUiDispatcher dispatcher, TimeProvider time, ILoggerFactory loggers, Storage.RepositoryCache? cache = null)
     {
+        _cache = cache;
         _options = options;
         _endpoints = endpoints;
         _http = http;
@@ -281,7 +284,12 @@ public sealed class AccountService : IDisposable
             await RemoveCredentialAsync(account).ConfigureAwait(false);
         }
 
-        // No private repository content is cached locally yet; the snapshot cache (Stage 07) must be cleared here.
+        // Cached private repository content (snapshots, ETag bodies) goes with the account.
+        if (account is not null)
+        {
+            _cache?.ClearAccount(account);
+        }
+
         _settings.UpdateApp(s => s with { ActiveAccount = null });
         _settings.Flush();
         StorageWarning = null;

@@ -19,7 +19,7 @@ public sealed class CoordinatorPollingTests
         public IWatchlistAwareMonitor? Create(AccountKey account, AccountSettings settings)
         {
             var monitor = new PollingRepositoryMonitor(account, settings, Source, "octo-test", TimeProvider.System, NullLogger.Instance, CancellationToken.None,
-                new PollingIntervals { Active = TimeSpan.FromHours(1), Normal = TimeSpan.FromHours(1), Failed = TimeSpan.FromHours(1) });
+                PollingMonitorTests.Every(TimeSpan.FromHours(1)));
             Created.Add(monitor);
             return monitor;
         }
