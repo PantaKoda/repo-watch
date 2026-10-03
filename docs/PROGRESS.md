@@ -872,3 +872,31 @@ Requested by the maintainer after using 0.1.0:
 **Next concrete task**
 - Rebuild the installed app from main after merge. Further UI changes as requested. Stage 12 (macOS/Linux) is a later release.
 
+## After release — open a repository from the list (feature branch `row-open-in-browser`)
+
+**Implemented**
+- Each row in the main list has a small open-in-browser button that opens the repository's GitHub page. Before, you had to open the details view first.
+  - **Discreet by colour, never faded:** the dim secondary colour at rest (the same contrast as secondary text) and the accent colour on the hovered or selected row.
+  - **Only with a known page:** it appears only when the repository's page is known. An inaccessible repository gets none.
+  - **Separate from the row:** clicking the button doesn't also open the details; the row's tap handler ignores clicks inside buttons.
+  - **Keyboard:** Ctrl+Enter on the selected row does the same; on a repository without a known page it says so in the footer. Enter and Space still open details.
+  - **Not focusable:** clicking the button selects its row, so Enter, Space and Ctrl+Enter always act on the row you clicked.
+  - **Accessible name:** "Open owner/name on GitHub".
+- The link goes through the same validated browser adapter (GitHub hosts only), and failures are reported in the widget footer.
+
+**Checks run**
+- `dotnet test`: 429 passed. Two new headless UI tests:
+  - a real click on a row's button opens that repository and not the details; only rows with a URL have a button;
+  - Ctrl+Enter opens the selected repository.
+- Real window in demo mode: the icon shows on the four repositories with a page and not on the inaccessible one.
+
+**Review of PR #14 (all findings addressed)**
+- **No fading:** the resting icon was 40% opacity on the dim colour (about 1.8:1 in Light), against the "icons stay readable and fully opaque" rule. It is now fully opaque and quiet by colour only. A UI test checks no row button or descendant is faded.
+- **Keyboard and the clicked row:** the button was focusable, so after clicking row B's button with row A selected, Enter opened A. The button is now not focusable and clicking it selects its row. A UI test clicks B's button, presses Enter and gets B's details.
+- **Ctrl+Enter without a page** shows "This repository's GitHub page isn't available right now." (UI test).
+- **Shift+Enter and Shift+Space** open details again, as before this PR. The test comment was corrected.
+- `dotnet test`: 432 passed.
+
+**Next concrete task**
+- Further UI changes as requested. Rebuild the installed app after merge.
+

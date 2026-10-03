@@ -268,7 +268,7 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:RepositoryRowViewModel">
               <Grid RowDefinitions="*,Auto" ToolTip.Tip="{Binding Summary}" AutomationProperties.Name="{Binding Summary}">
-                <Grid ColumnDefinitions="Auto,*,Auto">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                   <c:StatusDot Tone="{Binding Tone}" Width="9" Height="9" Margin="2,5,12,0" VerticalAlignment="Top" />
                   <StackPanel Grid.Column="1" Spacing="1">
                     <TextBlock Classes="title" Text="{Binding Name}" />
@@ -291,6 +291,17 @@
                     <TextBlock Classes="secondary" Text="{Binding ActivityText}" IsVisible="{Binding HasActivity}" HorizontalAlignment="Right"
                                ToolTip.Tip="Last activity: push, workflow run, pull request or issue update" />
                   </StackPanel>
+                  <!--
+                    Discreet: dim until the row is hovered or selected. Not focusable: the keyboard path is
+                    Ctrl+Enter on the selected row, so keys always act on the row that is selected.
+                  -->
+                  <Button Grid.Column="3" Classes="icon rowlink" Command="{Binding OpenOnGitHubCommand}" IsVisible="{Binding HasUrl}"
+                          Focusable="False"
+                          VerticalAlignment="Top" Margin="4,-2,-4,0"
+                          ToolTip.Tip="Open on GitHub (Ctrl+Enter)"
+                          AutomationProperties.Name="{Binding Name, StringFormat='Open {0} on GitHub'}">
+                    <PathIcon Data="{StaticResource IconOpenExternal}" />
+                  </Button>
                 </Grid>
                 <!-- Active work: a scan line runs along the row -->
                 <ProgressBar Grid.Row="1" Classes="scan" Margin="0,6,0,0" IsVisible="{Binding IsActive}" />

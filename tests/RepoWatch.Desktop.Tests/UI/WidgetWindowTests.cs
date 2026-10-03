@@ -141,6 +141,102 @@ public sealed class WidgetWindowTests
     }
 
     [AvaloniaFact]
+    public void A_rows_open_button_opens_the_repository_without_opening_details()
+    {
+        var (window, viewModel, browser) = Open(400, 600);
+        var buttons = window.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("rowlink") && b.IsEffectivelyVisible).ToList();
+
+        // Only repositories with a known GitHub page get one (the inaccessible demo repository has none).
+        Assert.Equal(viewModel.Repositories.Count(r => r.HasUrl), buttons.Count);
+        Assert.True(buttons.Count < viewModel.Repositories.Count);
+
+        var button = buttons[0];
+        var row = (RepositoryRowViewModel)button.DataContext!;
+        var center = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(center, MouseButton.Left);
+        window.MouseUp(center, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(row.Url, Assert.Single(browser.Opened));
+        Assert.False(viewModel.ShowDetails);
+        Assert.Equal($"Open {row.Name} on GitHub", AutomationProperties.GetName(button));
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Ctrl_Enter_opens_the_selected_repository_in_the_browser()
+    {
+        var (window, viewModel, browser) = Open(400, 600);
+        var list = window.FindControl<ListBox>("RepositoryList")!;
+        list.SelectedIndex = viewModel.Repositories.ToList().FindIndex(r => r.HasUrl);
+        (list.ContainerFromIndex(list.SelectedIndex) as ListBoxItem)?.Focus(NavigationMethod.Tab);
+        Dispatcher.UIThread.RunJobs();
+
+        window.KeyPress(Key.Enter, RawInputModifiers.Control, PhysicalKey.Enter, null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(((RepositoryRowViewModel)list.SelectedItem!).Url, Assert.Single(browser.Opened));
+        Assert.False(viewModel.ShowDetails); // Ctrl+Enter only opens the browser
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void After_clicking_a_rows_button_the_keyboard_acts_on_that_row()
+    {
+        var (window, viewModel, browser) = Open(400, 600);
+        var list = window.FindControl<ListBox>("RepositoryList")!;
+        var rows = viewModel.Repositories.Where(r => r.HasUrl).ToList();
+        list.SelectedItem = rows[0];
+        (list.ContainerFromItem(rows[0]) as ListBoxItem)?.Focus(NavigationMethod.Tab);
+        Dispatcher.UIThread.RunJobs();
+
+        var button = window.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("rowlink") && b.DataContext == rows[1]);
+        Assert.False(button.Focusable);
+        var center = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(center, MouseButton.Left);
+        window.MouseUp(center, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(rows[1], list.SelectedItem); // the clicked row is now the selected one
+        window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal([rows[1].Url!], browser.Opened);
+        Assert.True(viewModel.ShowDetails);
+        Assert.Same(rows[1], viewModel.SelectedRepository);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Ctrl_Enter_on_a_repository_without_a_page_says_why()
+    {
+        var (window, viewModel, browser) = Open(400, 600);
+        var list = window.FindControl<ListBox>("RepositoryList")!;
+        list.SelectedItem = viewModel.Repositories.First(r => !r.HasUrl);
+        (list.ContainerFromItem(list.SelectedItem!) as ListBoxItem)?.Focus(NavigationMethod.Tab);
+        Dispatcher.UIThread.RunJobs();
+
+        window.KeyPress(Key.Enter, RawInputModifiers.Control, PhysicalKey.Enter, null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Empty(browser.Opened);
+        Assert.Equal("This repository's GitHub page isn't available right now.", viewModel.Notice);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Row_buttons_are_never_faded()
+    {
+        var (window, _, _) = Open(400, 600);
+        foreach (var button in window.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("rowlink") && b.IsEffectivelyVisible))
+        {
+            Assert.All(button.GetSelfAndVisualDescendants().OfType<Visual>(), v => Assert.Equal(1, v.Opacity));
+        }
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void Keyboard_can_navigate_open_details_and_return()
     {
         var (window, viewModel, browser) = Open(400, 600);
