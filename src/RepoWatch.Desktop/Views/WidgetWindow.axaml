@@ -1,0 +1,251 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+        xmlns:c="using:RepoWatch.Desktop.Controls"
+        x:Class="RepoWatch.Desktop.Views.WidgetWindow"
+        x:DataType="vm:WidgetViewModel"
+        Title="Repo Watch"
+        Width="400" Height="520" MinWidth="320" MinHeight="180"
+        WindowDecorations="None"
+        CanResize="True"
+        Topmost="{Binding AlwaysOnTop}"
+        Background="{DynamicResource WidgetSurfaceBrush}">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="F5" Command="{Binding RefreshCommand}" />
+    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenSettingsCommand}" />
+    <KeyBinding Gesture="Escape" Command="{Binding CollapseCommand}" />
+  </Window.KeyBindings>
+
+  <Window.DataTemplates>
+    <!-- Actions tab -->
+    <DataTemplate DataType="vm:ActionsSectionViewModel">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="8,6">
+          <c:StatusDot Tone="{Binding StatusTone}" Width="8" Height="8" VerticalAlignment="Center" />
+          <TextBlock Classes="secondary" Text="{Binding StatusText}" TextWrapping="Wrap" />
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Message}" IsVisible="{Binding HasMessage}" TextWrapping="Wrap" Margin="8" />
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Items}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RunItemViewModel">
+                <Button Classes="row" Command="{Binding OpenCommand}" ToolTip.Tip="Open this run on GitHub"
+                        AutomationProperties.Name="{Binding Title}">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <c:StatusDot Tone="{Binding Tone}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Classes="title" Text="{Binding Title}" />
+                      <TextBlock Classes="secondary" Text="{Binding Detail}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                      <TextBlock Classes="secondary" Text="{Binding OutcomeLabel}" HorizontalAlignment="Right" />
+                      <TextBlock Classes="secondary" Text="{Binding TimeText}" HorizontalAlignment="Right" />
+                    </StackPanel>
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </DataTemplate>
+
+    <!-- Pull requests tab -->
+    <DataTemplate DataType="vm:PullRequestsSectionViewModel">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="8,6">
+          <c:StatusDot Tone="{Binding StatusTone}" Width="8" Height="8" VerticalAlignment="Center" />
+          <TextBlock Classes="secondary" Text="{Binding StatusText}" TextWrapping="Wrap" />
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Message}" IsVisible="{Binding HasMessage}" TextWrapping="Wrap" Margin="8" />
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Items}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PullRequestItemViewModel">
+                <Button Classes="row" Command="{Binding OpenCommand}" ToolTip.Tip="Open this pull request on GitHub"
+                        AutomationProperties.Name="{Binding Title}">
+                  <Grid ColumnDefinitions="Auto,*">
+                    <c:StatusDot Tone="{Binding ChecksTone}" Margin="0,4,8,0" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="1">
+                      <TextBlock Classes="title" Text="{Binding Title}" />
+                      <TextBlock Classes="secondary" Text="{Binding Detail}" />
+                      <TextBlock Classes="secondary" Text="{Binding ChecksLabel}" />
+                      <TextBlock Classes="secondary" Text="{Binding ReviewLabel}" />
+                      <TextBlock Classes="secondary" Text="{Binding MergeLabel}" />
+                    </StackPanel>
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </DataTemplate>
+
+    <!-- Issues tab -->
+    <DataTemplate DataType="vm:IssuesSectionViewModel">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="8,6">
+          <c:StatusDot Tone="{Binding StatusTone}" Width="8" Height="8" VerticalAlignment="Center" />
+          <TextBlock Classes="secondary" Text="{Binding StatusText}" TextWrapping="Wrap" />
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Message}" IsVisible="{Binding HasMessage}" TextWrapping="Wrap" Margin="8" />
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Items}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:IssueItemViewModel">
+                <Button Classes="row" Command="{Binding OpenCommand}" ToolTip.Tip="Open this issue on GitHub"
+                        AutomationProperties.Name="{Binding Title}">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                      <TextBlock Classes="title" Text="{Binding Title}" />
+                      <TextBlock Classes="secondary" Text="{Binding Detail}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Classes="secondary" Text="{Binding TimeText}" Margin="8,0,0,0" VerticalAlignment="Top" />
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <Border BorderBrush="{DynamicResource WidgetBorderBrush}" BorderThickness="1">
+    <DockPanel>
+      <!-- Header: drag to move -->
+      <Border DockPanel.Dock="Top" Padding="10,4,4,4" Background="Transparent" PointerPressed="OnHeaderPointerPressed">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <TextBlock Text="Repo Watch" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Border CornerRadius="8" Padding="6,1" BorderThickness="1" BorderBrush="{DynamicResource WidgetBorderBrush}"
+                    ToolTip.Tip="Connection state" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <c:StatusDot Tone="{Binding ConnectionTone}" Width="7" Height="7" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ConnectionLabel}" FontSize="11" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <!-- Refresh and expand only appear when there is something to refresh or expand. -->
+            <Button Classes="icon" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}"
+                    IsVisible="{Binding HasRepositories}"
+                    ToolTip.Tip="Refresh (F5)" AutomationProperties.Name="Refresh">
+              <PathIcon Data="{StaticResource IconRefresh}" />
+            </Button>
+            <Button Classes="icon" Command="{Binding ToggleExpandedCommand}" IsVisible="{Binding HasRepositories}"
+                    ToolTip.Tip="Expand or collapse (Esc collapses)" AutomationProperties.Name="Expand or collapse">
+              <Panel>
+                <PathIcon Data="{StaticResource IconExpand}" IsVisible="{Binding !IsExpanded}" />
+                <PathIcon Data="{StaticResource IconCollapse}" IsVisible="{Binding IsExpanded}" />
+              </Panel>
+            </Button>
+            <Button Classes="icon" Command="{Binding OpenSettingsCommand}"
+                    ToolTip.Tip="Settings (Ctrl+,)" AutomationProperties.Name="Settings">
+              <PathIcon Data="{StaticResource IconSettings}" />
+            </Button>
+            <Button Classes="icon" Command="{Binding HideCommand}"
+                    ToolTip.Tip="{Binding HideTooltip}" AutomationProperties.Name="{Binding HideTooltip}">
+              <PathIcon Data="{StaticResource IconMinimize}" />
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Demo banner: always visible in demo mode -->
+      <Border DockPanel.Dock="Top" IsVisible="{Binding IsDemo}" Background="{DynamicResource DemoBannerBrush}" Padding="10,4,4,4">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Demo data: sample repositories, not from GitHub" TextWrapping="Wrap" VerticalAlignment="Center"
+                     FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource DemoBannerForegroundBrush}" />
+          <Button Grid.Column="1" Content="Exit demo" Command="{Binding ExitDemoCommand}" Padding="8,2" FontSize="12" />
+        </Grid>
+      </Border>
+
+      <!-- Footer: summary and resize grip -->
+      <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="10,0,0,0" MinHeight="18">
+        <TextBlock Classes="secondary" Text="{Binding SummaryText}" VerticalAlignment="Center" />
+        <Border Grid.Column="1" Width="18" Height="18" Background="Transparent" Cursor="BottomRightCorner"
+                PointerPressed="OnResizeGripPointerPressed" ToolTip.Tip="Drag to resize">
+          <Path Data="M15,6 L6,15 M15,11 L11,15" Stroke="{DynamicResource WidgetBorderBrush}" StrokeThickness="1.5" />
+        </Border>
+      </Grid>
+
+      <!-- Body -->
+      <Panel Name="Body">
+        <!-- Not signed in -->
+        <StackPanel IsVisible="{Binding ShowSignedOutState}" Margin="16" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="Not signed in" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock TextWrapping="Wrap"
+                     Text="Repo Watch shows GitHub Actions, pull requests and issues for repositories you choose. Signing in with GitHub is not available in this build yet." />
+          <WrapPanel>
+            <Button Content="Explore demo data" Command="{Binding EnterDemoCommand}" Classes="accent" Margin="0,0,8,8" />
+            <Button Content="Settings" Command="{Binding OpenSettingsCommand}" Margin="0,0,8,8" />
+          </WrapPanel>
+        </StackPanel>
+
+        <!-- Signed in but nothing selected -->
+        <StackPanel IsVisible="{Binding ShowEmptyWatchlist}" Margin="16" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="No repositories selected" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock TextWrapping="Wrap" Text="Choose the repositories this widget should watch." />
+          <Button Content="Add repositories" Command="{Binding OpenSettingsCommand}" Classes="accent" />
+        </StackPanel>
+
+        <!-- Repository list (compact and expanded) -->
+        <ListBox Name="RepositoryList" IsVisible="{Binding ShowList}"
+                 ItemsSource="{Binding Repositories}" SelectedItem="{Binding SelectedRepository}"
+                 Background="Transparent" Padding="4,0"
+                 AutomationProperties.Name="Watched repositories">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:RepositoryRowViewModel">
+              <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding Summary}" AutomationProperties.Name="{Binding Summary}">
+                <c:StatusDot Tone="{Binding Tone}" Margin="0,4,10,0" VerticalAlignment="Top" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Classes="title" Text="{Binding Name}" />
+                  <TextBlock Classes="secondary" Text="{Binding BranchStatus}" />
+                  <TextBlock Classes="secondary" Text="{Binding Badges}" IsVisible="{Binding HasBadges}" />
+                  <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasFreshnessWarning}">
+                    <c:StatusDot Tone="Warning" Width="7" Height="7" VerticalAlignment="Center" />
+                    <TextBlock Classes="secondary" Text="{Binding FreshnessWarning}" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                  <TextBlock Classes="secondary" Text="{Binding PullRequestCount}" HorizontalAlignment="Right" />
+                  <TextBlock Classes="secondary" Text="{Binding IssueCount}" HorizontalAlignment="Right" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Details of the selected repository (expanded mode) -->
+        <DockPanel IsVisible="{Binding ShowDetails}">
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,Auto" Margin="4,0,4,2">
+            <Button Name="BackButton" Classes="icon" Command="{Binding BackCommand}"
+                    ToolTip.Tip="Back to repositories (Esc)" AutomationProperties.Name="Back to repositories">
+              <PathIcon Data="{StaticResource IconBack}" />
+            </Button>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="4,0">
+              <TextBlock Classes="title" Text="{Binding SelectedRepository.Name, FallbackValue=''}" />
+              <TextBlock Classes="secondary" Text="{Binding SelectedRepository.BranchStatus, FallbackValue=''}" />
+            </StackPanel>
+            <Button Grid.Column="2" Classes="icon" Command="{Binding SelectedRepository.RefreshCommand, FallbackValue={x:Null}}"
+                    ToolTip.Tip="Refresh this repository" AutomationProperties.Name="Refresh this repository">
+              <PathIcon Data="{StaticResource IconRefresh}" />
+            </Button>
+            <Button Grid.Column="3" Classes="icon" Command="{Binding SelectedRepository.OpenOnGitHubCommand, FallbackValue={x:Null}}"
+                    ToolTip.Tip="Open repository on GitHub" AutomationProperties.Name="Open repository on GitHub">
+              <PathIcon Data="{StaticResource IconOpenExternal}" />
+            </Button>
+          </Grid>
+          <TabControl Padding="0" Margin="4,0">
+            <TabItem Header="Actions" FontSize="13" Content="{Binding SelectedRepository.Actions, FallbackValue={x:Null}}" />
+            <TabItem Header="Pull requests" FontSize="13" Content="{Binding SelectedRepository.PullRequests, FallbackValue={x:Null}}" />
+            <TabItem Header="Issues" FontSize="13" Content="{Binding SelectedRepository.Issues, FallbackValue={x:Null}}" />
+          </TabControl>
+        </DockPanel>
+      </Panel>
+    </DockPanel>
+  </Border>
+</Window>

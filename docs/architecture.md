@@ -31,6 +31,21 @@ Platform adapters (credentials, browser launch, tray, notifications, startup reg
 
 UI code observes view-model state and issues commands. Polling loops, HTTP and persistence live in services, never in views.
 
+## Shell and UI (Desktop)
+
+```
+AppShell ── owns ──► WidgetWindow ◄─ binds ─ WidgetViewModel ─ observes ─► MonitorHost.Current : IRepositoryMonitor
+   │                  SettingsWindow ◄─ binds ─ SettingsViewModel                 ├─ SignedOutMonitor (no account)
+   ├─ TrayService (Show / Settings / Quit)                                        ├─ DemoRepositoryMonitor (explicit, labeled)
+   ├─ WindowPlacementService ─► SettingsService ─► ISettingsStore (SQLite)        └─ GitHub monitor (Stage 06+)
+   └─ IShell (hide/show/settings/quit for view models)
+```
+
+- View models observe `IRepositoryMonitor.Changed` (any thread), marshal to the UI thread through `IUiDispatcher`, and call `RefreshAsync`. They never poll or perform HTTP.
+- `CollectionReconciler` updates bound collections in place. While the user is interacting with a list, reordering is deferred so a focused or hovered row never moves.
+- Platform adapters live in `Desktop/Platform/*`: tray, window placement, browser launch (`IExternalBrowser` + `ExternalLinkPolicy`), UI dispatcher and icon.
+- Window placement uses `Core/Layout/PlacementPolicy` (pure geometry): the display key, the reachability check and the default top-right position.
+
 ## Domain model (Core)
 
 - **Keys:** `AccountKey` (host + user ID) and `RepositoryKey` (account + repository ID). Logins, owners and names are display metadata and may change.

@@ -85,18 +85,26 @@ public sealed record WindowSettings : SettingsRecord
     public IReadOnlyList<WindowPlacement> Placements { get; init; } = [];
 }
 
-/// <summary>Window bounds in device-independent pixels for a given display configuration.</summary>
+/// <summary>
+/// Window placement for one display configuration. The position is in virtual-screen pixels, which
+/// are stable for a given <see cref="DisplayKey"/>; the size is in device-independent pixels so it
+/// survives scaling changes.
+/// </summary>
 public sealed record WindowPlacement : SettingsRecord
 {
-    /// <summary>Identifies the monitor layout, e.g. a hash of screen bounds and scaling.</summary>
+    /// <summary>Identifies the monitor layout (screen bounds and scaling); see <c>PlacementPolicy.DisplayKey</c>.</summary>
     public required string DisplayKey { get; init; }
 
+    /// <summary>Left edge in virtual-screen pixels.</summary>
     public required double X { get; init; }
 
+    /// <summary>Top edge in virtual-screen pixels.</summary>
     public required double Y { get; init; }
 
+    /// <summary>Width in device-independent pixels.</summary>
     public required double Width { get; init; }
 
+    /// <summary>Height in device-independent pixels.</summary>
     public required double Height { get; init; }
 }
 

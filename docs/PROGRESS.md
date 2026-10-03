@@ -6,7 +6,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | --- | --- | --- |
 | 01 | Project and development baseline | completed |
 | 02 | Repository state and settings model | completed |
-| 03 | Functional desktop shell | pending |
+| 03 | Functional desktop shell | completed |
 | 04 | Sign in with GitHub | pending |
 | 05 | Repository access and watchlist picker | pending |
 | 06 | Fetch and normalize real GitHub data | pending |
@@ -76,5 +76,54 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 - Window placement is modeled but not applied (Stage 03). Cached snapshots, ETags and notification history are not persisted yet (Stage 07).
 - No real GitHub data; models are exercised with synthetic fixtures only.
 
+**Next concrete task** — see Stage 03.
+- (Original plan) Stage 03: build the widget window (compact bar + expanded details, Actions/PRs/Issues tabs, freshness indicators, manual refresh, empty/loading/error states), a settings/onboarding window, tray menu (Show/Settings/Quit) with window recovery, drag/resize/always-on-top, and per-display placement using `AppSettings`. Use clearly labeled demo fixtures in an explicit demo mode only.
+
+## Stage 03 — Functional desktop shell: completed
+
+**Implemented**
+- **Widget** (`Views/WidgetWindow`): borderless window, 400 DIP wide by default (minimum 320 × 180). Parts:
+  - Draggable header with a connection badge (Demo data / Not signed in / Polling / Live / Offline / Paused / Reconnect required). Refresh (F5), Expand/collapse and Settings (Ctrl+,) buttons appear only when there is something to act on; Hide is always shown.
+  - Compact repository list and expanded details with Actions / Pull requests / Issues tabs.
+  - Per-section freshness line (Updated / Cached / Stale + error / Couldn't load). Loading, empty, feature-unavailable and access-lost messages.
+  - Footer summary and a resize grip.
+  - Every row opens GitHub through the validated browser adapter. Status dots always have a text label.
+- **States:** signed-out ("Explore demo data" / Settings), empty watchlist ("Add repositories"), and labeled demo mode (`--demo` or the button) with a permanent "Demo data: sample repositories, not from GitHub" banner and Exit demo.
+- **Demo fixtures** (`Demo/DemoRepositoryMonitor`): five synthetic repositories covering failing, running→success progression, no checks, issues turned off, stale PRs after a server error, archived, private and access lost. Simulated refresh latency, 20 s auto-refresh. No network calls.
+- **Keyboard:** Tab reaches the list, arrows move, Enter/Space opens details, Tab/Enter activate rows, Esc goes back from details then collapses. Focus returns to the selected row.
+- **List stability:** `CollectionReconciler` updates rows in place. While the pointer is over the body or keyboard focus is inside it, rows keep their positions (new rows append); the attention-first order is applied with moves afterwards, preserving the row instances, selection and focus.
+- **Window behavior:** drag (respects Lock position), resize grip, optional always-on-top, no focus stealing on data updates.
+- **Placement:** `WindowPlacementService` stores placement per display configuration (`PlacementPolicy.DisplayKey`), with size in DIPs and position in virtual-screen pixels. It restores on start, saves after moves/resizes (debounced), and on display changes re-applies the matching placement or pulls an unreachable window back to the primary work area.
+- **Tray** (`Platform/Tray`): icon with Show widget / Settings… / Quit; click toggles the widget. With a tray, closing or hiding the widget keeps the app running and the widget is not in the taskbar. Without one (Linux for now, or if creation fails), the widget stays in the taskbar, Hide minimizes and closing exits.
+- **Settings window:** always-on-top, lock position, theme (System/Light/Dark, applied live), demo mode, data folder, version, Quit, and storage problems. Sign-in and repository selection are explained as not yet available rather than shown as dead controls.
+- **Core policies:** `IRepositoryMonitor`/`ConnectionState`, `AttentionPolicy` (Failure > Warning > Active > Quiet, manual order within a level), `PlacementPolicy`, `ExternalLinkPolicy` (HTTPS on the GitHub host and its subdomains only).
+- Settings persistence is now live: `SettingsService` loads at startup, saves 500 ms after a change and flushes on exit. If storage is unavailable it continues in memory and reports why.
+
+**Checks actually run (Windows 11 Pro 26200, .NET SDK 10.0.401)**
+- `dotnet test --solution RepoWatch.slnx`: 138 passed. New tests:
+  - placement geometry and attention ordering
+  - link policy
+  - reconciler stability
+  - widget view-model: deferred reorder keeps the focused row, empty states, details navigation, explicit demo
+  - headless UI (Avalonia.Headless + Skia): 320/400 px light/dark rendering with the demo label, no horizontal text overflow at 320 px, all three tabs, stale/unavailable states, full keyboard path, signed-out state hides inert buttons, settings controls change settings
+- Screenshots: `artifacts/screenshots/stage03/` (not committed). Reviewed: compact 320 light/dark, 400 light, details for each tab, stale PRs, signed-out, settings.
+- Real Windows smoke test (`RepoWatch.exe`, isolated data folder):
+  1. First launch is placed at the top-right of the work area (400 × 520).
+  2. After a move and restart, the window reopens at the same position.
+  3. Moved to (-9000, -9000) and restarted, it returns to the primary work area.
+  4. WM_CLOSE hides the window and the process keeps running (tray mode).
+  5. The signed-out launch renders.
+
+  Real desktop screenshots were captured and match the headless output. The log reports "tray available".
+- Release build and `--locked-mode` restore: 0 warnings, 0 errors.
+
+**Not verified / limitations**
+- Tray menu clicks (Show/Settings/Quit) and recovery by clicking the tray icon were not automated. Tray creation is confirmed only from the log. Please check manually: hide the widget, then click the tray icon.
+- Display-change handling (`Screens.Changed`) is covered by the geometry tests and the off-screen restart, but no monitor was actually unplugged.
+- Placement saves are debounced, so a crash within ~1 s of a move loses that move.
+- xunit.v3 is held at 3.2.2 because Avalonia.Headless.XUnit 12.1.3 fails test discovery on xunit.v3 4.x.
+- Ordering is always attention-first until per-account settings arrive (Stage 05). Single-instance activation and a global Show/Hide shortcut are Stage 09.
+- The icon is drawn at runtime; a designed `.ico` comes with packaging (Stage 11).
+
 **Next concrete task**
-- Stage 03: build the widget window (compact bar + expanded details, Actions/PRs/Issues tabs, freshness indicators, manual refresh, empty/loading/error states), a settings/onboarding window, tray menu (Show/Settings/Quit) with window recovery, drag/resize/always-on-top, and per-display placement using `AppSettings`. Use clearly labeled demo fixtures in an explicit demo mode only.
+- Stage 04: GitHub App device-flow sign-in. Needs a GitHub App registered with device flow enabled (maintainer task) and its client ID in `GitHub:ClientId` for live verification. Implement the device-code/poll states with contract tests first, a Windows Credential Manager token store behind `ICredentialStore`, refresh-token rotation, identity resolution and sign-out cleanup.
