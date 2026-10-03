@@ -186,8 +186,10 @@ public sealed record QuietHours : SettingsRecord
 /// </summary>
 public sealed record RefreshIntervals : SettingsRecord
 {
-    public const int MinSeconds = 10;
-    public const int MaxSeconds = 3600;
+    /// <summary>The same bounds as the Polling:* configuration, so every configured default can be chosen again.</summary>
+    public const int MinSeconds = Configuration.RepoWatchOptionsValidator.MinIntervalSeconds;
+
+    public const int MaxSeconds = Configuration.RepoWatchOptionsValidator.MaxIntervalSeconds;
 
     /// <summary>Workflows that are queued or running, and the repository whose details are open.</summary>
     public int? RunningWorkflowsSeconds { get; init; }

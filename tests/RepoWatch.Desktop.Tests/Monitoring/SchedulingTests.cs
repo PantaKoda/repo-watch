@@ -62,6 +62,29 @@ public sealed class SchedulingTests
     }
 
     [Fact]
+    public async Task A_shorter_interval_from_Settings_brings_the_next_refresh_in()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var settings = TestServices.Settings();
+        var conditions = new PollingConditions(settings, time, () => false, watchSystem: false);
+        var account = new AccountSettings { Watchlist = [new WatchedRepository { RepositoryId = 1, Owner = "octo", Name = "repo1" }] };
+        var source = new FakeDataSource();
+        using var monitor = new PollingRepositoryMonitor(Account, account, source, "octo", time, NullLogger.Instance, CancellationToken.None, Defaults, conditions);
+        int PullRequestFetches() => source.Calls.Count(c => c.StartsWith("prs", StringComparison.Ordinal) || c.StartsWith("pull", StringComparison.Ordinal));
+        await WaitUntil(() => PullRequestFetches() == 1);
+
+        time.Advance(TimeSpan.FromSeconds(31));
+        conditions.SetWidgetVisible(false); // wakes the scheduler: with the default 90 s nothing is due yet
+        conditions.SetWidgetVisible(true);
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+        Assert.Equal(1, PullRequestFetches());
+
+        settings.UpdateApp(s => s with { Refresh = new RefreshIntervals { PullRequestsSeconds = 30 } });
+
+        await WaitUntil(() => PullRequestFetches() == 2); // 31 s since the last one: due at once with 30 s
+    }
+
+    [Fact]
     public void Hidden_battery_and_a_low_budget_slow_polling_down_within_bounds()
     {
         Assert.Equal(1, PollingPolicy.Slowdown(widgetVisible: true, onBattery: false, budgetLow: false));

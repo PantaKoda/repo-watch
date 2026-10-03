@@ -1008,6 +1008,22 @@ Requested by the maintainer after deciding against a shared relay: let users cho
   - the Settings view model saving seconds, the floor, "equal to default", and reset.
 - Real window: the Settings section renders with the defaults, descriptions, limits note and a disabled *Reset to defaults*.
 
+**Review of PR #16 (approved; all points addressed)**
+- **Saving while typing:** the boxes update their value per keystroke, so typing 300 saved 30 on the way (pulling every PR refresh in), and emptying a box reset it to the default mid-edit. Now:
+  - edits are saved 1 s after the last change, and when the window closes;
+  - an empty box means "not decided yet" and keeps the saved value;
+  - a box being edited isn't refilled.
+  - Verified in the real window by typing through UI Automation and reading the settings database: "3" and "30" were never saved, "300" was saved after the pause, an emptied box stayed empty with 300 kept, and "45" was then saved.
+- **One floor:** `RefreshIntervals.MinSeconds`/`MaxSeconds` now are the configuration validator's 5/3600, so every configured default can be chosen again. The Settings text says 5–3600.
+- **Hint:** a warning appears when running workflows are set slower than quiet ones. *Reset to defaults* is enabled only when a shown value differs from its default.
+- **Tests:**
+  - with a fake clock, a shorter PR interval from Settings brings the next PR refresh in, which the default 90 s does not;
+  - only the final typed value is saved;
+  - an emptied box keeps the saved value;
+  - closing right after typing saves;
+  - the hint appears and clears.
+  - `dotnet test`: 490 passed, twice.
+
 **Next concrete task**
 - Further UI changes as requested. The next release will exercise the in-app update path against a real newer release.
 

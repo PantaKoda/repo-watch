@@ -55,8 +55,9 @@
         <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
                    Text="{Binding DefaultQuietSeconds, StringFormat='Actions when nothing is running, to notice a new run starting. Default {0} s.'}" />
       </Grid>
+      <TextBlock Text="{Binding RefreshHint}" IsVisible="{Binding HasRefreshHint}" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}" />
       <TextBlock Classes="secondary" TextWrapping="Wrap" TextTrimming="None"
-                 Text="Allowed: 10 to 3600 seconds. Repo Watch checks less often while the widget is hidden (×3) or on battery (×2), and waits when GitHub asks it to. Bringing the widget to the front always refreshes anything older than 30 seconds, and F5 refreshes everything now." />
+                 Text="Allowed: 5 to 3600 seconds. Changes are saved a moment after you stop typing. Repo Watch checks less often while the widget is hidden (×3) or on battery (×2), and waits when GitHub asks it to. Bringing the widget to the front always refreshes anything older than 30 seconds, and F5 refreshes everything now." />
       <Button Content="Reset to defaults" Command="{Binding ResetRefreshIntervalsCommand}" IsEnabled="{Binding !RefreshIsDefault}" HorizontalAlignment="Left" />
 
       <TextBlock Classes="heading" Text="Notifications" />

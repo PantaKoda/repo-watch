@@ -207,6 +207,7 @@ public sealed class ShellFeedbackTests
     {
         var settings = TestServices.Settings();
         using var viewModel = SettingsViewModels.Create(settings, new MonitorHost(TimeProvider.System), new FakeShell());
+        viewModel.RefreshSaveDelay = TimeSpan.Zero;
         Assert.Equal(90, viewModel.PullRequestsSeconds); // shows the default
         Assert.True(viewModel.RefreshIsDefault);
 
@@ -225,6 +226,68 @@ public sealed class ShellFeedbackTests
         Assert.Equal(90, viewModel.PullRequestsSeconds);
         Assert.Equal(120, viewModel.IssuesSeconds);
         Assert.True(viewModel.RefreshIsDefault);
+    }
+
+    [Fact]
+    public async Task Typing_a_value_saves_only_the_final_number()
+    {
+        var settings = TestServices.Settings();
+        var saves = new List<int?>();
+        settings.AppChanged += (_, e) => saves.Add(e.Current.Refresh.PullRequestsSeconds);
+        using var viewModel = SettingsViewModels.Create(settings, new MonitorHost(TimeProvider.System), new FakeShell());
+        viewModel.RefreshSaveDelay = TimeSpan.FromMilliseconds(150);
+
+        viewModel.PullRequestsSeconds = 3; // the box parses each keystroke: "3", "30", "300"
+        viewModel.PullRequestsSeconds = 30;
+        viewModel.PullRequestsSeconds = 300;
+        Assert.Empty(saves); // nothing applied mid-typing (no burst of refreshes for "30")
+
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+
+        Assert.Equal([300], saves);
+        Assert.Equal(300, settings.App.Refresh.PullRequestsSeconds);
+    }
+
+    [Fact]
+    public async Task An_emptied_box_keeps_the_saved_value_and_isnt_refilled_while_editing()
+    {
+        var settings = TestServices.Settings();
+        settings.UpdateApp(s => s with { Refresh = new RefreshIntervals { PullRequestsSeconds = 45 } });
+        using var viewModel = SettingsViewModels.Create(settings, new MonitorHost(TimeProvider.System), new FakeShell());
+        viewModel.RefreshSaveDelay = TimeSpan.FromMilliseconds(100);
+
+        viewModel.PullRequestsSeconds = null; // backspaced, about to type a new number
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+
+        Assert.Null(viewModel.PullRequestsSeconds); // not snapped back to the default
+        Assert.Equal(45, settings.App.Refresh.PullRequestsSeconds); // empty is "not decided yet"
+    }
+
+    [Fact]
+    public void Closing_settings_right_after_typing_still_saves()
+    {
+        var settings = TestServices.Settings();
+        var viewModel = SettingsViewModels.Create(settings, new MonitorHost(TimeProvider.System), new FakeShell());
+        viewModel.RefreshSaveDelay = TimeSpan.FromMinutes(1);
+
+        viewModel.IssuesSeconds = 300;
+        viewModel.Dispose();
+
+        Assert.Equal(300, settings.App.Refresh.IssuesSeconds);
+    }
+
+    [Fact]
+    public void Running_workflows_slower_than_quiet_ones_gets_a_hint()
+    {
+        using var viewModel = SettingsViewModels.Create(TestServices.Settings(), new MonitorHost(TimeProvider.System), new FakeShell());
+        viewModel.RefreshSaveDelay = TimeSpan.Zero;
+        Assert.False(viewModel.HasRefreshHint);
+
+        viewModel.RunningSeconds = 600; // quiet stays 180
+
+        Assert.True(viewModel.HasRefreshHint);
+        viewModel.RunningSeconds = 20;
+        Assert.False(viewModel.HasRefreshHint);
     }
 
     [Theory]

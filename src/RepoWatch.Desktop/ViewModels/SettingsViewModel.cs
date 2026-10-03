@@ -186,6 +186,11 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (_pendingRefreshSave is { } pending && !pending.IsCancellationRequested)
+        {
+            CommitRefresh(); // closing the window right after typing still saves the value
+        }
+
         _settings.AppChanged -= OnSettingsChanged;
         _settings.ProblemChanged -= OnProblemChanged;
         _monitors.CurrentChanged -= OnMonitorChanged;
@@ -241,22 +246,96 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] public partial decimal? QuietSeconds { get; set; }
 
+    /// <summary>True when every interval shows its default (Reset to defaults has nothing to do).</summary>
     [ObservableProperty] public partial bool RefreshIsDefault { get; private set; }
 
-    partial void OnRunningSecondsChanged(decimal? value) => SaveRefresh(r => r with { RunningWorkflowsSeconds = Choice(value, DefaultRunningSeconds) });
+    /// <summary>A warning about a combination that is probably not intended, or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRefreshHint))]
+    public partial string? RefreshHint { get; private set; }
 
-    partial void OnPullRequestsSecondsChanged(decimal? value) => SaveRefresh(r => r with { PullRequestsSeconds = Choice(value, DefaultPullRequestsSeconds) });
+    public bool HasRefreshHint => RefreshHint is not null;
 
-    partial void OnIssuesSecondsChanged(decimal? value) => SaveRefresh(r => r with { IssuesSeconds = Choice(value, DefaultIssuesSeconds) });
+    /// <summary>
+    /// The boxes update their value while the user types ("300" passes through "3" and "30"), so changes are
+    /// saved this long after the last edit, or when the window closes. Zero saves at once (tests).
+    /// </summary>
+    public TimeSpan RefreshSaveDelay { get; set; } = TimeSpan.FromSeconds(1);
 
-    partial void OnQuietSecondsChanged(decimal? value) => SaveRefresh(r => r with { QuietSeconds = Choice(value, DefaultQuietSeconds) });
+    private CancellationTokenSource? _pendingRefreshSave;
+
+    partial void OnRunningSecondsChanged(decimal? value) => RefreshEdited();
+
+    partial void OnPullRequestsSecondsChanged(decimal? value) => RefreshEdited();
+
+    partial void OnIssuesSecondsChanged(decimal? value) => RefreshEdited();
+
+    partial void OnQuietSecondsChanged(decimal? value) => RefreshEdited();
 
     [RelayCommand]
-    private void ResetRefreshIntervals() => Save(s => s with { Refresh = new RefreshIntervals() });
+    private void ResetRefreshIntervals()
+    {
+        _pendingRefreshSave?.Cancel();
+        Save(s => s with { Refresh = new RefreshIntervals() });
+    }
 
-    private void SaveRefresh(Func<RefreshIntervals, RefreshIntervals> change) => Save(s => s with { Refresh = change(s.Refresh) });
+    private void RefreshEdited()
+    {
+        if (_applying)
+        {
+            return;
+        }
 
-    /// <summary>Null (default) when empty or equal to the default; otherwise the value within the allowed range.</summary>
+        UpdateRefreshState();
+        _pendingRefreshSave?.Cancel();
+        if (RefreshSaveDelay <= TimeSpan.Zero)
+        {
+            CommitRefresh();
+            return;
+        }
+
+        var pending = _pendingRefreshSave = new CancellationTokenSource();
+        _ = Task.Delay(RefreshSaveDelay, pending.Token).ContinueWith(
+            t => _dispatcher.Post(() =>
+            {
+                if (!pending.IsCancellationRequested && ReferenceEquals(_pendingRefreshSave, pending))
+                {
+                    CommitRefresh();
+                }
+            }),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+    }
+
+    /// <summary>Saves what the boxes show. An empty box means "not decided yet" and keeps the saved value.</summary>
+    private void CommitRefresh()
+    {
+        _pendingRefreshSave = null;
+        Save(s => s with
+        {
+            Refresh = s.Refresh with
+            {
+                RunningWorkflowsSeconds = RunningSeconds is null ? s.Refresh.RunningWorkflowsSeconds : Choice(RunningSeconds, DefaultRunningSeconds),
+                PullRequestsSeconds = PullRequestsSeconds is null ? s.Refresh.PullRequestsSeconds : Choice(PullRequestsSeconds, DefaultPullRequestsSeconds),
+                IssuesSeconds = IssuesSeconds is null ? s.Refresh.IssuesSeconds : Choice(IssuesSeconds, DefaultIssuesSeconds),
+                QuietSeconds = QuietSeconds is null ? s.Refresh.QuietSeconds : Choice(QuietSeconds, DefaultQuietSeconds),
+            },
+        });
+    }
+
+    private void UpdateRefreshState()
+    {
+        RefreshIsDefault = Shown(RunningSeconds, DefaultRunningSeconds) == DefaultRunningSeconds
+            && Shown(PullRequestsSeconds, DefaultPullRequestsSeconds) == DefaultPullRequestsSeconds
+            && Shown(IssuesSeconds, DefaultIssuesSeconds) == DefaultIssuesSeconds
+            && Shown(QuietSeconds, DefaultQuietSeconds) == DefaultQuietSeconds;
+        RefreshHint = Shown(RunningSeconds, DefaultRunningSeconds) > Shown(QuietSeconds, DefaultQuietSeconds)
+            ? "Running workflows are now checked less often than quiet ones, so a run in progress updates more slowly than an idle repository."
+            : null;
+    }
+
+    private static int Shown(decimal? value, int defaultSeconds) => value is { } v ? (int)Math.Round(v) : defaultSeconds;
+
+    /// <summary>Null (default) when equal to the default; otherwise the value within the allowed range.</summary>
     private static int? Choice(decimal? value, int defaultSeconds)
     {
         if (value is null)
@@ -425,7 +504,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             PullRequestsSeconds = app.Refresh.PullRequestsSeconds ?? DefaultPullRequestsSeconds;
             IssuesSeconds = app.Refresh.IssuesSeconds ?? DefaultIssuesSeconds;
             QuietSeconds = app.Refresh.QuietSeconds ?? DefaultQuietSeconds;
-            RefreshIsDefault = app.Refresh.IsDefault;
+            UpdateRefreshState();
             Theme = app.Appearance.Theme;
             Material = app.Appearance.Material;
             OpacityPercent = app.Appearance.BackgroundOpacity * 100;
@@ -463,7 +542,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         if (before.Window.AlwaysOnTop != after.Window.AlwaysOnTop
             || before.Window.PositionLocked != after.Window.PositionLocked
             || before.MonitoringPaused != after.MonitoringPaused
-            || before.Refresh != after.Refresh
+            || (before.Refresh != after.Refresh && _pendingRefreshSave is null)
             || before.Notifications != after.Notifications
             || before.Startup != after.Startup
             || before.Window.ShowHideShortcut != after.Window.ShowHideShortcut
