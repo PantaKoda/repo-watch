@@ -1,6 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RepoWatch.Core.Configuration;
 using RepoWatch.Core.Settings;
 using RepoWatch.Desktop.Infrastructure;
 using RepoWatch.Desktop.Presentation;
@@ -17,18 +16,16 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
     private bool _applying;
 
-    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, RepoWatchOptions options, AppPaths paths)
+    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, AppPaths paths)
     {
         _settings = settings;
         _monitors = monitors;
         _shell = shell;
         _dispatcher = dispatcher;
+        Account = account;
 
         Version = AppInfo.Version;
         DataDirectory = paths.DataDirectory;
-        SignInAvailability = options.GitHub.IsSignInConfigured
-            ? "Signing in with GitHub is not available in this build yet."
-            : "Signing in with GitHub is not available in this build yet, and no GitHub App client ID is configured.";
 
         _settings.AppChanged += OnSettingsChanged;
         _settings.ProblemChanged += OnProblemChanged;
@@ -49,7 +46,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     public string DataDirectory { get; }
 
-    public string SignInAvailability { get; }
+    public AccountViewModel Account { get; }
+
+    public string NotConfiguredText =>
+        "GitHub sign-in is not configured in this build: no GitHub App client ID is set. See docs/github-app-setup.md.";
 
     public string TrayDescription => _shell.CanHideToTray
         ? "Closing or hiding the widget keeps Repo Watch running in the notification area. Use the tray icon's Quit to exit."
@@ -78,6 +78,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _settings.AppChanged -= OnSettingsChanged;
         _settings.ProblemChanged -= OnProblemChanged;
         _monitors.CurrentChanged -= OnMonitorChanged;
+        Account.Dispose();
     }
 
     partial void OnAlwaysOnTopChanged(bool value) => Save(s => s with { Window = s.Window with { AlwaysOnTop = value } });

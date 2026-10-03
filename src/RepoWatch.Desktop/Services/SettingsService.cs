@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using RepoWatch.Core.Identity;
 using RepoWatch.Core.Settings;
 
 namespace RepoWatch.Desktop.Services;
@@ -123,6 +124,51 @@ public sealed class SettingsService : IDisposable
                     _dirty = true; // retried on the next change or at shutdown
                 }
 
+                SetProblem($"Saving settings failed: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>Per-account settings (watchlist, last known login). Defaults if storage is unavailable.</summary>
+    public AccountSettings GetAccount(AccountKey account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        lock (_writeGate)
+        {
+            try
+            {
+                return _store?.LoadAccountSettings(account).Value ?? SettingsCodecs.Account.CreateDefault();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Loading account settings failed");
+                return SettingsCodecs.Account.CreateDefault();
+            }
+        }
+    }
+
+    /// <summary>Changes and immediately saves one account's settings. These change rarely, so no batching.</summary>
+    public void UpdateAccount(AccountKey account, Func<AccountSettings, AccountSettings> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        lock (_writeGate)
+        {
+            if (_store is null)
+            {
+                return;
+            }
+
+            try
+            {
+                var current = _store.LoadAccountSettings(account).Value;
+                if (!_store.SaveAccountSettings(account, change(current)))
+                {
+                    SetProblem("Settings were saved by a newer version of Repo Watch. Changes made now will not be saved.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Saving account settings failed");
                 SetProblem($"Saving settings failed: {ex.Message}");
             }
         }

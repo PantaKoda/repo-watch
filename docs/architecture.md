@@ -46,6 +46,20 @@ AppShell ── owns ──► WidgetWindow ◄─ binds ─ WidgetViewModel ─
 - Platform adapters live in `Desktop/Platform/*`: tray, window placement, browser launch (`IExternalBrowser` + `ExternalLinkPolicy`), UI dispatcher and icon.
 - Window placement uses `Core/Layout/PlacementPolicy` (pure geometry): the display key, the reachability check and the default top-right position.
 
+## Authentication
+
+```
+AccountViewModel ─► AccountService ─┬─► DeviceFlowClient / DeviceFlowSignIn  (POST github.com/login/device/code, /login/oauth/access_token)
+                                    ├─► GitHubUserClient                       (GET api.github.com/user → AccountKey = host + user ID)
+                                    ├─► AccountSession (per account)           (renew 5 min before expiry, single-flight, persist rotation first)
+                                    ├─► ICredentialStore                       (WindowsCredentialStore | SessionCredentialStore)
+                                    └─► SettingsService / MonitorHost          (active account, last login; NotSignedIn/Polling/Offline/ReconnectRequired)
+```
+
+- Only the public client ID is used. No client secret or private key exists in the desktop app.
+- API clients get tokens from `AccountSession.GetAccessTokenAsync` and call `HandleUnauthorizedAsync` on 401. They observe `Lifetime`, which is cancelled on sign-out or reconnect, so results from a closed session are discarded.
+- A rejected renewal deletes the dead tokens and sets `ReconnectRequired`. Nothing retries until the user signs in again.
+
 ## Domain model (Core)
 
 - **Keys:** `AccountKey` (host + user ID) and `RepositoryKey` (account + repository ID). Logins, owners and names are display metadata and may change.

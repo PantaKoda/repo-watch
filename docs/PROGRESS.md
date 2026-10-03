@@ -7,7 +7,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 01 | Project and development baseline | completed |
 | 02 | Repository state and settings model | completed |
 | 03 | Functional desktop shell | completed |
-| 04 | Sign in with GitHub | pending |
+| 04 | Sign in with GitHub | completed |
 | 05 | Repository access and watchlist picker | pending |
 | 06 | Fetch and normalize real GitHub data | pending |
 | 07 | Durable caching and efficient synchronization | pending |
@@ -138,3 +138,68 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 
 **Next concrete task**
 - Stage 04: GitHub App device-flow sign-in. Needs a GitHub App registered with device flow enabled (maintainer task) and its client ID in `GitHub:ClientId` for live verification. Implement the device-code/poll states with contract tests first, a Windows Credential Manager token store behind `ICredentialStore`, refresh-token rotation, identity resolution and sign-out cleanup.
+
+## Stage 04 — Sign in with GitHub: completed
+
+**GitHub App:** "Repo Watch PantaKoda", registered by the maintainer (3 Oct 2026) with device flow enabled. Its public client ID `Iv23liDwna1lEXO9Nlh3` is in the shipped `appsettings.json`. The app slug `repo-watch-pantakoda` is in `GitHub:AppSlug`, so the installation link is `https://github.com/apps/repo-watch-pantakoda/installations/new`. The public apps API returns 404 for this slug, which suggests the app is installable only on the owner's account. Other users and organizations would need it switched to "Any account".
+
+**Live verification against github.com (3 Oct 2026, Windows 11, real Repo Watch services, throwaway data folder and Credential Manager prefix, no tokens printed):**
+1. Device-flow sign-in, approved on a phone: signed in as PantaKoda, keyed `github.com/147987379`. Tokens were stored in Credential Manager (access token expires after 8 h, refresh token after 6 months). The active account and last login were saved.
+2. Restart: the session was restored from Credential Manager and the identity re-confirmed through `GET /user`.
+3. Forced renewal: with the stored access token marked expired, the restart refreshed it **without a client secret**. Both tokens rotated and the new pair was persisted.
+4. Reusing the rotated refresh token was rejected by GitHub with **`incorrect_client_credentials`** (not `bad_refresh_token`). The session treats any refresh error as reconnect-required; this response is now a contract test.
+5. Sign-out removed the credential (none left in Credential Manager) and cleared the active account.
+
+Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `/login/device/code`. A poll with the real client ID returned `authorization_pending`, confirming device flow is enabled.
+
+**Review fixes (PR #3)**
+- **Renewal belongs to the session, not a caller.** The single-use refresh runs on the session lifetime; callers stop waiting with `WaitAsync`. A caller that cancels mid-refresh can no longer lose the rotated tokens.
+- If saving rotated tokens fails, they are still adopted in memory (the old refresh token is already dead) and the settings show a storage warning. The exception no longer escapes and leaves the account stuck in "Restoring".
+- **No write after sign-out.** The session state is checked before writing, and `CloseAsync` waits for an in-flight renewal; sign-out awaits it before deleting the credential.
+- There is no semaphore or CTS to dispose under in-flight work, so `ObjectDisposedException` can no longer occur.
+- Credential removal always also targets the original secure store, so a session-only fallback can't leave the previous account's tokens in Credential Manager.
+- A 401 after a successful renewal now goes through `RequireReconnectAsync`: tokens are deleted and the session cancelled, rather than a reconnect message over an active session.
+- **Accurate connection states:** `Connecting` while restoring and `Signed in` (`SignedInIdle`) when nothing is monitored. "Polling" is shown only once real monitoring exists (Stage 06). The widget shows a *Connecting to GitHub…* panel.
+- **The sign-in flow is owned by `AccountService`.** Closing settings (Esc) no longer cancels it, and reopening shows it. Sign-out and quitting still cancel it.
+- The avatar download is bounded even without a Content-Length.
+- Regression tests: 4 renewal-race tests (caller cancellation, store failure, close during renewal, dispose during renewal) and 5 account tests. 197 tests passing. The renewal changes have not been re-run live; that needs another phone approval.
+
+**Verified only with fixtures:** denial on GitHub's approval page, natural device-code expiry, revocation through GitHub's authorization settings, and the full app UI flow. The UI is covered by headless tests, but the live check used the services directly. These can be checked with the checklist in `docs/github-app-setup.md`.
+
+**Implemented**
+- `docs/github-app-setup.md`: registration settings (device flow on, expiring tokens on, no callback, no webhook yet), least-privilege read permissions, the client ID versus App ID distinction, and no client secret or private key in the desktop app. Includes the user flow and a verification checklist.
+- **Device flow** (`GitHub/Auth/DeviceFlowClient`, `DeviceFlowSignIn`):
+  - Endpoints and fields verified against GitHub docs (October 2026). Only the public `client_id` is sent.
+  - Polling honors `interval`, adds 5 s on `slow_down` (or takes GitHub's new interval), stops at local expiry without another request, and stops immediately on cancel.
+  - Transient failures keep polling until the code expires.
+  - `access_denied`, `expired_token`, `device_flow_disabled` and other errors become explicit outcomes.
+- **Identity** (`GitHub/Users/GitHubUserClient`): `GET /user` with REST API version `2026-03-10`. The account key is the host plus the numeric user ID; login and avatar are display data. A token mismatch, 401 or outage is reported distinctly.
+- **Renewal** (`GitHub/Auth/AccountSession`):
+  - Renews 5 minutes before expiry with no client secret (documented for device-flow tokens). One refresh at a time per account.
+  - Refresh tokens are single-use, so the rotated pair is persisted before use.
+  - A rejected refresh (or a 401 that a refresh can't fix) deletes the dead tokens and moves to `ReconnectRequired`, with no retry loop.
+  - A transient failure keeps a still-valid token; otherwise it reports `TokenUnavailable`, which shows as Offline.
+- **Secure storage:** `WindowsCredentialStore` keeps a generic credential per account (`RepoWatch:github/<host>/<id>`) for the current user on this machine, not roaming, and zeroes buffers. On other platforms, or if a write fails, `SessionCredentialStore` keeps tokens in memory only and the UI says "Session only". There is never a plaintext fallback, and tokens are never in SQLite, settings, logs, URLs or the clipboard. `StoredCredential`/`DeviceAuthorization` `ToString` are redacted.
+- **Account lifecycle** (`Desktop/Services/AccountService`): restores at startup (stored credentials, then renewal if needed, then identity confirmation). The resulting states are SignedIn, Offline (GitHub unreachable, credentials kept) or ReconnectRequired (missing, rejected or mismatched credentials). The completed sign-in persists the active account and last known login. One active account; signing in as another account removes the previous credentials.
+- **Sign-out:** cancels the session lifetime (in-flight work), deletes local credentials, clears the active account and keeps the watchlist preferences. No private repository content is cached yet; the Stage 07 cache must be cleared here (marked in code).
+- **UI:**
+  - The settings Account section shows: Sign in with GitHub; the large selectable user code with Copy code, Open GitHub (also opened automatically), live status (waiting, slowed down, retrying), expiry countdown and Cancel; outcome messages (declined, expired, not configured, unknown client ID); the signed-in login, name and avatar; where the tokens are stored; Sign out; Review access on GitHub; and a reconnect panel.
+  - The widget shows "Sign in with GitHub" when configured, an explicit not-configured message otherwise, and a *Reconnect to GitHub* state.
+  - The demo overlay returns to the account's state when exited.
+
+**Checks actually run (Windows 11 Pro 26200, .NET SDK 10.0.401)**
+- `dotnet test --solution RepoWatch.slnx`: 187 passed, 0 skipped.
+  - New `RepoWatch.GitHub.Tests` (22): device-code request contents, poll interval and `slow_down` timing (fake clock), every terminal error, local expiry with no extra request, cancellation, transient retries, refresh request contents, rotation persisted, a single refresh for 20 concurrent callers, rejected refresh leading to reconnect with no retries, transient handling, 401 handling, identity request headers, redaction.
+  - Desktop (17 new): end-to-end sign-in, restart restore, denied/expired/disabled/cancelled change nothing, expired access token renewed at startup, revoked access leading to reconnect and no further requests, outage leading to Offline, sign-out cleanup that keeps the watchlist, account switch, secure-storage failure leading to session-only.
+  - Headless UI: the code panel (device code never visible, Copy/Cancel work), the signed-in panel, the widget reconnect state at 320 px.
+- **Real Windows Credential Manager round trip:** write, read, delete, double delete, under a throwaway target prefix.
+- **Real GitHub contract check:** `POST https://github.com/login/device/code` with a deliberately invalid client ID returned **404 `{"error":"Not Found"}`**, not the documented `incorrect_client_credentials`. It is now mapped to "GitHub didn't recognise this app's client ID" and covered by a contract test.
+- Screenshots: `artifacts/screenshots/stage04/` (signing in, signed in, widget reconnect).
+
+**Not verified / limitations**
+- Denial, natural expiry and revocation through GitHub settings have not been exercised live (see above).
+- Offline at startup does not retry automatically yet. *Try again* in settings re-runs the restore, and network-recovery refresh comes in Stage 07.
+- The widget's "Add repositories" leads to settings, where repository selection arrives in Stage 05.
+
+**Next concrete task**
+- Stage 05. List installations and their repositories through all pages (`GET /user/installations`, `GET /user/installations/{id}/repositories`), build the picker, persist the watchlist per account, and distinguish "not granted" from "not selected". Use contract fixtures until a client ID exists.

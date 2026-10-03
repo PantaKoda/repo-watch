@@ -52,6 +52,18 @@ internal sealed class FakeShell : IShell
 
     public void OpenSettings() => SettingsRequests++;
 
+    public int SignInRequests { get; private set; }
+
+    public List<string> Copied { get; } = [];
+
+    public void BeginSignIn() => SignInRequests++;
+
+    public Task CopyTextAsync(string text)
+    {
+        Copied.Add(text);
+        return Task.CompletedTask;
+    }
+
     public bool DataFolderOpens { get; set; } = true;
 
     public Task<bool> OpenDataFolderAsync() => Task.FromResult(DataFolderOpens);

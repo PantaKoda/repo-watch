@@ -85,10 +85,10 @@ public sealed class ShellFeedbackTests
     {
         var monitors = new MonitorHost(time);
         var monitor = new FakeMonitor();
-        monitors.Use(monitor);
+        monitors.SetBase(monitor);
         var settings = TestServices.Settings();
         var browser = new RecordingBrowser();
-        var widget = new WidgetViewModel(monitors, settings, new FakeShell(), browser, time, new ImmediateDispatcher());
+        var widget = new WidgetViewModel(monitors, settings, new FakeShell(), browser, time, new ImmediateDispatcher(), new RepoWatch.Core.Configuration.RepoWatchOptions());
         return (widget, monitor, browser, settings);
     }
 
@@ -162,8 +162,7 @@ public sealed class ShellFeedbackTests
         var store = new GatedStore { ThrowOnSave = true };
         using var settings = new SettingsService(() => store, NullLogger<SettingsService>.Instance);
         settings.Load();
-        var paths = new AppPaths(Path.GetTempPath(), "d.json", "u.json", "logs");
-        using var viewModel = new SettingsViewModel(settings, new MonitorHost(TimeProvider.System), new FakeShell(), new ImmediateDispatcher(), new RepoWatchOptions(), paths);
+        using var viewModel = SettingsViewModels.Create(settings, new MonitorHost(TimeProvider.System), new FakeShell());
         Assert.False(viewModel.HasStorageProblem);
 
         viewModel.AlwaysOnTop = true;
@@ -196,8 +195,7 @@ public sealed class ShellFeedbackTests
     public async Task A_data_folder_that_cannot_be_opened_is_reported()
     {
         var shell = new FakeShell { DataFolderOpens = false };
-        var paths = new AppPaths(Path.GetTempPath(), "d.json", "u.json", "logs");
-        using var viewModel = new SettingsViewModel(TestServices.Settings(), new MonitorHost(TimeProvider.System), shell, new ImmediateDispatcher(), new RepoWatchOptions(), paths);
+        using var viewModel = SettingsViewModels.Create(TestServices.Settings(), new MonitorHost(TimeProvider.System), shell);
 
         await viewModel.OpenDataFolderCommand.ExecuteAsync(null);
 

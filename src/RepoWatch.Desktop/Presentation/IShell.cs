@@ -13,6 +13,12 @@ public interface IShell
 
     void OpenSettings();
 
+    /// <summary>Opens settings and starts GitHub sign-in.</summary>
+    void BeginSignIn();
+
+    /// <summary>Copies non-secret text (e.g. the device-flow user code). Never use for tokens.</summary>
+    Task CopyTextAsync(string text);
+
     /// <summary>Opens the data folder in the file manager. Never throws; returns false if it could not be opened.</summary>
     Task<bool> OpenDataFolderAsync();
 

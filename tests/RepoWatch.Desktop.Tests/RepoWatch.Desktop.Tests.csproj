@@ -7,5 +7,6 @@
     <!-- Headless UI tests render with Skia so screenshots show real output. -->
     <PackageReference Include="Avalonia.Headless.XUnit" />
     <PackageReference Include="Avalonia.Skia" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 </Project>
