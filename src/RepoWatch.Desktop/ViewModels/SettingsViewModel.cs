@@ -53,6 +53,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<MotionPreference> MotionChoices { get; } = Enum.GetValues<MotionPreference>();
 
+    public IReadOnlyList<AccentPreset> Accents => AccentPalette.Presets;
+
+    public IReadOnlyList<Density> Densities { get; } = Enum.GetValues<Density>();
+
     public double MinOpacityPercent => AppearanceSettings.MinBackgroundOpacity * 100;
 
     public double MaxOpacityPercent => AppearanceSettings.MaxBackgroundOpacity * 100;
@@ -98,6 +102,13 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     public partial MotionPreference Motion { get; set; }
+
+    /// <summary>Accent for the frame, brand and controls; status colors never change with it.</summary>
+    [ObservableProperty]
+    public partial AccentPreset Accent { get; set; } = AccentPalette.Presets[0];
+
+    [ObservableProperty]
+    public partial Density Density { get; set; }
 
     /// <summary>What the widget actually achieved, which can differ from the request.</summary>
     [ObservableProperty]
@@ -150,6 +161,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     partial void OnMotionChanged(MotionPreference value) => Save(s => s with { Appearance = s.Appearance with { Motion = value } });
 
+    partial void OnAccentChanged(AccentPreset value) => Save(s => s with { Appearance = s.Appearance with { AccentColor = value?.Hex } });
+
+    partial void OnDensityChanged(Density value) => Save(s => s with { Appearance = s.Appearance with { Density = value } });
+
     private void OnVisualsChanged(object? sender, EventArgs e) => _dispatcher.Post(() => VisualStatus = _visuals.Describe());
 
     [RelayCommand]
@@ -193,6 +208,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             Material = app.Appearance.Material;
             OpacityPercent = app.Appearance.BackgroundOpacity * 100;
             Motion = app.Appearance.Motion;
+            Accent = AccentPalette.Find(app.Appearance.AccentColor);
+            Density = app.Appearance.Density;
             VisualStatus = _visuals.Describe();
             IsDemo = _monitors.IsDemo;
             StorageProblem = _settings.Problem;

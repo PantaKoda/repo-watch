@@ -34,6 +34,20 @@ public sealed class SpaceStationVisualsTests
     }
 
     [Fact]
+    public void The_light_theme_keeps_a_readable_surface()
+    {
+        var light = WindowMaterialService.Resolve(Appearance(WindowMaterial.Transparent, 0.4), WindowTransparencyLevel.Transparent, false, false, lightTheme: true);
+        var dark = WindowMaterialService.Resolve(Appearance(WindowMaterial.Transparent, 0.4), WindowTransparencyLevel.Transparent, false, false, lightTheme: false);
+        var lightHigh = WindowMaterialService.Resolve(Appearance(WindowMaterial.Frosted, 0.9), WindowTransparencyLevel.AcrylicBlur, false, false, lightTheme: true);
+
+        Assert.Equal(WindowMaterialService.LightThemeMinimumOpacity, light.SurfaceOpacity);
+        Assert.Contains("light theme", light.Fallback, StringComparison.Ordinal);
+        Assert.Equal(0.4, dark.SurfaceOpacity, 3);
+        Assert.Equal(0.9, lightHigh.SurfaceOpacity, 3);
+        Assert.Null(lightHigh.Fallback);
+    }
+
+    [Fact]
     public void Unavailable_transparency_falls_back_to_a_solid_surface_and_says_so()
     {
         var applied = WindowMaterialService.Resolve(Appearance(WindowMaterial.Transparent, 0.4), WindowTransparencyLevel.None, false, false);

@@ -80,7 +80,7 @@ public sealed record AppearanceSettings : SettingsRecord
 
     public Density Density { get; init; } = Density.Comfortable;
 
-    /// <summary>Optional accent as #RRGGBB; null uses the system accent.</summary>
+    /// <summary>Optional accent as #RRGGBB; null uses Repo Watch's default cyan. Status colors never follow it.</summary>
     public string? AccentColor { get; init; }
 
     /// <summary>Activity animations (pulses, scan lines). Never run while nothing is active.</summary>

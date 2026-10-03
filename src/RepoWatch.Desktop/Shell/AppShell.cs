@@ -64,14 +64,14 @@ public sealed class AppShell(
         ApplyAppearance();
         settings.AppChanged += (_, e) =>
         {
-            if (e.Previous.Appearance.Theme != e.Current.Appearance.Theme)
+            if (e.Previous.Appearance.Theme != e.Current.Appearance.Theme || e.Previous.Appearance.AccentColor != e.Current.Appearance.AccentColor)
             {
                 Dispatcher.UIThread.Post(ApplyAppearance);
                 QueueVisuals(); // the solid fallback paints a theme brush
             }
 
             var (before, after) = (e.Previous.Appearance, e.Current.Appearance);
-            if (before.Material != after.Material || before.BackgroundOpacity != after.BackgroundOpacity || before.Motion != after.Motion)
+            if (before.Material != after.Material || before.BackgroundOpacity != after.BackgroundOpacity || before.Motion != after.Motion || before.Density != after.Density)
             {
                 QueueVisuals();
             }
@@ -325,10 +325,14 @@ public sealed class AppShell(
         var applied = WindowMaterialService.Apply(_widget, appearance);
         _widgetViewModel.SurfaceOpacity = applied.SurfaceOpacity;
         var motion = VisualStateService.ResolveMotion(appearance.Motion);
+        var compact = appearance.Density == Density.Compact;
         foreach (var window in new Window?[] { _settingsWindow, _repositoriesWindow, _onboardingWindow })
         {
             window?.Classes.Set("reduce-motion", !motion);
+            window?.Classes.Set("compact", compact);
         }
+
+        _widget.Classes.Set("compact", compact);
 
         var onScreen = _widget.IsVisible && _widget.WindowState != WindowState.Minimized;
         _widget.Classes.Set("reduce-motion", !motion || !onScreen);
@@ -357,6 +361,7 @@ public sealed class AppShell(
     private void BringToFront(Window window)
     {
         window.Classes.Set("reduce-motion", !services.GetRequiredService<VisualStateService>().MotionEnabled);
+        window.Classes.Set("compact", settings.App.Appearance.Density == Density.Compact);
         window.Show();
         if (window.WindowState == WindowState.Minimized)
         {
@@ -414,6 +419,7 @@ public sealed class AppShell(
             return;
         }
 
+        AccentPalette.Apply(_application, settings.App.Appearance.AccentColor);
         _application.RequestedThemeVariant = settings.App.Appearance.Theme switch
         {
             ThemePreference.Light => ThemeVariant.Light,
