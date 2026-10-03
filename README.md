@@ -113,9 +113,9 @@ Tests use xunit v3 on Microsoft.Testing.Platform (opted in via `global.json`), s
 pwsh scripts/publish-windows.ps1
 ```
 
-- **Reproducible:** deterministic compilation with CI path mapping, locked package versions, and a zip whose entries are sorted and stamped with the commit time. Publishing the same commit twice gives the same SHA-256. The script warns when the working tree has uncommitted changes; such a build must not be released.
+- **Reproducible:** deterministic compilation with CI path mapping, locked package versions, no debug symbols, and a zip whose entries are sorted and stamped with the commit time. The same commit gives the same SHA-256 from any checkout path. The script warns when the working tree has uncommitted changes; such a build must not be released.
 - **Version:** `Version` in `Directory.Build.props`. The commit is added automatically and shown in About and in diagnostics.
-- **Symbols:** `.pdb` files stay in `artifacts/publish/win-x64` and are left out of the zip.
+- **Symbols:** release builds have none. Avalonia's XAML compiler would record absolute build paths in them, breaking reproducibility; logged stack traces keep method names but not line numbers.
 - **Signing:** not done yet. Certificates and keys must never be committed (`*.pfx`, `*.snk` and `*.pem` are ignored); a later signing step must take them from secret storage.
 - **Publishing a GitHub release** (a tag plus the zip and `.sha256`) is a maintainer action; nothing here does it automatically. The manual CI workflow only uploads the zip as a workflow artifact.
 - **Before a release,** run [docs/validation-checklist.md](docs/validation-checklist.md) against the published zip, not a debug build.

@@ -2,8 +2,10 @@
 #   artifacts/release/RepoWatch-<version>-win-x64.zip  (+ .sha256)
 # The .NET runtime is included, so the zip runs on Windows 10 1809+ x64 without installing .NET.
 #
-# Reproducible: locked restore, deterministic compilation with CI path mapping, and a zip whose entries are
-# sorted and stamped with the commit time. Publishing the same clean commit twice gives the same SHA-256.
+# Reproducible: locked restore, deterministic compilation with CI path mapping, no debug symbols, and a zip whose
+# entries are sorted and stamped with the commit time. The same commit gives the same SHA-256 from any checkout
+# path. (Avalonia's XAML compiler rewrites RepoWatch.dll after the C# compiler and records the absolute PDB and
+# .axaml paths, which path mapping does not cover; leaving symbols out removes them.)
 #
 #   pwsh scripts/publish-windows.ps1              # restore, test, publish, zip
 #   pwsh scripts/publish-windows.ps1 -SkipTests   # when the tests already ran for this commit
@@ -56,7 +58,7 @@ foreach ($dir in $publishDir, (Join-Path $root "src/RepoWatch.Desktop/obj/Releas
 }
 Invoke-Checked 'Publish' {
     dotnet publish $project -c Release -f $framework -r $runtime --self-contained `
-        -p:ContinuousIntegrationBuild=true -p:SatelliteResourceLanguages=en -o $publishDir
+        -p:ContinuousIntegrationBuild=true -p:DebugType=none -p:DebugSymbols=false -p:SatelliteResourceLanguages=en -o $publishDir
 }
 if (-not (Test-Path (Join-Path $publishDir 'RepoWatch.exe'))) { throw 'The publish did not produce RepoWatch.exe.' }
 
@@ -64,7 +66,7 @@ Write-Host '==> Zip' -ForegroundColor Cyan
 New-Item -ItemType Directory -Force $outDir | Out-Null
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Add-Type -AssemblyName System.IO.Compression
-# Debug symbols stay in artifacts/publish for crash analysis; they are not shipped in the zip.
+# The runtime pack's own .pdb files are not shipped either.
 $files = Get-ChildItem $publishDir -Recurse -File | Where-Object { $_.Extension -ne '.pdb' } |
     ForEach-Object { [pscustomobject]@{ File = $_; Entry = 'RepoWatch/' + [IO.Path]::GetRelativePath($publishDir, $_.FullName).Replace('\', '/') } } |
     Sort-Object { $_.Entry } -Culture ([cultureinfo]::InvariantCulture) -CaseSensitive
