@@ -42,7 +42,11 @@ public sealed partial class RunItemViewModel(IExternalBrowser browser, long id) 
     public partial string OutcomeLabel { get; private set; } = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActive))]
     public partial StatusTone Tone { get; private set; }
+
+    /// <summary>The run is queued or in progress.</summary>
+    public bool IsActive => Tone == StatusTone.Running;
 
     [ObservableProperty]
     public partial string TimeText { get; private set; } = "";

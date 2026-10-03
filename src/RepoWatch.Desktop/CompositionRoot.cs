@@ -55,6 +55,7 @@ internal static class CompositionRoot
 
         // Monitoring and platform adapters.
         services.AddSingleton<MonitorHost>();
+        services.AddSingleton<VisualStateService>();
         services.AddSingleton<IExternalBrowser, BrowserLauncher>();
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<TrayService>();

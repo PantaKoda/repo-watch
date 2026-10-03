@@ -58,6 +58,14 @@ public enum Density
     Compact,
 }
 
+/// <summary>Whether activity animations run. System follows the Windows "Show animations" setting.</summary>
+public enum MotionPreference
+{
+    System,
+    On,
+    Off,
+}
+
 public sealed record AppearanceSettings : SettingsRecord
 {
     public const double MinBackgroundOpacity = 0.2;
@@ -74,6 +82,9 @@ public sealed record AppearanceSettings : SettingsRecord
 
     /// <summary>Optional accent as #RRGGBB; null uses the system accent.</summary>
     public string? AccentColor { get; init; }
+
+    /// <summary>Activity animations (pulses, scan lines). Never run while nothing is active.</summary>
+    public MotionPreference Motion { get; init; } = MotionPreference.System;
 }
 
 public sealed record WindowSettings : SettingsRecord

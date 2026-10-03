@@ -1,33 +1,69 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:RepoWatch.Desktop.Controls"
              x:Class="RepoWatch.Desktop.App"
              RequestedThemeVariant="Default">
+  <!--
+    "Space station" visual language: deep-space surfaces, a cyan HUD accent, neon status colors.
+    Motion is reserved for activity (running work, refreshing) and is switched off for any window
+    carrying the "reduce-motion" class. Nothing animates while the widget is idle.
+  -->
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-          <SolidColorBrush x:Key="StatusSuccessBrush" Color="#1A7F37" />
-          <SolidColorBrush x:Key="StatusFailureBrush" Color="#CF222E" />
-          <SolidColorBrush x:Key="StatusWarningBrush" Color="#9A6700" />
-          <SolidColorBrush x:Key="StatusRunningBrush" Color="#0969DA" />
-          <SolidColorBrush x:Key="StatusNeutralBrush" Color="#6E7781" />
-          <SolidColorBrush x:Key="StatusUnknownBrush" Color="#6E7781" />
-          <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="#F6F8FA" />
-          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#D0D7DE" />
-          <SolidColorBrush x:Key="DemoBannerBrush" Color="#FFF3C4" />
-          <SolidColorBrush x:Key="DemoBannerForegroundBrush" Color="#4D3800" />
+          <SolidColorBrush x:Key="StatusSuccessBrush" Color="#0E8A5F" />
+          <SolidColorBrush x:Key="StatusFailureBrush" Color="#D12A4A" />
+          <SolidColorBrush x:Key="StatusWarningBrush" Color="#A36200" />
+          <SolidColorBrush x:Key="StatusRunningBrush" Color="#0081A8" />
+          <SolidColorBrush x:Key="StatusNeutralBrush" Color="#5E6C84" />
+          <SolidColorBrush x:Key="StatusUnknownBrush" Color="#5E6C84" />
+
+          <LinearGradientBrush x:Key="SpaceSurfaceBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#F5F9FD" Offset="0" />
+            <GradientStop Color="#E3ECF6" Offset="1" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="HudAccentBrush" Color="#0081A8" />
+          <SolidColorBrush x:Key="HudFrameBrush" Color="#660081A8" />
+          <SolidColorBrush x:Key="HudDimBrush" Color="#5E6C84" />
+          <SolidColorBrush x:Key="StarBrush" Color="#30203A55" />
+          <SolidColorBrush x:Key="RowHoverBrush" Color="#140081A8" />
+          <SolidColorBrush x:Key="PanelBrush" Color="#0A0081A8" />
+          <Color x:Key="HudGlowColor">#330081A8</Color>
+          <DropShadowEffect x:Key="TextHaloEffect" BlurRadius="2.5" OffsetX="0" OffsetY="0" Color="#FFFFFFFF" Opacity="1" />
+          <SolidColorBrush x:Key="LegibleSecondaryBrush" Color="#2A3448" />
+
+          <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="#F5F9FD" />
+          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#550081A8" />
+          <SolidColorBrush x:Key="DemoBannerBrush" Color="#26FFB547" />
+          <SolidColorBrush x:Key="DemoBannerForegroundBrush" Color="#6B4200" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
-          <SolidColorBrush x:Key="StatusSuccessBrush" Color="#3FB950" />
-          <SolidColorBrush x:Key="StatusFailureBrush" Color="#F85149" />
-          <SolidColorBrush x:Key="StatusWarningBrush" Color="#D29922" />
-          <SolidColorBrush x:Key="StatusRunningBrush" Color="#58A6FF" />
-          <SolidColorBrush x:Key="StatusNeutralBrush" Color="#8B949E" />
-          <SolidColorBrush x:Key="StatusUnknownBrush" Color="#8B949E" />
-          <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="#161B22" />
-          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#30363D" />
-          <SolidColorBrush x:Key="DemoBannerBrush" Color="#3B2F00" />
-          <SolidColorBrush x:Key="DemoBannerForegroundBrush" Color="#F2D675" />
+          <SolidColorBrush x:Key="StatusSuccessBrush" Color="#3DFFA2" />
+          <SolidColorBrush x:Key="StatusFailureBrush" Color="#FF4D6D" />
+          <SolidColorBrush x:Key="StatusWarningBrush" Color="#FFB547" />
+          <SolidColorBrush x:Key="StatusRunningBrush" Color="#3FE0FF" />
+          <SolidColorBrush x:Key="StatusNeutralBrush" Color="#7C8BA6" />
+          <SolidColorBrush x:Key="StatusUnknownBrush" Color="#7C8BA6" />
+
+          <LinearGradientBrush x:Key="SpaceSurfaceBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#0E1B30" Offset="0" />
+            <GradientStop Color="#060A14" Offset="1" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="HudAccentBrush" Color="#3FE0FF" />
+          <SolidColorBrush x:Key="HudFrameBrush" Color="#803FE0FF" />
+          <SolidColorBrush x:Key="HudDimBrush" Color="#A6B4CF" />
+          <SolidColorBrush x:Key="StarBrush" Color="#D8E9FF" />
+          <SolidColorBrush x:Key="RowHoverBrush" Color="#1A3FE0FF" />
+          <SolidColorBrush x:Key="PanelBrush" Color="#0D3FE0FF" />
+          <Color x:Key="HudGlowColor">#553FE0FF</Color>
+          <DropShadowEffect x:Key="TextHaloEffect" BlurRadius="2.5" OffsetX="0" OffsetY="0" Color="#FF000000" Opacity="1" />
+          <SolidColorBrush x:Key="LegibleSecondaryBrush" Color="#E2EAF6" />
+
+          <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="#0B1322" />
+          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#4D3FE0FF" />
+          <SolidColorBrush x:Key="DemoBannerBrush" Color="#2EFFB547" />
+          <SolidColorBrush x:Key="DemoBannerForegroundBrush" Color="#FFD28A" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
 
@@ -43,7 +79,12 @@
   </Application.Resources>
 
   <Application.Styles>
-    <FluentTheme />
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark" Accent="#FF1FB8D6" RegionColor="#FF070C18" />
+        <ColorPaletteResources x:Key="Light" Accent="#FF0081A8" RegionColor="#FFF5F9FD" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
 
     <!-- Compact icon-only buttons; each has a tooltip and an accessible name. -->
     <Style Selector="Button.icon">
@@ -52,6 +93,14 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="MinWidth" Value="28" />
       <Setter Property="MinHeight" Value="28" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Foreground" Value="{DynamicResource HudDimBrush}" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
+    </Style>
+    <Style Selector="Button.icon:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
     </Style>
     <Style Selector="Button.icon PathIcon">
       <Setter Property="Width" Value="14" />
@@ -65,12 +114,45 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="8,6" />
-      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Button.row:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
+    </Style>
+
+    <!-- Repository rows: soft hover glow with a short transition. -->
+    <Style Selector="ListBox.hud ListBoxItem">
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="Margin" Value="0,1" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="ListBox.hud ListBoxItem /template/ ContentPresenter">
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.18" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="ListBox.hud ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
+    </Style>
+    <Style Selector="ListBox.hud ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource HudFrameBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <!-- Low background opacity: a soft halo keeps content legible over busy backgrounds. One layer for the whole content. -->
+    <Style Selector="DockPanel.legible">
+      <Setter Property="Effect" Value="{DynamicResource TextHaloEffect}" />
+    </Style>
+    <Style Selector="DockPanel.legible TextBlock.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource LegibleSecondaryBrush}" />
     </Style>
 
     <Style Selector="TextBlock.secondary">
       <Setter Property="FontSize" Value="11" />
-      <Setter Property="Opacity" Value="0.78" />
+      <Setter Property="Foreground" Value="{DynamicResource HudDimBrush}" />
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
     <Style Selector="TextBlock.title">
@@ -81,6 +163,64 @@
       <Setter Property="FontSize" Value="15" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Margin" Value="0,12,0,4" />
+    </Style>
+    <!-- HUD labels: small, wide-tracked, accent colored. Text is written in uppercase. -->
+    <Style Selector="TextBlock.hud">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="LetterSpacing" Value="2" />
+      <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
+    </Style>
+    <Style Selector="TextBlock.brand">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="LetterSpacing" Value="3" />
+      <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
+    </Style>
+
+    <!-- Scan line: a thin indeterminate bar shown only while something is active. -->
+    <Style Selector="ProgressBar.scan">
+      <Setter Property="Height" Value="2" />
+      <Setter Property="MinHeight" Value="2" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
+      <Setter Property="IsIndeterminate" Value="True" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <Style Selector="Window.reduce-motion ProgressBar.scan">
+      <Setter Property="IsIndeterminate" Value="False" />
+      <Setter Property="Value" Value="100" />
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
+    <!-- Running work radiates: an outward pulse on its status dot. -->
+    <Style Selector="Window:not(.reduce-motion) c|StatusDot:active">
+      <Style.Animations>
+        <Animation Duration="0:0:1.6" IterationCount="INFINITE">
+          <KeyFrame Cue="0%">
+            <Setter Property="Pulse" Value="0" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Pulse" Value="1" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <!-- Details slide in when opened. -->
+    <Style Selector="Window:not(.reduce-motion) DockPanel.details[IsVisible=True]">
+      <Style.Animations>
+        <Animation Duration="0:0:0.22" Easing="CubicEaseOut" FillMode="Forward">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="TranslateTransform.X" Value="16" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="TranslateTransform.X" Value="0" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
     </Style>
   </Application.Styles>
 </Application>

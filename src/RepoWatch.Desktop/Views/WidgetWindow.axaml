@@ -9,7 +9,8 @@
         WindowDecorations="None"
         CanResize="True"
         Topmost="{Binding AlwaysOnTop}"
-        Background="{DynamicResource WidgetSurfaceBrush}">
+        Background="Transparent"
+        TransparencyLevelHint="Transparent">
 
   <Window.KeyBindings>
     <KeyBinding Gesture="F5" Command="{Binding RefreshCommand}" />
@@ -32,8 +33,9 @@
               <DataTemplate x:DataType="vm:RunItemViewModel">
                 <Button Classes="row" Command="{Binding OpenCommand}" ToolTip.Tip="Open this run on GitHub"
                         AutomationProperties.Name="{Binding Title}">
-                  <Grid ColumnDefinitions="Auto,*,Auto">
-                    <c:StatusDot Tone="{Binding Tone}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                  <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="*,Auto">
+                    <ProgressBar Grid.Row="1" Grid.ColumnSpan="3" Classes="scan" Margin="0,5,0,0" IsVisible="{Binding IsActive}" />
+                    <c:StatusDot Tone="{Binding Tone}" Margin="0,0,10,0" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="1">
                       <TextBlock Classes="title" Text="{Binding Title}" />
                       <TextBlock Classes="secondary" Text="{Binding Detail}" />
@@ -113,18 +115,29 @@
     </DataTemplate>
   </Window.DataTemplates>
 
-  <Border BorderBrush="{DynamicResource WidgetBorderBrush}" BorderThickness="1">
-    <DockPanel>
+  <!--
+    Layers: the surface (gradient + stars) carries the user's background opacity; the frame and all
+    content above it stay fully opaque. The surface opacity floor (20%) keeps every pixel inside the
+    widget hit-testable, so transparency never becomes click-through.
+  -->
+  <Panel Margin="6">
+    <Border Name="Surface" CornerRadius="14" Background="{DynamicResource SpaceSurfaceBrush}" Opacity="{Binding SurfaceOpacity}" />
+    <Border CornerRadius="14" ClipToBounds="True" Opacity="{Binding SurfaceOpacity}">
+      <c:StarField />
+    </Border>
+  <Border CornerRadius="14" BorderBrush="{DynamicResource HudFrameBrush}" BorderThickness="1"
+          BoxShadow="0 0 14 0 #333FE0FF">
+    <DockPanel Classes.legible="{Binding NeedsTextHalo}">
       <!-- Header: drag to move -->
-      <Border DockPanel.Dock="Top" Padding="10,4,4,4" Background="Transparent" PointerPressed="OnHeaderPointerPressed">
+      <Border DockPanel.Dock="Top" Padding="14,8,6,4" Background="Transparent" PointerPressed="OnHeaderPointerPressed">
         <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <TextBlock Text="Repo Watch" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <Border CornerRadius="8" Padding="6,1" BorderThickness="1" BorderBrush="{DynamicResource WidgetBorderBrush}"
-                    ToolTip.Tip="Connection state" VerticalAlignment="Center">
-              <StackPanel Orientation="Horizontal" Spacing="4">
+          <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <TextBlock Classes="brand" Text="◆ REPO WATCH" VerticalAlignment="Center" />
+            <Border CornerRadius="10" Padding="8,2" BorderThickness="1" BorderBrush="{DynamicResource HudFrameBrush}"
+                    Background="{DynamicResource PanelBrush}" ToolTip.Tip="Connection state" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="6">
                 <c:StatusDot Tone="{Binding ConnectionTone}" Width="7" Height="7" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding ConnectionLabel}" FontSize="11" VerticalAlignment="Center" />
+                <TextBlock Classes="hud" Text="{Binding ConnectionLabel}" FontSize="10" LetterSpacing="1.5" VerticalAlignment="Center" />
               </StackPanel>
             </Border>
           </StackPanel>
@@ -154,8 +167,15 @@
         </Grid>
       </Border>
 
+      <!-- Refreshing: a scan line sweeps under the header (static when motion is reduced) -->
+      <Panel DockPanel.Dock="Top" Height="2" Margin="14,0,14,4">
+        <Border Height="1" Background="{DynamicResource HudFrameBrush}" Opacity="0.5" VerticalAlignment="Center" />
+        <ProgressBar Classes="scan" IsVisible="{Binding IsRefreshing}" />
+      </Panel>
+
       <!-- Demo banner: always visible in demo mode -->
-      <Border DockPanel.Dock="Top" IsVisible="{Binding IsDemo}" Background="{DynamicResource DemoBannerBrush}" Padding="10,4,4,4">
+      <Border DockPanel.Dock="Top" IsVisible="{Binding IsDemo}" Background="{DynamicResource DemoBannerBrush}" Padding="12,4,6,4"
+              Margin="8,0,8,4" CornerRadius="8">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Text="Demo data: sample repositories, not from GitHub" TextWrapping="Wrap" VerticalAlignment="Center"
                      FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource DemoBannerForegroundBrush}" />
@@ -164,7 +184,7 @@
       </Border>
 
       <!-- Footer: summary and resize grip -->
-      <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="10,0,0,0" MinHeight="18">
+      <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="14,2,4,4" MinHeight="18">
         <TextBlock Classes="secondary" Text="{Binding SummaryText}" VerticalAlignment="Center" IsVisible="{Binding !HasNotice}" />
         <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasNotice}" VerticalAlignment="Center">
           <c:StatusDot Tone="Warning" Width="7" Height="7" VerticalAlignment="Center" />
@@ -172,7 +192,7 @@
         </StackPanel>
         <Border Grid.Column="1" Width="18" Height="18" Background="Transparent" Cursor="BottomRightCorner"
                 PointerPressed="OnResizeGripPointerPressed" ToolTip.Tip="Drag to resize">
-          <Path Data="M15,6 L6,15 M15,11 L11,15" Stroke="{DynamicResource WidgetBorderBrush}" StrokeThickness="1.5" />
+          <Path Data="M15,6 L6,15 M15,11 L11,15" Stroke="{DynamicResource HudFrameBrush}" StrokeThickness="1.5" />
         </Border>
       </Grid>
 
@@ -214,34 +234,41 @@
         </StackPanel>
 
         <!-- Repository list (compact and expanded) -->
-        <ListBox Name="RepositoryList" IsVisible="{Binding ShowList}"
+        <ListBox Name="RepositoryList" Classes="hud" IsVisible="{Binding ShowList}"
                  ItemsSource="{Binding Repositories}" SelectedItem="{Binding SelectedRepository}"
-                 Background="Transparent" Padding="4,0"
+                 Background="Transparent" Padding="6,0"
                  AutomationProperties.Name="Watched repositories">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:RepositoryRowViewModel">
-              <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding Summary}" AutomationProperties.Name="{Binding Summary}">
-                <c:StatusDot Tone="{Binding Tone}" Margin="0,4,10,0" VerticalAlignment="Top" />
-                <StackPanel Grid.Column="1">
-                  <TextBlock Classes="title" Text="{Binding Name}" />
-                  <TextBlock Classes="secondary" Text="{Binding BranchStatus}" />
-                  <TextBlock Classes="secondary" Text="{Binding Badges}" IsVisible="{Binding HasBadges}" />
-                  <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasFreshnessWarning}">
-                    <c:StatusDot Tone="Warning" Width="7" Height="7" VerticalAlignment="Center" />
-                    <TextBlock Classes="secondary" Text="{Binding FreshnessWarning}" />
+              <Grid RowDefinitions="*,Auto" ToolTip.Tip="{Binding Summary}" AutomationProperties.Name="{Binding Summary}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <c:StatusDot Tone="{Binding Tone}" Width="9" Height="9" Margin="2,5,12,0" VerticalAlignment="Top" />
+                  <StackPanel Grid.Column="1" Spacing="1">
+                    <TextBlock Classes="title" Text="{Binding Name}" />
+                    <TextBlock Classes="secondary" Text="{Binding BranchStatus}" />
+                    <TextBlock Classes="secondary" Text="{Binding Badges}" IsVisible="{Binding HasBadges}" />
+                    <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding HasFreshnessWarning}">
+                      <c:StatusDot Tone="Warning" Width="6" Height="6" VerticalAlignment="Center" />
+                      <TextBlock Classes="secondary" Text="{Binding FreshnessWarning}" />
+                    </StackPanel>
                   </StackPanel>
-                </StackPanel>
-                <StackPanel Grid.Column="2" Margin="8,0,0,0">
-                  <TextBlock Classes="secondary" Text="{Binding PullRequestCount}" HorizontalAlignment="Right" />
-                  <TextBlock Classes="secondary" Text="{Binding IssueCount}" HorizontalAlignment="Right" />
-                </StackPanel>
+                  <StackPanel Grid.Column="2" Margin="8,0,0,0" Spacing="1">
+                    <TextBlock Classes="secondary" Text="{Binding PullRequestCount}" HorizontalAlignment="Right" />
+                    <TextBlock Classes="secondary" Text="{Binding IssueCount}" HorizontalAlignment="Right" />
+                  </StackPanel>
+                </Grid>
+                <!-- Active work: a scan line runs along the row -->
+                <ProgressBar Grid.Row="1" Classes="scan" Margin="0,6,0,0" IsVisible="{Binding IsActive}" />
               </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
 
         <!-- Details of the selected repository (expanded mode) -->
-        <DockPanel IsVisible="{Binding ShowDetails}">
+        <DockPanel Classes="details" IsVisible="{Binding ShowDetails}">
+          <DockPanel.RenderTransform>
+            <TranslateTransform />
+          </DockPanel.RenderTransform>
           <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,Auto" Margin="4,0,4,2">
             <Button Name="BackButton" Classes="icon" Command="{Binding BackCommand}"
                     ToolTip.Tip="Back to repositories (Esc)" AutomationProperties.Name="Back to repositories">
@@ -269,4 +296,6 @@
       </Panel>
     </DockPanel>
   </Border>
+    <c:HudCorners Stroke="{DynamicResource HudAccentBrush}" Length="16" Opacity="0.9" />
+  </Panel>
 </Window>

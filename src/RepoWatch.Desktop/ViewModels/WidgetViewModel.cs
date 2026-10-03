@@ -103,6 +103,14 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial bool AlwaysOnTop { get; private set; }
 
+    /// <summary>Opacity of the background layer only (set by the shell from the achieved material). Text stays opaque.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NeedsTextHalo))]
+    public partial double SurfaceOpacity { get; set; } = 1;
+
+    /// <summary>Below this the background no longer guarantees contrast, so content gets a halo.</summary>
+    public bool NeedsTextHalo => SurfaceOpacity < 0.75;
+
     [ObservableProperty]
     public partial bool PositionLocked { get; private set; }
 

@@ -31,11 +31,27 @@
       <Button Content="Show widget" Command="{Binding ShowWidgetCommand}" />
 
       <TextBlock Classes="heading" Text="Appearance" />
-      <StackPanel Orientation="Horizontal" Spacing="10">
+      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="8">
         <TextBlock Text="Theme" VerticalAlignment="Center" />
-        <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" MinWidth="140"
+        <ComboBox Grid.Column="1" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" MinWidth="140"
                   AutomationProperties.Name="Theme" />
-      </StackPanel>
+        <TextBlock Grid.Row="1" Text="Material" VerticalAlignment="Center" />
+        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Materials}" SelectedItem="{Binding Material}" MinWidth="140"
+                  AutomationProperties.Name="Window material" />
+        <TextBlock Grid.Row="2" Text="Background" VerticalAlignment="Center" />
+        <DockPanel Grid.Row="2" Grid.Column="1" IsEnabled="{Binding OpacityAdjustable}">
+          <TextBlock DockPanel.Dock="Right" Text="{Binding OpacityLabel}" Width="40" TextAlignment="Right" VerticalAlignment="Center" />
+          <Slider Minimum="{Binding MinOpacityPercent}" Maximum="{Binding MaxOpacityPercent}" Value="{Binding OpacityPercent}"
+                  TickFrequency="1" IsSnapToTickEnabled="True" SmallChange="5" LargeChange="10"
+                  AutomationProperties.Name="Background opacity" />
+        </DockPanel>
+        <TextBlock Grid.Row="3" Text="Motion" VerticalAlignment="Center" />
+        <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding MotionChoices}" SelectedItem="{Binding Motion}" MinWidth="140"
+                  AutomationProperties.Name="Motion" />
+      </Grid>
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Only the widget's background fades; text, icons and menus stay fully opaque. Motion: System follows Windows' animation setting." />
+      <TextBlock Text="{Binding VisualStatus}" TextWrapping="Wrap" Classes="secondary" />
 
       <TextBlock Classes="heading" Text="About" />
       <TextBlock Text="{Binding Version, StringFormat='Repo Watch {0}'}" />
