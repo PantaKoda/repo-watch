@@ -957,4 +957,8 @@ The maintainer noticed that switching the repository to public didn't show in th
 - **Bringing the widget to the front refreshes at once** every part older than 30 s (`PollingIntervals.StaleOnFocus`). Failing parts keep their backoff, and pausing is respected.
 - **Limit:** within-seconds updates need the Stage 10 relay deployed and the GitHub App webhook configured. Both are maintainer actions; see docs/relay.md.
 - Tests: the metadata interval, and the widget being activated refreshes stale parts at once but not freshly refreshed ones. `dotnet test`: 472 passed, twice.
+- **Decision:** the published app stays on polling plus on-demand refresh; no shared relay. Webhooks belong to the shared GitHub App, so all users would depend on one maintainer-run server, which would also receive their private-repository event payloads. The relay remains an optional self-hosted feature for people who register their own app (docs/relay.md).
+
+**Next concrete task**
+- After PR #15 is reviewed and merged, in a new PR: polling intervals in Settings, in seconds, with the current defaults and a plain description of what each one affects.
 
