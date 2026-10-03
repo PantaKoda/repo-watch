@@ -2,7 +2,7 @@
 
 A Windows-first desktop widget for monitoring GitHub Actions, pull requests and issues, built with C#, .NET and Avalonia. The shared core and UI are kept portable for later macOS/Linux releases.
 
-> **Status: first Windows release candidate (0.1.0).** Sign-in, the repository picker, live GitHub data with caching, notifications, desktop integration and the optional webhook relay work and were checked on Windows 11 against github.com. macOS and Linux are not supported yet. Open limitations are listed in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: first Windows release candidate (0.1.0).** Sign-in, the repository picker, live GitHub data with caching and desktop integration (tray, startup, single instance, shortcut) were checked on Windows 11 against github.com. Notifications from real GitHub events and the webhook relay with real GitHub webhooks have been verified only with test fixtures so far. macOS and Linux are not supported yet. Open limitations are listed in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Install and run (Windows)
 
@@ -113,7 +113,7 @@ Tests use xunit v3 on Microsoft.Testing.Platform (opted in via `global.json`), s
 pwsh scripts/publish-windows.ps1
 ```
 
-- **Reproducible:** deterministic compilation with CI path mapping, locked package versions, no debug symbols, and a zip whose entries are sorted and stamped with the commit time. The same commit gives the same SHA-256 from any checkout path. The script warns when the working tree has uncommitted changes; such a build must not be released.
+- **Reproducible:** deterministic compilation with CI path mapping, locked package versions, no debug symbols, and a zip whose entries are sorted ordinally and stamped with the commit time. The same commit gives the same SHA-256 from any checkout path with the same .NET SDK and PowerShell versions, which the script prints (`global.json` rolls forward to newer 10.0 SDKs, and zip compression comes from the runtime PowerShell runs on). The script warns when the working tree has uncommitted or untracked files; such a build must not be released.
 - **Version:** `Version` in `Directory.Build.props`. The commit is added automatically and shown in About and in diagnostics.
 - **Symbols:** release builds have none. Avalonia's XAML compiler would record absolute build paths in them, breaking reproducibility; logged stack traces keep method names but not line numbers.
 - **Signing:** not done yet. Certificates and keys must never be committed (`*.pfx`, `*.snk` and `*.pem` are ignored); a later signing step must take them from secret storage.
@@ -155,7 +155,7 @@ Configuration holds only **public** deployment values. Secrets never belong here
 | `Cache:RetentionDays` | 30 | How long cached repository data and notification history are kept (1–365). |
 | `Cache:MaxCachedResponses` | 2000 | Most cached REST responses per account (100–100000). |
 | `Relay:BaseUrl` | empty | Optional live-update relay ([docs/relay.md](docs/relay.md)). https, or `http://localhost` for development. Empty: polling only. |
-| `Updates:ReleasesUrl` | `https://github.com/PantaKoda/repo-watch/releases` | Page opened by *Check for updates* (https, on the GitHub web host). Empty hides the action. |
+| `Updates:ReleasesUrl` | `https://github.com/PantaKoda/repo-watch/releases` | Page opened by *Check for updates* (https, on the GitHub web host). Empty hides the action, and so does the default when `GitHub:WebBaseUrl` points elsewhere. |
 
 Unknown keys, wrongly typed values, malformed JSON and invalid values stop startup with a window listing each problem, the setting to change and the files that were read. Problems are also logged.
 

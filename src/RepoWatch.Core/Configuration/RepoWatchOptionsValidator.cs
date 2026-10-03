@@ -48,10 +48,11 @@ public static partial class RepoWatchOptionsValidator
         // Plain HTTP is accepted only for a relay on this machine during development.
         ValidateHttpsUrl(errors, "Relay:BaseUrl", options.Relay.BaseUrl, required: false, allowLoopbackHttp: true);
 
-        // The browser adapter opens only GitHub web links, so the releases page must live there too.
+        // The browser adapter opens only GitHub web links, so a configured releases page must live there too.
+        // The built-in default is exempt: with another GitHub:WebBaseUrl it is hidden, not a startup error.
         var errorCount = errors.Count;
         ValidateHttpsUrl(errors, "Updates:ReleasesUrl", options.Updates.ReleasesUrl, required: false, allowLoopbackHttp: false);
-        if (errors.Count == errorCount && options.Updates.IsConfigured
+        if (errors.Count == errorCount && options.Updates.IsConfigured && !options.Updates.IsDefault
             && Uri.TryCreate(options.GitHub.WebBaseUrl, UriKind.Absolute, out var web)
             && !Platform.ExternalLinkPolicy.IsAllowed(new Uri(options.Updates.ReleasesUrl!), web))
         {

@@ -27,7 +27,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         IExternalBrowser? browser = null, RepoWatchOptions? options = null)
     {
         _browser = browser;
-        _releasesUrl = options?.Updates.IsConfigured == true && Uri.TryCreate(options.Updates.ReleasesUrl, UriKind.Absolute, out var releases) ? releases : null;
+        _releasesUrl = options is not null && Uri.TryCreate(options.GitHub.WebBaseUrl, UriKind.Absolute, out var web) ? options.Updates.ResolveFor(web) : null;
         _integration = integration;
         if (_integration is not null)
         {

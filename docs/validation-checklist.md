@@ -5,7 +5,7 @@ Run this against the **published zip** (`scripts/publish-windows.ps1`), extracte
 ## Build
 
 - [ ] `pwsh scripts/publish-windows.ps1` passes restore, build, tests and publish on a clean checkout of the release commit, without the "uncommitted changes" warning.
-- [ ] The SHA-256 printed matches `RepoWatch-<version>-win-x64.zip.sha256`. A build of the same commit in another folder or on another machine prints the same hash.
+- [ ] The SHA-256 printed matches `RepoWatch-<version>-win-x64.zip.sha256`. A build of the same commit in another folder, or on another machine with the same .NET SDK and PowerShell versions (printed by the script), prints the same hash.
 - [ ] The zip contains `RepoWatch/RepoWatch.exe` and `RepoWatch/appsettings.json` with the production client ID and slug, and no `.pdb`, `appsettings.Local.json` or other secrets.
 - [ ] Explorer shows the Repo Watch icon on `RepoWatch.exe`; *Properties → Details* shows the version.
 

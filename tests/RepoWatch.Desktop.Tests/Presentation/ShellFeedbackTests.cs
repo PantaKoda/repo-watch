@@ -227,6 +227,15 @@ public sealed class ShellFeedbackTests
         Assert.False(viewModel.CanCheckForUpdates);
     }
 
+    [Fact]
+    public void Check_for_updates_is_hidden_when_the_default_page_is_not_on_the_configured_GitHub_host()
+    {
+        var options = new RepoWatchOptions { GitHub = { WebBaseUrl = "https://github.example.com" } };
+        using var viewModel = SettingsViewModels.Create(TestServices.Settings(), new MonitorHost(TimeProvider.System), new FakeShell(), options, browser: new RecordingBrowser());
+
+        Assert.False(viewModel.CanCheckForUpdates);
+    }
+
     [Theory]
     [InlineData(59.7, "59m ago")]
     [InlineData(60.1, "1h ago")]

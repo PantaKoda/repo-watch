@@ -83,4 +83,10 @@ public sealed class UpdatesOptions
     public string? ReleasesUrl { get; set; } = DefaultReleasesUrl;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ReleasesUrl);
+
+    public bool IsDefault => string.Equals(ReleasesUrl, DefaultReleasesUrl, StringComparison.Ordinal);
+
+    /// <summary>The page to open, or null when unset or not on the GitHub web host (only those links are opened).</summary>
+    public Uri? ResolveFor(Uri gitHubWebBase) =>
+        IsConfigured && Uri.TryCreate(ReleasesUrl, UriKind.Absolute, out var url) && Platform.ExternalLinkPolicy.IsAllowed(url, gitHubWebBase) ? url : null;
 }

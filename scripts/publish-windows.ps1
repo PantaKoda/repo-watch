@@ -32,9 +32,10 @@ $framework = 'net10.0-windows10.0.19041.0'
 $runtime = 'win-x64'
 
 $commit = (git rev-parse HEAD).Trim()
-$dirty = [bool](git status --porcelain --untracked-files=no)
+# Untracked files count too: the SDK globs would compile a stray *.cs or *.axaml under src/ into the release.
+$dirty = [bool](git status --porcelain)
 if ($dirty) {
-    Write-Warning 'The working tree has uncommitted changes: this build is not reproducible from the commit and must not be released.'
+    Write-Warning 'The working tree has uncommitted or untracked files: this build is not reproducible from the commit and must not be released.'
 }
 # Zip timestamps come from the commit so they do not depend on when or where the build ran.
 $stamp = [DateTimeOffset]::FromUnixTimeSeconds([long](git log -1 --format=%ct HEAD)).UtcDateTime
@@ -57,7 +58,7 @@ foreach ($dir in $publishDir, (Join-Path $root "src/RepoWatch.Desktop/obj/Releas
     if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 }
 Invoke-Checked 'Publish' {
-    dotnet publish $project -c Release -f $framework -r $runtime --self-contained `
+    dotnet publish $project -c Release -f $framework -r $runtime --self-contained -p:RestoreLockedMode=true `
         -p:ContinuousIntegrationBuild=true -p:DebugType=none -p:DebugSymbols=false -p:SatelliteResourceLanguages=en -o $publishDir
 }
 if (-not (Test-Path (Join-Path $publishDir 'RepoWatch.exe'))) { throw 'The publish did not produce RepoWatch.exe.' }
@@ -67,9 +68,13 @@ New-Item -ItemType Directory -Force $outDir | Out-Null
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Add-Type -AssemblyName System.IO.Compression
 # The runtime pack's own .pdb files are not shipped either.
-$files = Get-ChildItem $publishDir -Recurse -File | Where-Object { $_.Extension -ne '.pdb' } |
-    ForEach-Object { [pscustomobject]@{ File = $_; Entry = 'RepoWatch/' + [IO.Path]::GetRelativePath($publishDir, $_.FullName).Replace('\', '/') } } |
-    Sort-Object { $_.Entry } -Culture ([cultureinfo]::InvariantCulture) -CaseSensitive
+$files = @(Get-ChildItem $publishDir -Recurse -File | Where-Object { $_.Extension -ne '.pdb' } |
+    ForEach-Object { [pscustomobject]@{ File = $_; Entry = 'RepoWatch/' + [IO.Path]::GetRelativePath($publishDir, $_.FullName).Replace('\', '/') } })
+# Ordinal order, so the entry order cannot depend on the culture or ICU version.
+$entries = [string[]]($files | ForEach-Object Entry)
+$items = [object[]]$files
+[Array]::Sort($entries, $items, [StringComparer]::Ordinal)
+$files = $items
 $stream = [IO.File]::Open($zip, [IO.FileMode]::CreateNew)
 try {
     $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
@@ -89,6 +94,7 @@ Set-Content -Path "$zip.sha256" -Value "$hash  $name.zip" -Encoding ascii -NoNew
 $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 
 Write-Host ''
+Write-Host "Toolchain: .NET SDK $((dotnet --version).Trim()), PowerShell $($PSVersionTable.PSVersion)"
 Write-Host "Version : $version ($($commit.Substring(0, 7))$(if ($dirty) { ', dirty' }))"
 Write-Host "Zip     : $zip ($size MB, $($files.Count) files)"
 Write-Host "SHA-256 : $hash"

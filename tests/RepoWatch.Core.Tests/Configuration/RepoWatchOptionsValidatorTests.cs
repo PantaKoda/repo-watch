@@ -77,6 +77,15 @@ public sealed class RepoWatchOptionsValidatorTests
     }
 
     [Fact]
+    public void The_default_releases_page_is_not_a_startup_error_for_another_GitHub_host()
+    {
+        var options = new RepoWatchOptions { GitHub = { WebBaseUrl = "https://github.example.com", ApiBaseUrl = "https://github.example.com/api/v3" } };
+
+        Assert.Empty(RepoWatchOptionsValidator.Validate(options));
+        Assert.Null(options.Updates.ResolveFor(new Uri(options.GitHub.WebBaseUrl)));
+    }
+
+    [Fact]
     public void Reports_every_out_of_range_interval()
     {
         var options = new RepoWatchOptions
