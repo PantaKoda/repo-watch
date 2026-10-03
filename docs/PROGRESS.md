@@ -872,3 +872,23 @@ Requested by the maintainer after using 0.1.0:
 **Next concrete task**
 - Rebuild the installed app from main after merge. Further UI changes as requested. Stage 12 (macOS/Linux) is a later release.
 
+## After release — open a repository from the list (feature branch `row-open-in-browser`)
+
+**Implemented**
+- Each row in the main list has a small open-in-browser button that opens the repository's GitHub page. Before, you had to open the details view first.
+  - **Discreet:** the icon is faint at rest and full strength on the hovered, selected or keyboard-focused row.
+  - **Only with a known page:** it appears only when the repository's page is known. An inaccessible repository gets none.
+  - **Separate from the row:** clicking the button doesn't also open the details; the row's tap handler ignores clicks inside buttons.
+  - **Keyboard:** Ctrl+Enter on the selected row does the same. Plain Enter still opens details.
+  - **Accessible name:** "Open owner/name on GitHub".
+- The link goes through the same validated browser adapter (GitHub hosts only), and failures are reported in the widget footer.
+
+**Checks run**
+- `dotnet test`: 429 passed. Two new headless UI tests:
+  - a real click on a row's button opens that repository and not the details; only rows with a URL have a button;
+  - Ctrl+Enter opens the selected repository.
+- Real window in demo mode: the icon shows on the four repositories with a page and not on the inaccessible one.
+
+**Next concrete task**
+- Further UI changes as requested. Rebuild the installed app after merge.
+

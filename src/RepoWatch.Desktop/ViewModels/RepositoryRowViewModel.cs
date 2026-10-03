@@ -92,7 +92,11 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
     public partial bool HasFreshnessWarning { get; private set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUrl))]
     public partial Uri? Url { get; private set; }
+
+    /// <summary>The repository's GitHub page is known, so the row can offer to open it.</summary>
+    public bool HasUrl => Url is not null;
 
     /// <summary>Full description for tooltips and screen readers.</summary>
     [ObservableProperty]

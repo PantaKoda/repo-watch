@@ -124,6 +124,17 @@
       <Setter Property="Height" Value="14" />
     </Style>
 
+    <!-- A row's "open on GitHub" button: faint at rest, full strength on the hovered, selected or focused row. -->
+    <Style Selector="Button.rowlink">
+      <Setter Property="MinWidth" Value="24" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Padding" Value="5" />
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover Button.rowlink, ListBoxItem:selected Button.rowlink, Button.rowlink:focus-visible">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
     <!-- Full-width list rows that open GitHub. -->
     <Style Selector="Button.row">
       <Setter Property="HorizontalAlignment" Value="Stretch" />

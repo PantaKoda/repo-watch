@@ -141,6 +141,46 @@ public sealed class WidgetWindowTests
     }
 
     [AvaloniaFact]
+    public void A_rows_open_button_opens_the_repository_without_opening_details()
+    {
+        var (window, viewModel, browser) = Open(400, 600);
+        var buttons = window.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("rowlink") && b.IsEffectivelyVisible).ToList();
+
+        // Only repositories with a known GitHub page get one (the inaccessible demo repository has none).
+        Assert.Equal(viewModel.Repositories.Count(r => r.HasUrl), buttons.Count);
+        Assert.True(buttons.Count < viewModel.Repositories.Count);
+
+        var button = buttons[0];
+        var row = (RepositoryRowViewModel)button.DataContext!;
+        var center = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(center, MouseButton.Left);
+        window.MouseUp(center, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(row.Url, Assert.Single(browser.Opened));
+        Assert.False(viewModel.ShowDetails);
+        Assert.Equal($"Open {row.Name} on GitHub", AutomationProperties.GetName(button));
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Ctrl_Enter_opens_the_selected_repository_in_the_browser()
+    {
+        var (window, viewModel, browser) = Open(400, 600);
+        var list = window.FindControl<ListBox>("RepositoryList")!;
+        list.SelectedIndex = viewModel.Repositories.ToList().FindIndex(r => r.HasUrl);
+        (list.ContainerFromIndex(list.SelectedIndex) as ListBoxItem)?.Focus(NavigationMethod.Tab);
+        Dispatcher.UIThread.RunJobs();
+
+        window.KeyPress(Key.Enter, RawInputModifiers.Control, PhysicalKey.Enter, null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(((RepositoryRowViewModel)list.SelectedItem!).Url, Assert.Single(browser.Opened));
+        Assert.False(viewModel.ShowDetails); // plain Enter still opens details
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void Keyboard_can_navigate_open_details_and_return()
     {
         var (window, viewModel, browser) = Open(400, 600);
