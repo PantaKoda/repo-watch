@@ -52,6 +52,10 @@ internal sealed class FakeShell : IShell
 
     public void OpenSettings() => SettingsRequests++;
 
+    public List<RepoWatch.Desktop.ViewModels.RepositoriesTab> RepositoryRequests { get; } = [];
+
+    public void OpenRepositories(RepoWatch.Desktop.ViewModels.RepositoriesTab tab) => RepositoryRequests.Add(tab);
+
     public int SignInRequests { get; private set; }
 
     public List<string> Copied { get; } = [];

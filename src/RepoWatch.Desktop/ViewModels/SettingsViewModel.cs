@@ -14,15 +14,19 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly MonitorHost _monitors;
     private readonly IShell _shell;
     private readonly IUiDispatcher _dispatcher;
+    private readonly WatchlistService _watchlist;
     private bool _applying;
 
-    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, AppPaths paths)
+    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths)
     {
         _settings = settings;
         _monitors = monitors;
         _shell = shell;
         _dispatcher = dispatcher;
+        _watchlist = watchlist;
         Account = account;
+        _watchlist.Changed += OnWatchlistChanged;
+        UpdateRepositoriesSummary();
 
         Version = AppInfo.Version;
         DataDirectory = paths.DataDirectory;
@@ -48,8 +52,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     public AccountViewModel Account { get; }
 
-    public string NotConfiguredText =>
-        "GitHub sign-in is not configured in this build: no GitHub App client ID is set. See docs/github-app-setup.md.";
+    [ObservableProperty]
+    public partial string RepositoriesSummary { get; private set; } = "";
 
     public string TrayDescription => _shell.CanHideToTray
         ? "Closing or hiding the widget keeps Repo Watch running in the notification area. Use the tray icon's Quit to exit."
@@ -78,8 +82,23 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _settings.AppChanged -= OnSettingsChanged;
         _settings.ProblemChanged -= OnProblemChanged;
         _monitors.CurrentChanged -= OnMonitorChanged;
+        _watchlist.Changed -= OnWatchlistChanged;
         Account.Dispose();
     }
+
+    [RelayCommand]
+    private void ManageRepositories() => _shell.OpenRepositories(RepositoriesTab.Watched);
+
+    private void OnWatchlistChanged(object? sender, WatchlistChangedEventArgs e) => _dispatcher.Post(UpdateRepositoriesSummary);
+
+    private void UpdateRepositoriesSummary() => RepositoriesSummary = _watchlist.Account is null
+        ? "Sign in to choose which repositories the widget watches."
+        : _watchlist.Repositories.Count switch
+        {
+            0 => "The widget isn't watching any repositories yet.",
+            1 => "The widget is watching 1 repository.",
+            var n => $"The widget is watching {n} repositories.",
+        };
 
     partial void OnAlwaysOnTopChanged(bool value) => Save(s => s with { Window = s.Window with { AlwaysOnTop = value } });
 

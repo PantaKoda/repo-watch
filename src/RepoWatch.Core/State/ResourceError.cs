@@ -8,8 +8,10 @@ public enum ResourceErrorKind
     RateLimited,
     /// <summary>401: the credential is missing, expired or revoked.</summary>
     Unauthorized,
-    /// <summary>403 not caused by rate limiting: permission, SSO or policy.</summary>
+    /// <summary>403 not caused by rate limiting or SSO: permission or policy.</summary>
     Forbidden,
+    /// <summary>403: the organization requires an active SAML SSO session for this account.</summary>
+    SsoRequired,
     NotFound,
     ServerError,
     InvalidResponse,
@@ -23,4 +25,7 @@ public sealed record ResourceError(ResourceErrorKind Kind, string Message, DateT
 {
     /// <summary>Earliest time the server allows a retry (rate-limit reset or Retry-After), if known.</summary>
     public DateTimeOffset? RetryAt { get; init; }
+
+    /// <summary>A GitHub page that resolves the problem (e.g. the SSO authorization URL), if GitHub supplied one.</summary>
+    public Uri? ActionUrl { get; init; }
 }

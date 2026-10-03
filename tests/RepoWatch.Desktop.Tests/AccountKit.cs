@@ -88,13 +88,19 @@ internal sealed class AccountKit
 
     public MemoryCredentialStore Credentials { get; } = new();
 
-    public RepoWatchOptions Options { get; } = new() { GitHub = { ClientId = ClientId } };
+    public RepoWatchOptions Options { get; } = new() { GitHub = { ClientId = ClientId, AppSlug = "repo-watch-test" } };
 
     public SettingsService Settings { get; private set; } = null!;
 
     public MonitorHost Monitors { get; private set; } = null!;
 
     public AccountService Accounts { get; private set; } = null!;
+
+    public WatchlistService Watchlist { get; private set; } = null!;
+
+    public AccessCatalogService Catalog { get; private set; } = null!;
+
+    public MonitorCoordinator Coordinator { get; private set; } = null!;
 
     public static string DeviceCodeJson =>
         """{"device_code":"3584d83530557fdd1f46af8289938c8ef79f9dc5","user_code":"WDJB-MJHT","verification_uri":"https://github.com/login/device","expires_in":900,"interval":5}""";
@@ -111,8 +117,12 @@ internal sealed class AccountKit
         Settings = new SettingsService(() => SettingsStore, NullLogger<SettingsService>.Instance);
         Settings.Load();
         Monitors = new MonitorHost(Time);
-        Accounts = new AccountService(Options, new GitHubEndpoints(Options.GitHub), GitHubHttp.CreateClient(Http), Credentials,
-            Settings, Monitors, new ImmediateDispatcher(), Time, NullLoggerFactory.Instance);
+        var http = GitHubHttp.CreateClient(Http);
+        var endpoints = new GitHubEndpoints(Options.GitHub);
+        Accounts = new AccountService(Options, endpoints, http, Credentials, Settings, new ImmediateDispatcher(), Time, NullLoggerFactory.Instance);
+        Watchlist = new WatchlistService(Settings, Accounts);
+        Catalog = new AccessCatalogService(Accounts, Watchlist, http, endpoints, new ImmediateDispatcher(), Time, NullLogger<AccessCatalogService>.Instance);
+        Coordinator = new MonitorCoordinator(Accounts, Watchlist, Monitors);
         return this;
     }
 
@@ -152,11 +162,11 @@ internal static class SettingsViewModels
         options ??= new RepoWatchOptions();
         var endpoints = new GitHubEndpoints(options.GitHub);
         var http = GitHubHttp.CreateClient(new QueueHandler());
-        var accounts = new AccountService(options, endpoints, http, new MemoryCredentialStore(), settings, monitors,
+        var accounts = new AccountService(options, endpoints, http, new MemoryCredentialStore(), settings,
             new ImmediateDispatcher(), TimeProvider.System, NullLoggerFactory.Instance);
         var account = new AccountViewModel(accounts, shell, new RecordingBrowser(), new AvatarLoader(http, NullLogger<AvatarLoader>.Instance),
             endpoints, new ImmediateDispatcher(), TimeProvider.System);
         var paths = new AppPaths(Path.GetTempPath(), "d.json", "u.json", "logs");
-        return new SettingsViewModel(settings, monitors, shell, new ImmediateDispatcher(), account, paths);
+        return new SettingsViewModel(settings, monitors, shell, new ImmediateDispatcher(), account, new WatchlistService(settings, accounts), paths);
     }
 }

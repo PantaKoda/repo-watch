@@ -36,6 +36,22 @@ internal sealed class StubHandler(TimeProvider time) : HttpMessageHandler
         return this;
     }
 
+    /// <summary>A JSON response with extra headers (e.g. Link, X-GitHub-SSO, rate-limit headers).</summary>
+    public StubHandler JsonWithHeaders(string json, HttpStatusCode status, params (string Name, string Value)[] headers)
+    {
+        _responses.Enqueue(_ =>
+        {
+            var response = JsonResponse(json, status);
+            foreach (var (name, value) in headers)
+            {
+                response.Headers.TryAddWithoutValidation(name, value);
+            }
+
+            return Task.FromResult(response);
+        });
+        return this;
+    }
+
     public StubHandler Throws(Exception exception)
     {
         _responses.Enqueue(_ => throw exception);

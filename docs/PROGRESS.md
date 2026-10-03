@@ -8,7 +8,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 02 | Repository state and settings model | completed |
 | 03 | Functional desktop shell | completed |
 | 04 | Sign in with GitHub | completed |
-| 05 | Repository access and watchlist picker | pending |
+| 05 | Repository access and watchlist picker | completed |
 | 06 | Fetch and normalize real GitHub data | pending |
 | 07 | Durable caching and efficient synchronization | pending |
 | 08 | Modern visuals and real transparency | pending |
@@ -203,3 +203,58 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
 
 **Next concrete task**
 - Stage 05. List installations and their repositories through all pages (`GET /user/installations`, `GET /user/installations/{id}/repositories`), build the picker, persist the watchlist per account, and distinguish "not granted" from "not selected". Use contract fixtures until a client ID exists.
+
+## Stage 05 — Repository access and watchlist picker: completed
+
+**Implemented**
+- **GitHub API foundation** (`GitHub/Api/GitHubApiClient`):
+  - Authenticated GETs (API version 2026-03-10, token only in the header).
+  - One renewal and retry on 401 through `IAccessTokenSource` (`AccountSession` implements it).
+  - Pagination follows `Link: rel="next"` as given, **only on the API host**, at `per_page=100`. A page limit marks lists incomplete instead of presenting a first page as the total.
+  - Error classification: Unauthorized, Forbidden, **SsoRequired** (with the SSO authorization URL from `X-GitHub-SSO`), **RateLimited** (with `RetryAt` from `Retry-After`/`x-ratelimit-reset`), NotFound, server and network errors.
+- **Access discovery** (`GitHub/Access/AccessCatalogClient`):
+  - `GET /user/installations` and `GET /user/installations/{id}/repositories`, every page.
+  - Combines personal and organization installations, de-duplicates by repository ID, and keeps owner/name, privacy, organization and archived status.
+  - Suspended installations are reported, not queried. SSO and 403 failures are kept per installation, and missing read permissions are listed.
+  - Workflows are listed on demand (`GET /repos/{owner}/{repo}/actions/workflows`) for per-repository filters.
+- **Core** (`Core/Access`):
+  - `Watchlist` edits by repository ID: add keeps order, remove, move, update, and name refresh after renames or transfers.
+  - `PickerFilter`: search across name and description, owner filter, selected-only.
+  - `AccessClassifier`: Granted, NotGranted (only when the list is complete and the owner's installation is healthy), Suspended, SsoRequired, or Unknown. It never claims a repository doesn't exist.
+- **Desktop services:**
+  - `WatchlistService`: per-account watchlist and ordering, saved immediately, change events listing removed IDs.
+  - `AccessCatalogService`: loaded only on request (picker, onboarding, Refresh list), shared in-flight load, discarded on account change; refreshes watched names after a load.
+  - `MonitorCoordinator`: builds the widget's monitor from the account state and watchlist. Only watched repositories are handed to a monitor. A removal replaces the monitor immediately, and redundant rebuilds are skipped.
+  - `WatchlistMonitor`: shows watched repositories in the user's order, "not loaded", with no requests. Stage 06 replaces it with real data.
+- **UI:**
+  - Repository manager window with three tabs:
+    - **Watched:** ordering mode (attention first / my order), Move up/down, Remove (widget only), per-repository access status with Manage access, and options (PR scope Mine/All/None, show issues, notifications, branches, workflow selection loaded from GitHub).
+    - **Add repositories:** search, owner filter, Show selected, Clear filters, Refresh list, per-row checkboxes with privacy/organization/archived badges, a selected count, and bulk *Add/Remove N shown* whose text states whether it applies to the filtered results or the whole list. Grant-access and empty states.
+    - **Access:** installations with kind, scope and health (suspended, SSO with *Authorize single sign-on*, couldn't list, missing permissions), plus Manage access, Grant access, Refresh list, and notes on pending organization approval and on removal not uninstalling.
+  - **Onboarding window** (first run when signed out): Sign in → Grant repository access (shows existing installations so users can continue) → Choose repositories → Appearance (theme, always on top) → Open widget. The sign-in UI is shared with settings (`AccountView`).
+  - Settings has a Repositories summary and *Manage repositories…*. The widget's empty watchlist shows *Add repositories*.
+
+**Checks actually run (Windows 11, .NET SDK 10.0.401)**
+- `dotnet test --solution RepoWatch.slnx`: 228 passed. New coverage:
+  - GitHub contract tests: multi-page installations and repositories, de-duplication, private/organization/archived mapping, no off-host pagination, the page limit giving incomplete results, suspended installations not queried, SSO URL captured, missing permissions, rate-limit reset, one 401 retry and its failure, workflows paging.
+  - Core: watchlist edits, renames, access classification, picker filters.
+  - Desktop acceptance: catalog mapping; granted access not auto-selected; the watchlist surviving restart in order and per account; only watched repositories monitored; immediate removal; filter and bulk wording; grant-access and empty states; the watchlist editor; rename refresh; the whole onboarding flow; the widget's Add repositories.
+- Headless renders (`artifacts/screenshots/stage05/`): each manager tab, an Access tab with suspended and failing installations, and all four onboarding steps.
+- Release launch with a fresh data folder: the onboarding window "Set up Repo Watch" opens with the widget.
+- Found and fixed while testing: the picker compared the catalog time with the system clock instead of `TimeProvider`; the coordinator rebuilt the monitor twice per account change; "1 repositories" wording.
+
+**Live verification against github.com (3 Oct 2026, real services, throwaway data folder and credential prefix, no tokens printed)**
+1. Signed in as PantaKoda (approved on a phone).
+2. Catalog: one installation (personal account, *All repositories*, healthy, no missing permissions), **97 repositories including 60 private**. The list was complete.
+3. Pagination:
+   - At `per_page=10`, 10 real pages were followed through `Link` headers, giving 97 items, complete, and the **same set** as the normal listing.
+   - An earlier run at `per_page=1` followed 50 real pages and then stopped at the safety limit, correctly reporting **incomplete** rather than a partial total.
+4. Watched two private repositories; after a restart both were still watched, in order.
+5. Sign-out removed the credential (none left in Credential Manager) and kept the 2 watchlist entries for the next sign-in.
+
+**Not verified live**
+- Organization repositories, suspended installations, SSO and pending organization approval: the maintainer account has no organization installation. These are covered by contract fixtures only.
+- Installing or changing access through the app's links was done by the maintainer on GitHub, not through Repo Watch's buttons.
+
+**Next concrete task**
+- Stage 06: replace `WatchlistMonitor` with real data. Load workflow runs, PRs (reviews, checks) and issues for watched repositories using `GitHubApiClient`, per section and independently, with the access classification feeding the widget.

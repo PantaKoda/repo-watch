@@ -29,6 +29,9 @@ public sealed record AppSettings : SettingsRecord
     public AccountKey? ActiveAccount { get; init; }
 
     public bool MonitoringPaused { get; init; }
+
+    /// <summary>Set when the first-run onboarding (sign in → grant access → choose → appearance) was finished.</summary>
+    public bool OnboardingCompleted { get; init; }
 }
 
 public enum ThemePreference

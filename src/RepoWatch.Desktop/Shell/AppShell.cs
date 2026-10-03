@@ -42,6 +42,8 @@ public sealed class AppShell(
     private WidgetViewModel? _widgetViewModel;
     private SettingsWindow? _settingsWindow;
     private SettingsViewModel? _settingsViewModel;
+    private RepositoriesWindow? _repositoriesWindow;
+    private OnboardingWindow? _onboardingWindow;
     private DispatcherTimer? _clock;
     private DateTimeOffset _widgetDeactivatedAt = DateTimeOffset.MinValue;
     private bool _quitting;
@@ -90,8 +92,17 @@ public sealed class AppShell(
         _clock.Tick += (_, _) => _widgetViewModel.Tick();
         _clock.Start();
 
+        // The coordinator drives what the widget observes from the account and watchlist.
+        services.GetRequiredService<MonitorCoordinator>();
+
         // Restore the signed-in account in the background; the widget shows the outcome.
         _ = RestoreAccountAsync();
+
+        // First run: guide through sign-in, access, repositories and appearance.
+        if (!settings.App.OnboardingCompleted && !monitors.IsDemo && accounts.IsSignInConfigured && settings.App.ActiveAccount is null)
+        {
+            Dispatcher.UIThread.Post(OpenOnboarding);
+        }
 
         logger.LogInformation("Shell started; tray {Tray}, demo {Demo}", CanHideToTray ? "available" : "unavailable", monitors.IsDemo);
     }
@@ -155,9 +166,65 @@ public sealed class AppShell(
         _settingsWindow.Activate();
     }
 
-    /// <summary>Opens settings; starts a sign-in unless one is already in progress (which settings then shows).</summary>
+    public void OpenRepositories(RepositoriesTab tab)
+    {
+        if (!settings.App.OnboardingCompleted && settings.App.ActiveAccount is null)
+        {
+            OpenOnboarding();
+            return;
+        }
+
+        if (_repositoriesWindow is null)
+        {
+            var viewModel = ActivatorUtilities.CreateInstance<RepositoriesViewModel>(services);
+            _repositoriesWindow = new RepositoriesWindow { DataContext = viewModel, Icon = _widget?.Icon };
+            _repositoriesWindow.Closed += (_, _) =>
+            {
+                viewModel.Dispose();
+                _repositoriesWindow = null;
+            };
+        }
+
+        ((RepositoriesViewModel)_repositoriesWindow.DataContext!).SelectedTab = (int)tab;
+        BringToFront(_repositoriesWindow);
+    }
+
+    public void OpenOnboarding()
+    {
+        if (_onboardingWindow is null)
+        {
+            var account = ActivatorUtilities.CreateInstance<AccountViewModel>(services, this);
+            var access = ActivatorUtilities.CreateInstance<AccessViewModel>(services);
+            var picker = ActivatorUtilities.CreateInstance<RepositoryPickerViewModel>(services);
+            var viewModel = ActivatorUtilities.CreateInstance<OnboardingViewModel>(services, account, access, picker);
+            _onboardingWindow = new OnboardingWindow { DataContext = viewModel, Icon = _widget?.Icon };
+            viewModel.Completed += (_, _) =>
+            {
+                _onboardingWindow?.Close();
+                ShowWidget();
+            };
+            _onboardingWindow.Closed += (_, _) =>
+            {
+                viewModel.Dispose(); // a sign-in in progress keeps running in AccountService
+                _onboardingWindow = null;
+            };
+        }
+
+        BringToFront(_onboardingWindow);
+    }
+
+    /// <summary>
+    /// Starts sign-in: through onboarding until it has been completed once, otherwise in settings.
+    /// A sign-in already in progress is shown rather than restarted.
+    /// </summary>
     public void BeginSignIn()
     {
+        if (!settings.App.OnboardingCompleted)
+        {
+            OpenOnboarding();
+            return;
+        }
+
         OpenSettings();
         if (accounts.Flow is null && _settingsViewModel?.Account.SignInCommand is { } signIn && signIn.CanExecute(null))
         {
@@ -203,6 +270,8 @@ public sealed class AppShell(
         accounts.Dispose();
         settings.Flush();
         _settingsWindow?.Close();
+        _repositoriesWindow?.Close();
+        _onboardingWindow?.Close();
         _desktop?.Shutdown();
     }
 
@@ -217,6 +286,17 @@ public sealed class AppShell(
     /// covered by other windows is brought forward instead. Clicking the tray icon itself
     /// deactivates the widget, so "just using it" means active within a short grace period.
     /// </summary>
+    private static void BringToFront(Window window)
+    {
+        window.Show();
+        if (window.WindowState == WindowState.Minimized)
+        {
+            window.WindowState = WindowState.Normal;
+        }
+
+        window.Activate();
+    }
+
     private async Task RestoreAccountAsync()
     {
         try

@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+             x:Class="RepoWatch.Desktop.Views.AccountView"
+             x:DataType="vm:AccountViewModel">
+  <StackPanel Spacing="6">
+    <TextBlock Text="GitHub sign-in is not configured in this build: no GitHub App client ID is set. See docs/github-app-setup.md."
+               TextWrapping="Wrap" IsVisible="{Binding IsNotConfigured}" />
+
+    <!-- Signed in (or offline with stored credentials) -->
+    <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsSignedIn}">
+      <Border Width="40" Height="40" CornerRadius="20" ClipToBounds="True" Margin="0,0,12,0" VerticalAlignment="Top"
+              Background="{DynamicResource WidgetBorderBrush}">
+        <Image Source="{Binding Avatar}" Stretch="UniformToFill" />
+      </Border>
+      <StackPanel Grid.Column="1" Spacing="2">
+        <TextBlock Classes="title" Text="{Binding Login}" />
+        <TextBlock Classes="secondary" Text="{Binding DisplayName}" IsVisible="{Binding DisplayName, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock Text="{Binding StateText}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding StorageText}" TextWrapping="Wrap" Classes="secondary" />
+        <WrapPanel Margin="0,4,0,0">
+          <Button Content="Sign out" Command="{Binding SignOutCommand}" Margin="0,0,8,8" />
+          <Button Content="Review access on GitHub" Command="{Binding ManageAuthorizationCommand}" Margin="0,0,8,8" />
+        </WrapPanel>
+        <TextBlock TextWrapping="Wrap" Classes="secondary"
+                   Text="Signing out removes Repo Watch's local credentials. To revoke its authorization on GitHub, use Review access on GitHub." />
+      </StackPanel>
+    </Grid>
+
+    <!-- Session expired or revoked -->
+    <StackPanel Spacing="6" IsVisible="{Binding NeedsReconnect}">
+      <TextBlock Text="{Binding StateText}" TextWrapping="Wrap" FontWeight="SemiBold" />
+      <WrapPanel>
+        <Button Content="Sign out" Command="{Binding SignOutCommand}" Margin="0,0,8,8" />
+        <Button Content="Try again" Command="{Binding RetryCommand}" Margin="0,0,8,8" />
+      </WrapPanel>
+    </StackPanel>
+
+    <Button Content="Sign in with GitHub" Classes="accent" Command="{Binding SignInCommand}" IsVisible="{Binding ShowSignIn}" />
+
+    <!-- Device flow in progress -->
+    <Border IsVisible="{Binding IsSigningIn}" BorderBrush="{DynamicResource WidgetBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding FlowStatus}" TextWrapping="Wrap" />
+        <SelectableTextBlock Text="{Binding UserCode}" FontSize="26" FontWeight="SemiBold" FontFamily="Cascadia Mono, Consolas, monospace"
+                             IsVisible="{Binding UserCode, Converter={x:Static ObjectConverters.IsNotNull}}"
+                             AutomationProperties.Name="Sign-in code" />
+        <TextBlock Text="{Binding ExpiresText}" Classes="secondary" />
+        <WrapPanel>
+          <Button Content="Copy code" Command="{Binding CopyCodeCommand}" Margin="0,0,8,8" />
+          <Button Content="Open GitHub" Command="{Binding OpenVerificationPageCommand}" Margin="0,0,8,8" />
+          <Button Content="Cancel" Command="{Binding CancelSignInCommand}" Margin="0,0,8,8" />
+        </WrapPanel>
+        <TextBlock TextWrapping="Wrap" Classes="secondary"
+                   Text="Repo Watch never asks for your GitHub password. Approve the request in your browser; this window updates by itself." />
+      </StackPanel>
+    </Border>
+
+    <TextBlock Text="{Binding Message}" IsVisible="{Binding HasMessage}" TextWrapping="Wrap" />
+  </StackPanel>
+</UserControl>
