@@ -762,3 +762,32 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
   - Idle, signed out: 0.09 % CPU, 169 MB working set, 119 MB private over 20 s.
   - Demo launch at 400×520; placement survives a restart; an off-screen window returns to the work area; closing hides to the tray.
   - Signed-out launch shows the sign-in state. Settings → About shows `Repo Watch 0.1.0 (9cdd779)` (pre-commit build), Check for updates and the new title-bar icon. Frosted material was achieved.
+
+**Review of PR #11 (all findings addressed)**
+- README status no longer presents notifications from real GitHub events or the relay with real webhooks as live-verified (fixtures only, as Stages 09 and 10 record).
+- Publish script:
+  - untracked files mark the build dirty;
+  - the publish's own restore runs locked (`-p:RestoreLockedMode=true`);
+  - zip entries are sorted ordinally;
+  - the SDK and PowerShell versions are printed. The cross-machine hash claim is qualified by toolchain.
+- The built-in `Updates:ReleasesUrl` no longer fails startup when `GitHub:WebBaseUrl` points elsewhere; *Check for updates* is hidden instead. An explicitly configured URL on another host is still a configuration error.
+- **Re-run on the head commit (d74acc7) zip:**
+  - Two fresh clones at different paths gave the same SHA-256 `c9204bba…`; toolchain .NET SDK 10.0.401, PowerShell 7.6.6; no dirty warning; 404 tests passed inside the script.
+  - Release exe from that zip, all as expected:
+    - start at login and minimized start;
+    - single instance;
+    - Ctrl+Alt+R;
+    - idle 0.01 % CPU, 174 MB working set;
+    - placement restore, off-screen recovery, close to tray;
+    - signed-out state;
+    - About shows `Repo Watch 0.1.0 (d74acc7)` with *Check for updates*.
+- One unidentified test failure in a working-tree run (1 failed of 404); 11 later full runs passed. It is most likely the known intermittent `Concurrent_first_run_initialization_does_not_fail` (Stage 10 limitations); the output wasn't captured.
+
+**Remaining limitations**
+- **Fresh-user live run on the release build is not done:** sign in → grant → choose → appearance → restart → updates → sign out. A device code was issued but not approved before it expired. Stage 11 stays `in_progress` until it is run.
+- Not code-signed (SmartScreen warns); no GitHub release published; the GitHub App is installable only on its owner's account. All three are maintainer actions.
+- No debug symbols in releases (stack traces without line numbers).
+- x64 only; ARM64 emulation not verified. Stage 08 DPI check still open.
+
+**Next concrete task**
+- Run the fresh-user flow on the release zip with a device-code approval. Record it and mark Stage 11 `completed`.
