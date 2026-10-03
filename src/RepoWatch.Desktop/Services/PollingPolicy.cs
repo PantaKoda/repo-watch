@@ -27,8 +27,14 @@ public sealed record PollingIntervals
 
     public TimeSpan Issues { get; init; } = TimeSpan.FromSeconds(120);
 
-    /// <summary>Actions with nothing running, and repository metadata.</summary>
+    /// <summary>Actions with nothing running.</summary>
     public TimeSpan Quiet { get; init; } = TimeSpan.FromSeconds(180);
+
+    /// <summary>
+    /// Bringing the widget to the front refreshes anything older than this at once, so what the user looks
+    /// at is never a full interval behind. Unchanged answers cost nothing (conditional requests).
+    /// </summary>
+    public TimeSpan StaleOnFocus { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>First retry after a failure; doubles with each further failure.</summary>
     public TimeSpan Failed { get; init; } = TimeSpan.FromSeconds(60);
@@ -65,7 +71,9 @@ public static class PollingPolicy
             RefreshParts.Actions => active || focused ? intervals.Active : intervals.Quiet,
             RefreshParts.PullRequests => focused ? intervals.Active : intervals.PullRequests,
             RefreshParts.Issues => focused ? Min(intervals.PullRequests, intervals.Issues) : intervals.Issues,
-            _ => intervals.Quiet,
+            // Visibility, renames, archiving: as fresh as pull requests. Conditional requests make an unchanged
+            // answer free of rate-limit cost.
+            _ => focused ? intervals.Active : intervals.PullRequests,
         };
     }
 

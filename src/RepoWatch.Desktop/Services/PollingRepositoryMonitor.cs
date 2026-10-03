@@ -111,6 +111,7 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         {
             _conditions.Changed += OnConditionsChanged;
             _conditions.Resumed += OnResumed;
+            _conditions.WidgetActivated += OnWidgetActivated;
         }
 
         State = CurrentState();
@@ -266,6 +267,7 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         {
             _conditions.Changed -= OnConditionsChanged;
             _conditions.Resumed -= OnResumed;
+            _conditions.WidgetActivated -= OnWidgetActivated;
         }
 
         List<IDisposable> companions;
@@ -712,6 +714,32 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         }
 
         UpdateState();
+        Signal();
+    }
+
+    /// <summary>
+    /// The user looks at the widget: every healthy part older than <see cref="PollingIntervals.StaleOnFocus"/>
+    /// becomes due now (failing parts keep their backoff), so the list catches up within seconds.
+    /// </summary>
+    private void OnWidgetActivated(object? sender, EventArgs e)
+    {
+        var now = _time.GetUtcNow();
+        lock (_gate)
+        {
+            if (IsPausedByUser)
+            {
+                return;
+            }
+
+            foreach (var entry in _entries.Values)
+            {
+                foreach (var part in Parts.Where(p => entry.Failures[p] == 0 && now - entry.LastRefreshed[p] > _intervals.StaleOnFocus))
+                {
+                    entry.Due[part] = Min(entry.Due[part], now);
+                }
+            }
+        }
+
         Signal();
     }
 

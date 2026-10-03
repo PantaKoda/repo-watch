@@ -62,27 +62,28 @@ public sealed class RepoWatchOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData("https://github.com/owner/repo/releases", true)]
+    [InlineData("PantaKoda/repo-watch", true)]
     [InlineData("", true)]
-    [InlineData("http://github.com/owner/repo/releases", false)]
-    [InlineData("https://example.com/releases", false)]
-    public void The_releases_page_must_be_an_https_GitHub_page(string url, bool valid)
+    [InlineData("https://github.com/PantaKoda/repo-watch", false)]
+    [InlineData("just-a-name", false)]
+    [InlineData("owner/name/extra", false)]
+    public void The_updates_repository_must_be_owner_slash_name(string repository, bool valid)
     {
-        var options = new RepoWatchOptions { Updates = { ReleasesUrl = url } };
+        var options = new RepoWatchOptions { Updates = { Repository = repository } };
 
         var errors = RepoWatchOptionsValidator.Validate(options);
 
         Assert.Equal(valid, errors.Count == 0);
-        Assert.All(errors, e => Assert.Equal("Updates:ReleasesUrl", e.Key));
+        Assert.All(errors, e => Assert.Equal("Updates:Repository", e.Key));
     }
 
     [Fact]
-    public void The_default_releases_page_is_not_a_startup_error_for_another_GitHub_host()
+    public void The_releases_page_is_built_on_the_GitHub_web_host()
     {
-        var options = new RepoWatchOptions { GitHub = { WebBaseUrl = "https://github.example.com", ApiBaseUrl = "https://github.example.com/api/v3" } };
+        var options = new RepoWatchOptions();
 
-        Assert.Empty(RepoWatchOptionsValidator.Validate(options));
-        Assert.Null(options.Updates.ResolveFor(new Uri(options.GitHub.WebBaseUrl)));
+        Assert.Equal("https://github.com/PantaKoda/repo-watch/releases", options.Updates.ReleasesPage(new Uri("https://github.com/"))!.ToString());
+        Assert.Null(new UpdatesOptions { Repository = "" }.ReleasesPage(new Uri("https://github.com/")));
     }
 
     [Fact]

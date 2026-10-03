@@ -2,7 +2,7 @@
 
 A Windows-first desktop widget for monitoring GitHub Actions, pull requests and issues, built with C#, .NET and Avalonia. The shared core and UI are kept portable for later macOS/Linux releases.
 
-> **Status: first Windows release candidate (0.1.0).** Sign-in, the repository picker, live GitHub data with caching and desktop integration (tray, startup, single instance, shortcut) were checked on Windows 11 against github.com. Notifications from real GitHub events and the webhook relay with real GitHub webhooks have been verified only with test fixtures so far. macOS and Linux are not supported yet. Open limitations are listed in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Windows release 0.2.0.** Sign-in, the repository picker, live GitHub data with caching and desktop integration (tray, startup, single instance, shortcut) were checked on Windows 11 against github.com. Notifications from real GitHub events and the webhook relay with real GitHub webhooks have been verified only with test fixtures so far. macOS and Linux are not supported yet. Open limitations are listed in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Install and run (Windows)
 
@@ -10,7 +10,7 @@ A Windows-first desktop widget for monitoring GitHub Actions, pull requests and 
 2. Verify the download: the hash printed by `Get-FileHash RepoWatch-<version>-win-x64.zip -Algorithm SHA256` must match the `.sha256` file.
 3. Extract the zip to a folder you can write to (for example `%LOCALAPPDATA%\Programs\RepoWatch`) and start `RepoWatch\RepoWatch.exe`.
 
-The zip is **portable and self-contained**: the .NET runtime is included, nothing is installed and no administrator rights are needed. The executable is **not code-signed** yet, so Windows SmartScreen may say "Windows protected your PC"; choose *More info → Run anyway* only when the SHA-256 matches. To update, quit Repo Watch, replace the folder with the new release and start it again. Settings, the watchlist and the sign-in are kept because they live outside the folder (see [Local data](#local-data)). To remove Repo Watch, see [Uninstall](#uninstall).
+The zip is **portable and self-contained**: the .NET runtime is included, nothing is installed and no administrator rights are needed. Later versions can be installed from inside the app (see *Updates* below). The executable is **not code-signed** yet, so Windows SmartScreen may say "Windows protected your PC"; choose *More info → Run anyway* only when the SHA-256 matches. Settings, the watchlist and the sign-in live outside the folder (see [Local data](#local-data)), so updating keeps them. To remove Repo Watch, see [Uninstall](#uninstall).
 
 ## First run
 
@@ -33,7 +33,8 @@ The onboarding window walks through **Sign in → Grant repository access → Ch
 - **Acting on things:** merges, reviews, comments and workflow re-runs open GitHub in your browser. Repo Watch only reads.
 - **Notifications:** CI failing or passing again on a tracked branch, a new review request and a merged pull request you track, each once. Quiet hours, per-repository switches and *Hide private repository names and titles in notifications* are in Settings.
 - **Demo mode:** started with `--demo` or *Explore demo data*. A banner stays visible while sample data is shown, and links open GitHub documentation because the sample repositories don't exist.
-- **About:** Settings → About shows the version and commit. *Check for updates* opens the releases page in your browser. Repo Watch never downloads or installs anything by itself.
+- **Updates:** Repo Watch checks GitHub for a newer release once a day. When there is one, an **UPDATE** button appears in the header: it shows what changed since your version and offers **Install update**, which downloads the release, checks it against its published checksum, swaps in the new version and restarts (settings and sign-in are kept; the previous version stays next to the app folder). *Check for updates* in Settings → About checks right away and says when there is no newer release. Nothing is ever downloaded unless you click Install. Details: [docs/updates.md](docs/updates.md).
+- **About:** Settings → About shows the version and commit.
 
 ## Troubleshooting
 
@@ -118,7 +119,8 @@ pwsh scripts/publish-windows.ps1
 - **Version:** `Version` in `Directory.Build.props`. The commit is added automatically and shown in About and in diagnostics.
 - **Symbols:** release builds have none. Avalonia's XAML compiler would record absolute build paths in them, breaking reproducibility; logged stack traces keep method names but not line numbers.
 - **Signing:** not done yet. Certificates and keys must never be committed (`*.pfx`, `*.snk` and `*.pem` are ignored); a later signing step must take them from secret storage.
-- **Publishing a GitHub release** (a tag plus the zip and `.sha256`) is a maintainer action; nothing here does it automatically. The manual CI workflow only uploads the zip as a workflow artifact.
+- **Publishing a GitHub release:** bump `Version`, add the version's section to `CHANGELOG.md`, merge, then push a `vX.Y.Z` tag. The Release workflow builds, tests and publishes the zip, its `.sha256` and the notes. See [docs/updates.md](docs/updates.md). Pushing the tag is the maintainer's decision; the manual CI workflow only uploads the zip as a workflow artifact.
+- **`release.json`** in the zip marks a release folder; only such a copy can update itself.
 - **Before a release,** run [docs/validation-checklist.md](docs/validation-checklist.md) against the published zip, not a debug build.
 - `scripts/make-icon.ps1` regenerates `src/RepoWatch.Desktop/Assets/RepoWatch.ico`, used for the executable, windows, tray and notifications.
 
@@ -156,7 +158,8 @@ Configuration holds only **public** deployment values. Secrets never belong here
 | `Cache:RetentionDays` | 30 | How long cached repository data and notification history are kept (1–365). |
 | `Cache:MaxCachedResponses` | 2000 | Most cached REST responses per account (100–100000). |
 | `Relay:BaseUrl` | empty | Optional live-update relay ([docs/relay.md](docs/relay.md)). https, or `http://localhost` for development. Empty: polling only. |
-| `Updates:ReleasesUrl` | `https://github.com/PantaKoda/repo-watch/releases` | Page opened by *Check for updates* (https, on the GitHub web host). Empty hides the action, and so does the default when `GitHub:WebBaseUrl` points elsewhere. |
+| `Updates:Repository` | `PantaKoda/repo-watch` | Public repository whose GitHub releases are Repo Watch's updates (owner/name). Empty turns update checks off. See [docs/updates.md](docs/updates.md). |
+| `Updates:CheckIntervalHours` | 24 | Hours between automatic update checks (0–168; 0 = only when asked). |
 
 Unknown keys, wrongly typed values, malformed JSON and invalid values stop startup with a window listing each problem, the setting to change and the files that were read. Problems are also logged.
 
@@ -172,6 +175,8 @@ Unknown keys, wrongly typed values, malformed JSON and invalid values stop start
 | `HKCU\Software\Classes\AppUserModelId\RepoWatch.Desktop` | The app identity Windows needs to show Repo Watch notifications (display name only). |
 | `%LOCALAPPDATA%\RepoWatch\repowatch.db` | SQLite database: settings, plus per-account caches of watched repositories' last data and REST ETags (private repository content). Also the notification history (event keys: repository IDs, branch names, commit SHAs, run attempts; no titles). The caches are removed for an account on sign-out and pruned after 30 days (configurable) or when a repository is no longer watched. Never contains tokens. |
 | `%LOCALAPPDATA%\RepoWatch\diagnostics\` | Diagnostics archives you create from Settings → Export diagnostics: versions, states, counts and redacted logs; no tokens, codes, repository names or content. |
+| `%LOCALAPPDATA%\RepoWatch\updates\` | A downloaded update while it is being installed; removed afterwards. |
+| `<install folder>.previous` | The version before the last in-app update, kept for a manual rollback until the next update. |
 | `%LOCALAPPDATA%\RepoWatch\logs\` | Daily rolling logs, newest 7 files kept. Tokens and private content must never be logged. |
 
 ## Repository layout

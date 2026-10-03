@@ -900,3 +900,79 @@ Requested by the maintainer after using 0.1.0:
 **Next concrete task**
 - Further UI changes as requested. Rebuild the installed app after merge.
 
+## After release — GitHub releases and in-app updates (feature branch `app-updates`, version 0.2.0)
+
+Requested by the maintainer:
+1. a proper GitHub release (Windows);
+2. an update indicator on the main screen that opens a window with all changes and an Install button;
+3. *Check for updates* that really checks and says when nothing is newer.
+
+The maintainer chose to make `PantaKoda/repo-watch` **public**, so releases are read anonymously and the GitHub App needs no new permission. This expands Stage 11's "defer automatic downloading/execution" on the maintainer's request. Installing stays user-initiated, checksum-verified and reversible; code signing is still future work (docs/updates.md).
+
+**Implemented**
+- **Releases:**
+  - `CHANGELOG.md`;
+  - `scripts/release-notes.ps1`, which extracts a version's section and fails when it is missing;
+  - `.github/workflows/release.yml`: on a `vX.Y.Z` tag it checks the tag matches `Version`, runs the publish script with tests, and creates the release with the zip, `.sha256` and notes;
+  - `Version` set to 0.2.0;
+  - the publish script writes `release.json` (version, commit, runtime) into the zip.
+- **Checking:**
+  - `ReleaseClient` (GitHub project) reads `repos/{Updates:Repository}/releases` without a token and maps version tags, ignoring others;
+  - `UpdatePolicy` (Core) keeps published, stable releases newer than the running version, newest first;
+  - `UpdateService` checks 30 s after start and then every `Updates:CheckIntervalHours` (default 24; 0 = only when asked).
+- **Indicator and window:** an accent **UPDATE** pill in the widget header opens the new update window. It shows:
+  - every newer release's notes as plain text (Markdown is stripped, never rendered);
+  - *Install update*, *View on GitHub*, *Check again* and *Later*;
+  - download progress and status, and the reason when installing isn't possible.
+- **Settings › Check for updates:** "You have the latest version (X). There is no newer release.", "Version X is available." (and opens the window), or why the check failed.
+- **Install:**
+  1. Downloads only from the repository's release download URLs (HTTPS, size-capped).
+  2. Checks the SHA-256 against the release's `.sha256`.
+  3. Unpacks into `%LOCALAPPDATA%\RepoWatch\updates` and checks the staged copy's `release.json` version.
+  4. Starts the staged copy with `--apply-update` and quits.
+  5. `UpdateApplier` waits for the old process, moves the install folder to `<folder>.previous`, copies the new version in and starts it with `--updated-from`. On failure it restores the previous folder and starts that instead.
+  6. The new version shows "Updated to X (from Y)" and removes the staging folder.
+  - Only folders carrying `release.json` update themselves; builds from source explain why not.
+- **Configuration:** `Updates:ReleasesUrl` is replaced by `Updates:Repository` (validated owner/name) and `Updates:CheckIntervalHours`. The shipped `appsettings.json` sets both.
+- **Docs:** `docs/updates.md` (publishing, how updates work, rollback, security notes), README, architecture and validation checklist.
+
+**Checks run**
+- `dotnet test`: 470 passed. New tests:
+  - version parsing and order, the newer-release list, checksum file parsing;
+  - `ReleaseClient`: anonymous request, mapping, failure messages, download URL allowlist, size cap;
+  - `UpdateService` end to end with real zips on disk: stage and hand-over arguments, checksum mismatch, wrong version inside the zip, source builds;
+  - Settings messages; the widget indicator; the update window's plain-text notes;
+  - `UpdateApplier` with real folders: swap with the previous version kept, no change when the old app doesn't quit, restore after a failed copy;
+  - headless update window: Install enabled, or the reason shown.
+- **Real hand-over with real processes:** a 0.2.0 release zip was extracted as the install folder and again as the staged copy. With the installed app running, the staged copy started with `--apply-update` waited until the old app quit, moved the folder to `RepoWatch.previous`, copied itself in (marker file present), and started the new app from the install folder. That app logged "Updated from 0.1.9 to 0.2.0"; `update.log` recorded the swap.
+- **Not yet live:** reading releases from github.com and downloading a real release asset. The repository must be public and the first release published (tag `v0.2.0`), both maintainer actions after merge.
+
+**Next concrete task**
+- After merge: the maintainer makes the repository public and pushes tag `v0.2.0`. Verify the Release workflow, then confirm a 0.2.0 copy finds the release (the installed pre-0.2.0 copy has no updater, so it is replaced by hand once).
+
+**Faster status updates without the relay (same branch)**
+The maintainer noticed that switching the repository to public didn't show in the widget for minutes, while a new PR appeared quickly.
+- **Cause:** repository metadata, including visibility, refreshed on the "quiet" interval: 3 minutes, and up to ×8 slower when the widget is hidden or on battery. Pull requests refresh every 90 s.
+- **Metadata now refreshes on the pull-request interval** (90 s; 20 s for the repository whose details are open). Conditional requests make an unchanged answer free against the rate limit.
+- **Bringing the widget to the front refreshes at once** every part older than 30 s (`PollingIntervals.StaleOnFocus`). Failing parts keep their backoff, and pausing is respected.
+- **Limit:** within-seconds updates need the Stage 10 relay deployed and the GitHub App webhook configured. Both are maintainer actions; see docs/relay.md.
+- Tests: the metadata interval, and the widget being activated refreshes stale parts at once but not freshly refreshed ones. `dotnet test`: 472 passed, twice.
+- **Decision:** the published app stays on polling plus on-demand refresh; no shared relay. Webhooks belong to the shared GitHub App, so all users would depend on one maintainer-run server, which would also receive their private-repository event payloads. The relay remains an optional self-hosted feature for people who register their own app (docs/relay.md).
+
+**Review of PR #15 (all findings addressed)**
+These fixes ship in 0.2.0, which is the code users run to install their *next* update, so they had to land before the first release.
+- **Progress no longer floods the UI:** progress is reported in whole percent only (at most ~100 updates per download instead of one per network read). The update window rebuilds the release notes only when the release list changes, so text selection and scroll position survive. It runs the install checks (which create probe files) only when the stage changes.
+- **Stalled or unwanted downloads end:**
+  - a read that receives nothing for 30 s fails with "the download stalled";
+  - a **Cancel** button stops the download;
+  - quitting the app cancels it too;
+  - every cancellation or failure ends in `InstallFailed` with the staging folder removed, so *Install update* and *Check again* work again.
+- **Data folder inside the install folder** (e.g. the zip extracted into `%LOCALAPPDATA%`, or `REPOWATCH_DATA_DIR` under the app folder): installing is refused with a clear reason. The staged updater would otherwise sit inside the folder it has to move. The applier also refuses that layout.
+- **Failed hand-overs are visible:** every recovery launch passes `--update-failed <reason>`, and a refused hand-over now also waits for the old app and starts it again. The restarted version shows "The last update couldn't be applied. Open Update for details." and the update window explains the reason and points to `logs\update.log`.
+- **The retired `Updates:ReleasesUrl` setting** is accepted and ignored, so a 0.1.0 per-user file doesn't stop the app. This is noted in the CHANGELOG.
+- **Release workflow:** the tag is passed through `env:` instead of being pasted into the script text.
+- Tests: progress throttling, cancel then retry, data folder inside the install folder, the failure message in the widget and the window, stable release notes during a download, the refused and failed-copy restarts with their flags, the stall timeout, and a legacy setting that loads. `dotnet test`: 481 passed, twice.
+
+**Next concrete task**
+- After PR #15 is reviewed and merged, in a new PR: polling intervals in Settings, in seconds, with the current defaults and a plain description of what each one affects.
+

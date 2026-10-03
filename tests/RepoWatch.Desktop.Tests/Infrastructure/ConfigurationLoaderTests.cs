@@ -39,6 +39,17 @@ public sealed class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
+    public void The_retired_releases_page_setting_is_still_accepted()
+    {
+        File.WriteAllText(Paths.UserConfigFile, """{ "Updates": { "ReleasesUrl": "https://github.com/PantaKoda/repo-watch/releases" } }""");
+
+        var result = ConfigurationLoader.Load(Paths, new Dictionary<string, string>());
+
+        Assert.True(result.IsValid); // a 0.1.0 user file doesn't stop 0.2.0
+        Assert.Equal("PantaKoda/repo-watch", result.Options.Updates.Repository);
+    }
+
+    [Fact]
     public void Malformed_json_is_reported_with_the_file_to_fix()
     {
         File.WriteAllText(Paths.UserConfigFile, "{ \"Polling\": ");

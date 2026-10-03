@@ -1,5 +1,7 @@
 # Live updates: the relay (optional)
 
+> **Project decision (4 Oct 2026): the published Repo Watch does not use a relay.** Webhooks belong to a GitHub App, so every user of the shared app would depend on one maintainer-run server for uptime, cost and privacy (it would receive event payloads about other people's private repositories). Repo Watch therefore ships polling: each user polls with their own token and rate limit, conditional requests make unchanged answers free, and bringing the widget to the front refreshes anything older than 30 seconds. The relay stays here as an **advanced, self-hosted option**: a person or organization who registers their own GitHub App and hosts their own relay can point `Relay:BaseUrl` at it.
+
 Repo Watch works with polling alone. The relay adds near-real-time updates. GitHub sends webhooks to the relay, and the relay tells connected desktop apps *what* changed: a repository and a part (Actions, pull requests, issues, metadata). Each app then reads the current state from GitHub itself. Desktop apps only make outbound connections; they need no open port.
 
 ```

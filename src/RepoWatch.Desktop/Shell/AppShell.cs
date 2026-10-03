@@ -14,6 +14,7 @@ using RepoWatch.Desktop.Platform.Tray;
 using RepoWatch.Desktop.Platform.Windowing;
 using RepoWatch.Desktop.Presentation;
 using RepoWatch.Desktop.Services;
+using RepoWatch.Desktop.Updates;
 using RepoWatch.Desktop.ViewModels;
 using RepoWatch.Desktop.Views;
 
@@ -44,6 +45,7 @@ public sealed class AppShell(
     private SettingsViewModel? _settingsViewModel;
     private RepositoriesWindow? _repositoriesWindow;
     private OnboardingWindow? _onboardingWindow;
+    private UpdateWindow? _updateWindow;
     private DispatcherTimer? _clock;
     private DateTimeOffset _widgetDeactivatedAt = DateTimeOffset.MinValue;
     private bool _quitting;
@@ -110,6 +112,7 @@ public sealed class AppShell(
         _visualsWatcher.Changed += (_, _) => QueueVisuals();
         _widget.Closing += OnWidgetClosing;
         _widget.Deactivated += (_, _) => _widgetDeactivatedAt = DateTimeOffset.UtcNow;
+        _widget.Activated += (_, _) => conditions.NotifyWidgetActivated(); // looking at it refreshes what's older than 30 s
         // Started by the OS at sign-in with "Start minimized": stay in the tray until asked.
         var startedAtLogin = desktop.Args?.Contains(Platform.Startup.StartupArguments.AtLogin, StringComparer.OrdinalIgnoreCase) == true;
         if (!(startedAtLogin && settings.App.Startup.StartMinimized && CanHideToTray))
@@ -149,6 +152,11 @@ public sealed class AppShell(
         // The coordinator drives what the widget observes from the account and watchlist.
         services.GetRequiredService<MonitorCoordinator>();
         services.GetRequiredService<NotificationService>();
+
+        // Updates: a daily check; installing is always the user's choice. The new version takes over after we quit.
+        var updates = services.GetRequiredService<UpdateService>();
+        updates.ExitRequested += (_, _) => Dispatcher.UIThread.Post(Quit);
+        updates.Start();
 
         // Restore the signed-in account in the background; the widget shows the outcome.
         _ = RestoreAccountAsync();
@@ -289,6 +297,22 @@ public sealed class AppShell(
         }
     }
 
+    public void OpenUpdate()
+    {
+        if (_updateWindow is null)
+        {
+            var viewModel = ActivatorUtilities.CreateInstance<UpdateViewModel>(services);
+            _updateWindow = new UpdateWindow { DataContext = viewModel, Icon = _widget?.Icon };
+            _updateWindow.Closed += (_, _) =>
+            {
+                viewModel.Dispose(); // an install in progress keeps running in UpdateService
+                _updateWindow = null;
+            };
+        }
+
+        BringToFront(_updateWindow);
+    }
+
     public async Task CopyTextAsync(string text)
     {
         try
@@ -329,6 +353,7 @@ public sealed class AppShell(
         _settingsWindow?.Close();
         _repositoriesWindow?.Close();
         _onboardingWindow?.Close();
+        _updateWindow?.Close();
         _desktop?.Shutdown();
     }
 

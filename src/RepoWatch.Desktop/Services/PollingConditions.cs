@@ -54,6 +54,11 @@ public sealed class PollingConditions : IDisposable
     /// <summary>The computer woke up or the network came back: refresh soon and forget earlier failures.</summary>
     public event EventHandler? Resumed;
 
+    /// <summary>The user brought the widget to the front: data older than a few seconds should refresh now.</summary>
+    public event EventHandler? WidgetActivated;
+
+    public void NotifyWidgetActivated() => WidgetActivated?.Invoke(this, EventArgs.Empty);
+
     public void SetPaused(bool paused) => _settings.UpdateApp(s => s with { MonitoringPaused = paused });
 
     public void SetWidgetVisible(bool visible)

@@ -72,6 +72,10 @@ internal sealed class FakeShell : IShell
 
     public Task<bool> OpenDataFolderAsync() => Task.FromResult(DataFolderOpens);
 
+    public int UpdateRequests { get; private set; }
+
+    public void OpenUpdate() => UpdateRequests++;
+
     public void Quit()
     {
     }

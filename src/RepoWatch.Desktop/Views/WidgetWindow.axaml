@@ -145,6 +145,14 @@
             </Border>
           </Grid>
           <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <!-- A newer release exists: a small accent pill opens the update window. -->
+            <Button Classes="update" Command="{Binding OpenUpdateCommand}" IsVisible="{Binding UpdateAvailable}"
+                    ToolTip.Tip="{Binding UpdateTooltip}" AutomationProperties.Name="Update available">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <PathIcon Data="{StaticResource IconUpdate}" Width="11" Height="11" />
+                <TextBlock Text="UPDATE" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.2" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
             <!-- Refresh and expand only appear when there is something to refresh or expand. -->
             <Button Classes="icon" Command="{Binding RefreshCommand}"
                     IsVisible="{Binding HasRepositories}"

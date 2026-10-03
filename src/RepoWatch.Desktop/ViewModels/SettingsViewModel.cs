@@ -1,11 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RepoWatch.Core.Configuration;
-using RepoWatch.Core.Platform;
 using RepoWatch.Core.Settings;
 using RepoWatch.Desktop.Infrastructure;
 using RepoWatch.Desktop.Presentation;
 using RepoWatch.Desktop.Services;
+using RepoWatch.Desktop.Updates;
 
 namespace RepoWatch.Desktop.ViewModels;
 
@@ -19,15 +18,13 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly WatchlistService _watchlist;
     private readonly VisualStateService _visuals;
     private readonly DesktopIntegration? _integration;
-    private readonly IExternalBrowser? _browser;
-    private readonly Uri? _releasesUrl;
+    private readonly UpdateService? _updates;
     private bool _applying;
 
     public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths, VisualStateService visuals, DesktopIntegration? integration = null,
-        IExternalBrowser? browser = null, RepoWatchOptions? options = null)
+        UpdateService? updates = null)
     {
-        _browser = browser;
-        _releasesUrl = options is not null && Uri.TryCreate(options.GitHub.WebBaseUrl, UriKind.Absolute, out var web) ? options.Updates.ResolveFor(web) : null;
+        _updates = updates;
         _integration = integration;
         if (_integration is not null)
         {
@@ -318,22 +315,32 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             : "Couldn't open the data folder in a file manager. Its path is shown above.";
     }
 
-    /// <summary>True when a releases page is configured. Updates are never downloaded or installed by the app.</summary>
-    public bool CanCheckForUpdates => _browser is not null && _releasesUrl is not null;
+    /// <summary>True when updates are configured (Updates:Repository).</summary>
+    public bool CanCheckForUpdates => _updates?.IsEnabled == true;
 
+    /// <summary>Asks GitHub now. A newer release opens the update window; otherwise the result is shown here.</summary>
     [RelayCommand]
     private async Task CheckForUpdatesAsync()
     {
-        if (_browser is null || _releasesUrl is null)
+        if (_updates is null)
         {
             return;
         }
 
-        ActionMessage = await _browser.OpenAsync(_releasesUrl) switch
+        ActionMessage = "Checking for updates…";
+        var result = await _updates.CheckNowAsync();
+        ActionMessage = result.Outcome switch
         {
-            LinkOpenResult.Opened => $"Opened the releases page. You have Repo Watch {Version}; download a newer release there if one is listed.",
-            _ => $"Couldn't open a browser. Releases are listed at {_releasesUrl}",
+            UpdateCheckOutcome.UpToDate => $"You have the latest version ({_updates.Current}). There is no newer release.",
+            UpdateCheckOutcome.Available => $"Version {result.Latest!.Version} is available.",
+            UpdateCheckOutcome.Busy => "An update check or install is already running.",
+            UpdateCheckOutcome.Failed => $"Couldn't check for updates: {result.Error}",
+            _ => "Updates are turned off in this build.",
         };
+        if (result.Outcome == UpdateCheckOutcome.Available)
+        {
+            _shell.OpenUpdate();
+        }
     }
 
     [RelayCommand]

@@ -27,7 +27,8 @@ public sealed class SchedulingTests
     [InlineData(RefreshParts.PullRequests, false, true, 20)]
     [InlineData(RefreshParts.Issues, false, false, 120)]
     [InlineData(RefreshParts.Issues, false, true, 90)]
-    [InlineData(RefreshParts.Metadata, true, true, 180)]
+    [InlineData(RefreshParts.Metadata, false, false, 90)]
+    [InlineData(RefreshParts.Metadata, true, true, 20)]
     public void Each_part_has_its_own_interval(RefreshParts part, bool active, bool focused, int seconds) =>
         Assert.Equal(TimeSpan.FromSeconds(seconds), PollingPolicy.Interval(part, active, focused, Defaults));
 
@@ -239,6 +240,28 @@ public sealed class SchedulingTests
 
         await WaitUntil(() => source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal)) == 2);
         Assert.True(DateTimeOffset.UtcNow - shown < TimeSpan.FromMilliseconds(900), "refreshed on the regular interval, not the hidden one");
+    }
+
+    [Fact]
+    public async Task Bringing_the_widget_forward_refreshes_data_older_than_a_few_seconds_at_once()
+    {
+        var source = new FakeDataSource();
+        var conditions = new PollingConditions(TestServices.Settings(), TimeProvider.System, () => false, watchSystem: false);
+        var intervals = PollingMonitorTests.Every(TimeSpan.FromHours(1)) with { StaleOnFocus = TimeSpan.FromMilliseconds(200) };
+        var settings = new AccountSettings { Watchlist = [new WatchedRepository { RepositoryId = 1, Owner = "octo", Name = "repo1" }] };
+        using var monitor = new PollingRepositoryMonitor(Account, settings, source, "octo", TimeProvider.System, NullLogger.Instance, CancellationToken.None,
+            intervals, conditions);
+        await WaitUntil(() => source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal)) == 1);
+
+        conditions.NotifyWidgetActivated(); // just refreshed: nothing to do yet
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        Assert.Equal(1, source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal)));
+
+        await Task.Delay(250, TestContext.Current.CancellationToken);
+        conditions.NotifyWidgetActivated(); // older than the threshold: refreshed now, not in an hour
+
+        await WaitUntil(() => source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal)) == 2);
+        Assert.True(source.Calls.Count(c => c.StartsWith("repo", StringComparison.Ordinal)) >= 2, "metadata (visibility) refreshed too");
     }
 
     [Fact]
