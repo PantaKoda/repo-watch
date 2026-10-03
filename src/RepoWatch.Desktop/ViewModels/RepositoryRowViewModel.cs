@@ -125,19 +125,6 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         Summary = string.Join(". ", new[] { Name, Badges, BranchStatus, PullRequestCount, IssueCount, FreshnessWarning }.Where(s => !string.IsNullOrEmpty(s)));
     }
 
-    public void Tick(DateTimeOffset now)
-    {
-        foreach (var run in Actions.Items)
-        {
-            run.Tick(now);
-        }
-
-        foreach (var issue in Issues.Items)
-        {
-            issue.Tick(now);
-        }
-    }
-
     [RelayCommand]
     private Task RefreshAsync() => _refresh(Key);
 

@@ -1,10 +1,18 @@
 namespace RepoWatch.Core.Platform;
 
-/// <summary>Opens a URL in the user's system browser.</summary>
+public enum LinkOpenResult
+{
+    Opened,
+    /// <summary>Rejected by <see cref="ExternalLinkPolicy"/>.</summary>
+    Refused,
+    /// <summary>Allowed, but the system browser could not be launched.</summary>
+    Failed,
+}
+
+/// <summary>Opens a URL in the user's system browser. Never throws; failures are reported in the result.</summary>
 public interface IExternalBrowser
 {
-    /// <returns>False if the URL was rejected by <see cref="ExternalLinkPolicy"/> or could not be launched.</returns>
-    Task<bool> OpenAsync(Uri url);
+    Task<LinkOpenResult> OpenAsync(Uri url);
 }
 
 /// <summary>

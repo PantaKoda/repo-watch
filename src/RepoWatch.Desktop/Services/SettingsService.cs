@@ -3,6 +3,13 @@ using RepoWatch.Core.Settings;
 
 namespace RepoWatch.Desktop.Services;
 
+public sealed class AppSettingsChangedEventArgs(AppSettings previous, AppSettings current) : EventArgs
+{
+    public AppSettings Previous { get; } = previous;
+
+    public AppSettings Current { get; } = current;
+}
+
 /// <summary>
 /// Holds the current app settings in memory and saves changes shortly after they happen.
 /// If storage is unavailable the app keeps working with in-memory settings and reports why.
@@ -14,6 +21,8 @@ public sealed class SettingsService : IDisposable
     private readonly Func<ISettingsStore> _openStore;
     private readonly ILogger<SettingsService> _logger;
     private readonly Lock _gate = new();
+    // Serializes snapshot + write so an older snapshot can never be saved after a newer one.
+    private readonly Lock _writeGate = new();
     private readonly Timer _saveTimer;
     private ISettingsStore? _store;
     private bool _dirty;
@@ -30,8 +39,11 @@ public sealed class SettingsService : IDisposable
     /// <summary>A user-facing explanation when settings could not be loaded or will not be saved.</summary>
     public string? Problem { get; private set; }
 
-    /// <summary>Raised on the thread that made the change.</summary>
-    public event EventHandler? AppChanged;
+    /// <summary>Raised on the thread that made the change, with the previous and current settings.</summary>
+    public event EventHandler<AppSettingsChangedEventArgs>? AppChanged;
+
+    /// <summary>Raised (on any thread) when <see cref="Problem"/> changes.</summary>
+    public event EventHandler? ProblemChanged;
 
     public void Load()
     {
@@ -40,30 +52,33 @@ public sealed class SettingsService : IDisposable
             _store = _openStore();
             var result = _store.LoadAppSettings();
             App = result.Value;
-            Problem = result.Status switch
+            SetProblem(result.Status switch
             {
                 SettingsLoadStatus.Corrupt => "Saved settings were unreadable and have been reset. A backup was kept.",
                 SettingsLoadStatus.Repaired => "Some saved settings were invalid and have been reset to defaults.",
                 SettingsLoadStatus.NewerVersion => "Settings were saved by a newer version of Repo Watch. Changes made now will not be saved.",
                 _ => null,
-            };
+            });
         }
         catch (Exception ex)
         {
             // e.g. a database from a newer version, or an unwritable data folder.
             _store = null;
-            Problem = $"Settings storage is unavailable; changes will not be saved. {ex.Message}";
             _logger.LogError(ex, "Settings storage unavailable; continuing with in-memory settings");
+            SetProblem($"Settings storage is unavailable; changes will not be saved. {ex.Message}");
         }
     }
 
     public void UpdateApp(Func<AppSettings, AppSettings> change)
     {
         ArgumentNullException.ThrowIfNull(change);
+        AppSettings previous;
+        AppSettings updated;
         lock (_gate)
         {
-            var updated = SettingsCodecs.Normalize(change(App));
-            if (updated == App)
+            previous = App;
+            updated = SettingsCodecs.Normalize(change(App));
+            if (updated == previous)
             {
                 return;
             }
@@ -73,41 +88,67 @@ public sealed class SettingsService : IDisposable
             _saveTimer.Change(SaveDelay, Timeout.InfiniteTimeSpan);
         }
 
-        AppChanged?.Invoke(this, EventArgs.Empty);
+        AppChanged?.Invoke(this, new AppSettingsChangedEventArgs(previous, updated));
     }
 
-    /// <summary>Writes pending changes now. Called on a timer and at shutdown.</summary>
+    /// <summary>Writes pending changes now. Called on a timer and at shutdown; safe to call concurrently.</summary>
     public void Flush()
     {
-        AppSettings snapshot;
-        lock (_gate)
+        lock (_writeGate)
         {
-            if (!_dirty || _store is null)
+            AppSettings snapshot;
+            lock (_gate)
             {
-                return;
+                if (!_dirty || _store is null)
+                {
+                    return;
+                }
+
+                _dirty = false;
+                snapshot = App;
             }
 
-            _dirty = false;
-            snapshot = App;
-        }
-
-        try
-        {
-            if (!_store.SaveAppSettings(snapshot))
+            try
             {
-                Problem ??= "Settings were saved by a newer version of Repo Watch. Changes made now will not be saved.";
+                if (!_store.SaveAppSettings(snapshot))
+                {
+                    SetProblem("Settings were saved by a newer version of Repo Watch. Changes made now will not be saved.");
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Saving settings failed");
-            Problem = $"Saving settings failed: {ex.Message}";
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Saving settings failed");
+                lock (_gate)
+                {
+                    _dirty = true; // retried on the next change or at shutdown
+                }
+
+                SetProblem($"Saving settings failed: {ex.Message}");
+            }
         }
     }
 
     public void Dispose()
     {
-        _saveTimer.Dispose();
+        using (var callbacksDone = new ManualResetEvent(false))
+        {
+            if (_saveTimer.Dispose(callbacksDone))
+            {
+                callbacksDone.WaitOne(TimeSpan.FromSeconds(5));
+            }
+        }
+
         Flush();
+    }
+
+    private void SetProblem(string? problem)
+    {
+        if (problem == Problem)
+        {
+            return;
+        }
+
+        Problem = problem;
+        ProblemChanged?.Invoke(this, EventArgs.Empty);
     }
 }

@@ -43,6 +43,7 @@
         <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />
         <Button Content="Quit Repo Watch" Command="{Binding QuitCommand}" />
       </StackPanel>
+      <TextBlock Text="{Binding ActionMessage}" IsVisible="{Binding HasActionMessage}" TextWrapping="Wrap" Classes="secondary" />
     </StackPanel>
   </ScrollViewer>
 </Window>

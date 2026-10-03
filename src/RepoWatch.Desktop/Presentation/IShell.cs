@@ -13,7 +13,8 @@ public interface IShell
 
     void OpenSettings();
 
-    void OpenDataFolder();
+    /// <summary>Opens the data folder in the file manager. Never throws; returns false if it could not be opened.</summary>
+    Task<bool> OpenDataFolderAsync();
 
     void Quit();
 }

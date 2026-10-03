@@ -117,6 +117,17 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
   Real desktop screenshots were captured and match the headless output. The log reports "tray available".
 - Release build and `--locked-mode` restore: 0 warnings, 0 errors.
 
+**Review fixes (PR #2)**
+- The periodic tick re-evaluates freshness, so data that stops arriving turns `Stale` without a monitor event.
+- `SettingsService` serializes snapshot and write, so an older snapshot is never saved last. `Dispose` waits for a running timer callback. A failed save keeps the change pending. A test confirms the ordering test fails without the fix.
+- `AppChanged` carries the previous and current settings. The widget, settings window and theme react only to the fields they use, so placement saves while dragging no longer rebuild the widget.
+- Save failures raise `ProblemChanged`, which an open settings window shows.
+- `OpenDataFolderAsync` returns a result and catches all exceptions; a failure is shown in settings.
+- Tray click hides the widget only if it was just in use (active, or deactivated by that click within 600 ms); a covered widget is brought forward instead.
+- `IExternalBrowser` returns `Opened`/`Refused`/`Failed` and never throws. The widget footer shows a short notice when a link is refused or the browser can't start.
+- Relative minutes truncate ("59m ago", not "60m ago").
+- 149 tests passing. The tray-click heuristic is not automated.
+
 **Not verified / limitations**
 - Tray menu clicks (Show/Settings/Quit) and recovery by clicking the tray icon were not automated. Tray creation is confirmed only from the log. Please check manually: hide the widget, then click the tray icon.
 - Display-change handling (`Screens.Changed`) is covered by the geometry tests and the off-screen restart, but no monitor was actually unplugged.

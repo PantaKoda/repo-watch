@@ -25,12 +25,14 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
     private IRepositoryMonitor _monitor;
 
+    private static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(8);
+
     public WidgetViewModel(MonitorHost monitors, SettingsService settings, IShell shell, IExternalBrowser browser, TimeProvider time, IUiDispatcher dispatcher)
     {
         _monitors = monitors;
         _settings = settings;
         _shell = shell;
-        _browser = browser;
+        _browser = new ReportingBrowser(browser, ReportLinkResult);
         _time = time;
         _dispatcher = dispatcher;
         _monitor = monitors.Current;
@@ -113,15 +115,18 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
     public string HideTooltip => _shell.CanHideToTray ? "Hide to tray" : "Minimize";
 
-    /// <summary>Updates relative times; called periodically by the shell.</summary>
-    public void Tick()
-    {
-        var now = _time.GetUtcNow();
-        foreach (var row in Repositories)
-        {
-            row.Tick(now);
-        }
-    }
+    /// <summary>A short-lived message about an action that did not work (e.g. a link that could not be opened).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotice))]
+    public partial string? Notice { get; private set; }
+
+    public bool HasNotice => Notice is not null;
+
+    /// <summary>
+    /// Called periodically by the shell. Re-evaluates freshness against the current time so data
+    /// that stops arriving turns stale even when the monitor raises no events.
+    /// </summary>
+    public void Tick() => Sync();
 
     public void Dispose()
     {
@@ -197,11 +202,54 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         Sync();
     }
 
-    private void OnSettingsChanged(object? sender, EventArgs e) => _dispatcher.Post(() =>
+    // Placement saves arrive several times per second while dragging; only the flags shown here matter.
+    private void OnSettingsChanged(object? sender, AppSettingsChangedEventArgs e)
     {
-        ApplySettings();
-        Sync();
-    });
+        var (before, after) = (e.Previous.Window, e.Current.Window);
+        if (before.Expanded != after.Expanded || before.AlwaysOnTop != after.AlwaysOnTop || before.PositionLocked != after.PositionLocked)
+        {
+            _dispatcher.Post(ApplySettings);
+        }
+    }
+
+    private void ReportLinkResult(LinkOpenResult result)
+    {
+        var message = result switch
+        {
+            LinkOpenResult.Refused => "That link isn't on GitHub, so it wasn't opened.",
+            LinkOpenResult.Failed => "Couldn't open your web browser.",
+            _ => null,
+        };
+
+        _dispatcher.Post(() => Notice = message);
+        if (message is not null)
+        {
+            _ = ClearNoticeLaterAsync(message);
+        }
+    }
+
+    private async Task ClearNoticeLaterAsync(string message)
+    {
+        await Task.Delay(NoticeDuration, _time).ConfigureAwait(false);
+        _dispatcher.Post(() =>
+        {
+            if (Notice == message)
+            {
+                Notice = null;
+            }
+        });
+    }
+
+    /// <summary>Reports link results to the widget so failures are never silent.</summary>
+    private sealed class ReportingBrowser(IExternalBrowser inner, Action<LinkOpenResult> report) : IExternalBrowser
+    {
+        public async Task<LinkOpenResult> OpenAsync(Uri url)
+        {
+            var result = await inner.OpenAsync(url).ConfigureAwait(false);
+            report(result);
+            return result;
+        }
+    }
 
     private void ApplySettings()
     {

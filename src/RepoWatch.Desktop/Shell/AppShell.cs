@@ -32,6 +32,7 @@ public sealed class AppShell(
     ILogger<AppShell> logger) : IShell, IDisposable
 {
     public const string DemoArgument = "--demo";
+    private static readonly TimeSpan TrayClickGrace = TimeSpan.FromMilliseconds(600);
 
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private Application? _application;
@@ -39,6 +40,7 @@ public sealed class AppShell(
     private WidgetViewModel? _widgetViewModel;
     private SettingsWindow? _settingsWindow;
     private DispatcherTimer? _clock;
+    private DateTimeOffset _widgetDeactivatedAt = DateTimeOffset.MinValue;
     private bool _quitting;
 
     public bool CanHideToTray => tray.IsAvailable;
@@ -51,7 +53,13 @@ public sealed class AppShell(
 
         settings.Load();
         ApplyAppearance();
-        settings.AppChanged += (_, _) => Dispatcher.UIThread.Post(ApplyAppearance);
+        settings.AppChanged += (_, e) =>
+        {
+            if (e.Previous.Appearance.Theme != e.Current.Appearance.Theme)
+            {
+                Dispatcher.UIThread.Post(ApplyAppearance);
+            }
+        };
 
         if (desktop.Args?.Contains(DemoArgument, StringComparer.OrdinalIgnoreCase) == true)
         {
@@ -71,6 +79,7 @@ public sealed class AppShell(
         };
         placement.Attach(_widget);
         _widget.Closing += OnWidgetClosing;
+        _widget.Deactivated += (_, _) => _widgetDeactivatedAt = DateTimeOffset.UtcNow;
         desktop.MainWindow = _widget;
         desktop.ShutdownRequested += (_, _) => settings.Flush();
 
@@ -137,20 +146,19 @@ public sealed class AppShell(
         _settingsWindow.Activate();
     }
 
-    public async void OpenDataFolder()
+    public async Task<bool> OpenDataFolderAsync()
     {
         try
         {
             var directory = Directory.CreateDirectory(paths.DataDirectory);
             var launcher = (_settingsWindow as TopLevel ?? _widget)?.Launcher;
-            if (launcher is not null)
-            {
-                await launcher.LaunchDirectoryInfoAsync(directory);
-            }
+            return launcher is not null && await launcher.LaunchDirectoryInfoAsync(directory);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
+            // No file manager, unwritable folder, unsupported platform: report, never crash.
             logger.LogWarning(ex, "Could not open the data folder");
+            return false;
         }
     }
 
@@ -168,9 +176,16 @@ public sealed class AppShell(
         _widgetViewModel?.Dispose();
     }
 
+    /// <summary>
+    /// Tray click: hide the widget only if the user was just using it; a widget that is
+    /// covered by other windows is brought forward instead. Clicking the tray icon itself
+    /// deactivates the widget, so "just using it" means active within a short grace period.
+    /// </summary>
     private void ToggleWidget()
     {
-        if (_widget is { IsVisible: true } && _widget.WindowState != WindowState.Minimized)
+        var wasInUse = _widget is not null
+            && (_widget.IsActive || DateTimeOffset.UtcNow - _widgetDeactivatedAt < TrayClickGrace);
+        if (_widget is { IsVisible: true } && _widget.WindowState != WindowState.Minimized && wasInUse)
         {
             HideWidget();
         }

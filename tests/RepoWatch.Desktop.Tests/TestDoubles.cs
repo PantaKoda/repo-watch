@@ -52,9 +52,9 @@ internal sealed class FakeShell : IShell
 
     public void OpenSettings() => SettingsRequests++;
 
-    public void OpenDataFolder()
-    {
-    }
+    public bool DataFolderOpens { get; set; } = true;
+
+    public Task<bool> OpenDataFolderAsync() => Task.FromResult(DataFolderOpens);
 
     public void Quit()
     {
@@ -65,10 +65,12 @@ internal sealed class RecordingBrowser : IExternalBrowser
 {
     public List<Uri> Opened { get; } = [];
 
-    public Task<bool> OpenAsync(Uri url)
+    public LinkOpenResult Result { get; set; } = LinkOpenResult.Opened;
+
+    public Task<LinkOpenResult> OpenAsync(Uri url)
     {
         Opened.Add(url);
-        return Task.FromResult(true);
+        return Task.FromResult(Result);
     }
 }
 

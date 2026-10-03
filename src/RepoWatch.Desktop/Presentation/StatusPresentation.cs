@@ -113,7 +113,7 @@ public static class TimeText
 
         if (elapsed < TimeSpan.FromHours(1))
         {
-            return $"{Math.Max(1, (int)Math.Round(elapsed.TotalMinutes))}m ago";
+            return $"{Math.Max(1, (int)elapsed.TotalMinutes)}m ago";
         }
 
         if (elapsed < TimeSpan.FromDays(1))

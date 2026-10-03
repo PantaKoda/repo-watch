@@ -31,9 +31,17 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             : "Signing in with GitHub is not available in this build yet, and no GitHub App client ID is configured.";
 
         _settings.AppChanged += OnSettingsChanged;
+        _settings.ProblemChanged += OnProblemChanged;
         _monitors.CurrentChanged += OnMonitorChanged;
         Load();
     }
+
+    /// <summary>Result of the last action that could not complete, e.g. opening the data folder.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasActionMessage))]
+    public partial string? ActionMessage { get; private set; }
+
+    public bool HasActionMessage => ActionMessage is not null;
 
     public IReadOnlyList<ThemePreference> Themes { get; } = Enum.GetValues<ThemePreference>();
 
@@ -68,6 +76,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _settings.AppChanged -= OnSettingsChanged;
+        _settings.ProblemChanged -= OnProblemChanged;
         _monitors.CurrentChanged -= OnMonitorChanged;
     }
 
@@ -84,7 +93,12 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private void ExitDemo() => _monitors.ExitDemo();
 
     [RelayCommand]
-    private void OpenDataFolder() => _shell.OpenDataFolder();
+    private async Task OpenDataFolderAsync()
+    {
+        ActionMessage = await _shell.OpenDataFolderAsync()
+            ? null
+            : "Couldn't open the data folder in a file manager. Its path is shown above.";
+    }
 
     [RelayCommand]
     private void ShowWidget() => _shell.ShowWidget();
@@ -119,7 +133,22 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void OnSettingsChanged(object? sender, EventArgs e) => _dispatcher.Post(Load);
+    private void OnSettingsChanged(object? sender, AppSettingsChangedEventArgs e)
+    {
+        var (before, after) = (e.Previous, e.Current);
+        if (before.Window.AlwaysOnTop != after.Window.AlwaysOnTop
+            || before.Window.PositionLocked != after.Window.PositionLocked
+            || before.Appearance.Theme != after.Appearance.Theme)
+        {
+            _dispatcher.Post(Load);
+        }
+    }
+
+    private void OnProblemChanged(object? sender, EventArgs e) => _dispatcher.Post(() =>
+    {
+        StorageProblem = _settings.Problem;
+        HasStorageProblem = StorageProblem is not null;
+    });
 
     private void OnMonitorChanged(object? sender, EventArgs e) => IsDemo = _monitors.IsDemo;
 }

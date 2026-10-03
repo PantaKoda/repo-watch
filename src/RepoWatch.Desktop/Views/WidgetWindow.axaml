@@ -165,7 +165,11 @@
 
       <!-- Footer: summary and resize grip -->
       <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="10,0,0,0" MinHeight="18">
-        <TextBlock Classes="secondary" Text="{Binding SummaryText}" VerticalAlignment="Center" />
+        <TextBlock Classes="secondary" Text="{Binding SummaryText}" VerticalAlignment="Center" IsVisible="{Binding !HasNotice}" />
+        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasNotice}" VerticalAlignment="Center">
+          <c:StatusDot Tone="Warning" Width="7" Height="7" VerticalAlignment="Center" />
+          <TextBlock Classes="secondary" Text="{Binding Notice}" />
+        </StackPanel>
         <Border Grid.Column="1" Width="18" Height="18" Background="Transparent" Cursor="BottomRightCorner"
                 PointerPressed="OnResizeGripPointerPressed" ToolTip.Tip="Drag to resize">
           <Path Data="M15,6 L6,15 M15,11 L11,15" Stroke="{DynamicResource WidgetBorderBrush}" StrokeThickness="1.5" />
