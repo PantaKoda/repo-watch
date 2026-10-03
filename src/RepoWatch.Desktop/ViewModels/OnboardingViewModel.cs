@@ -44,6 +44,8 @@ public sealed partial class OnboardingViewModel : ObservableObject, IDisposable
 
         _applyingAppearance = true;
         Theme = settings.App.Appearance.Theme;
+        Material = settings.App.Appearance.Material;
+        OpacityPercent = settings.App.Appearance.BackgroundOpacity * 100;
         AlwaysOnTop = settings.App.Window.AlwaysOnTop;
         _applyingAppearance = false;
 
@@ -63,6 +65,12 @@ public sealed partial class OnboardingViewModel : ObservableObject, IDisposable
     public RepositoryPickerViewModel Picker { get; }
 
     public IReadOnlyList<ThemePreference> Themes { get; } = Enum.GetValues<ThemePreference>();
+
+    public IReadOnlyList<WindowMaterial> Materials { get; } = Enum.GetValues<WindowMaterial>();
+
+    public double MinOpacityPercent => AppearanceSettings.MinBackgroundOpacity * 100;
+
+    public double MaxOpacityPercent => AppearanceSettings.MaxBackgroundOpacity * 100;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSignInStep), nameof(IsGrantStep), nameof(IsChooseStep), nameof(IsAppearanceStep), nameof(StepTitle), nameof(StepNumber))]
@@ -90,6 +98,18 @@ public sealed partial class OnboardingViewModel : ObservableObject, IDisposable
     [ObservableProperty] public partial string? GrantSummary { get; private set; }
 
     [ObservableProperty] public partial ThemePreference Theme { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpacityAdjustable))]
+    public partial WindowMaterial Material { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpacityLabel))]
+    public partial double OpacityPercent { get; set; }
+
+    public string OpacityLabel => $"{Math.Round(OpacityPercent)}%";
+
+    public bool OpacityAdjustable => Material != WindowMaterial.Solid;
 
     [ObservableProperty] public partial bool AlwaysOnTop { get; set; }
 
@@ -146,6 +166,22 @@ public sealed partial class OnboardingViewModel : ObservableObject, IDisposable
         if (!_applyingAppearance)
         {
             _settings.UpdateApp(s => s with { Appearance = s.Appearance with { Theme = value } });
+        }
+    }
+
+    partial void OnMaterialChanged(WindowMaterial value)
+    {
+        if (!_applyingAppearance)
+        {
+            _settings.UpdateApp(s => s with { Appearance = s.Appearance with { Material = value } });
+        }
+    }
+
+    partial void OnOpacityPercentChanged(double value)
+    {
+        if (!_applyingAppearance)
+        {
+            _settings.UpdateApp(s => s with { Appearance = s.Appearance with { BackgroundOpacity = value / 100 } });
         }
     }
 

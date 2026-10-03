@@ -46,7 +46,11 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
     public partial AttentionLevel Attention { get; private set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActive))]
     public partial StatusTone Tone { get; private set; }
+
+    /// <summary>Work is running on the default branch: the row shows a scan line and its dot pulses.</summary>
+    public bool IsActive => Tone == StatusTone.Running;
 
     /// <summary>Default-branch workflow health, e.g. "main: Failing".</summary>
     [ObservableProperty]

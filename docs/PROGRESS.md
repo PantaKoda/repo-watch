@@ -271,3 +271,67 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
 
 **Next concrete task**
 - Stage 06: replace `WatchlistMonitor` with real data. Load workflow runs, PRs (reviews, checks) and issues for watched repositories using `GitHubApiClient`, per section and independently, with the access classification feeding the widget.
+
+## Stage 08 — Visuals pulled forward (user request, before Stage 06): partial
+
+The user asked for a UI uplift ahead of order: optional transparency with a slider, motion, a "radiating" state for in-progress work, and a futuristic space-station look. Stage 06 remains the next stage in order. The rest of Stage 08 is still pending: density, the accent option, a full manual light/dark × material × background matrix with DPI checks, and the high-contrast/remote fallbacks observed on a real machine.
+
+**Implemented**
+- A "space station" theme (`App.axaml`). Dark navy gradient surface with a static deterministic star field (`StarField`, no idle animation), HUD corner brackets (`HudCorners`), a cyan frame glow, and neon status colors with a soft halo per status dot. There is a light variant.
+- Real materials through `WindowMaterialService`:
+  - Auto/Solid/Transparent/Frosted (acrylic)/Mica via Avalonia `TransparencyLevelHint`.
+  - The achieved level is read back from `ActualTransparencyLevel`. `Resolve` decides the surface opacity and any fallback message.
+  - Fallbacks:
+    - High contrast forces solid.
+    - Remote sessions force solid for blur materials.
+    - If no transparency is achieved, the widget is solid and says so.
+    - Frosted that only gets plain transparency is reported.
+- Opacity applies only to the background layers (surface + stars). The frame and all content stay at opacity 1, which is asserted in a test.
+  - Below 75% surface opacity, content gets a one-layer halo and brighter secondary text (`DockPanel.legible`).
+  - The opacity floor (20%) keeps the widget hit-testable: no click-through.
+- Settings → Appearance and the onboarding Appearance step have a Material picker and a Background slider (20–100%, disabled for Solid). Settings also has Motion (System/On/Off) and a line describing what was actually achieved (`VisualStateService`).
+- Motion:
+  - Running work gets the `:active` pseudo-class on `StatusDot`, which animates an expanding pulse ring.
+  - Active rows and runs show an indeterminate scan line, and the header shows one while refreshing.
+  - Details slide/fade in.
+  - All animations stop under `Window.reduce-motion`, which is set from the Motion setting. `System` follows Windows' client-area animation setting (`SPI_GETCLIENTAREAANIMATION`).
+  - Animations run only while something is active; nothing animates when idle.
+- `MotionPreference` is persisted in `AppearanceSettings` (round-trip covered).
+- **Runtime OS changes:** `SystemVisualsWatcher` re-applies visuals when any of these change:
+  - the achieved transparency level, the widget being shown, hidden or minimized, or high contrast;
+  - on Windows, `WM_SETTINGCHANGE`, `WM_THEMECHANGED`, `WM_DWMCOMPOSITIONCHANGED`, `WM_POWERBROADCAST` or `WM_DISPLAYCHANGE`.
+  Bursts are coalesced into one re-apply.
+- The transparency hint is reassigned only when the material changes, so slider drags don't rebuild the backdrop.
+- If no transparency is granted, the window background is painted with the surface brush, so the fallback is solid edge to edge.
+- The widget pauses its animations while hidden or minimized. The low-opacity halo applies to text only, so the pulse and scan animations never re-blur the content.
+
+**Checks run**
+- `dotnet build` (0 warnings) and `dotnet test --solution RepoWatch.slnx`: 255 passed.
+- New tests:
+  - Material resolution: solid, transparent, opacity floor, Auto minimum, unavailable transparency, high contrast, remote session, frosted→plain-transparency.
+  - Only running dots are `:active`, and no visible text or ancestor is faded.
+  - The pulse animates with motion on and stays at 0 under reduce-motion (headless render ticks).
+  - The settings controls change material, opacity and motion; the slider is disabled for Solid.
+- Real Windows 11 (26200) launch in demo mode over a bright striped backdrop. The app logged the achieved levels:
+  - Frosted at 55% → AcrylicBlur.
+  - Transparent at 35% → Transparent.
+  - Mica at 60% → Mica.
+  - Solid → solid surface.
+  - Light Frosted at 60% → AcrylicBlur.
+  - `WindowFromPoint` inside the widget returned the widget in every mode (no click-through).
+  - Screenshots are in `artifacts/screenshots/ui-space-station/` (not committed).
+
+**Observed limitations**
+- Plain Transparent at low opacity over very busy, high-contrast content is still hard to read, even with the halo. Frosted/Auto is the readable choice and is the default.
+- Mica is a system backdrop tinted from the wallpaper. It does not show windows behind the widget.
+- High-contrast and remote-session fallbacks are unit-tested but were not observed on a real machine. The same goes for re-applying after a runtime OS change, such as toggling Windows "Transparency effects", battery saver or an RDP connect.
+- Whether Avalonia updates `ActualTransparencyLevel` when Windows turns transparency effects off is unverified. The watcher re-reads it on the corresponding broadcast messages.
+
+**Measured resource use** (Debug build, Windows 11, demo data with one running item, 15 s samples, CPU as a share of all cores)
+
+| Mode | CPU | GPU 3D | Working set |
+| --- | --- | --- | --- |
+| Frosted 30% (halo on), visible | 0.34% | 2.3% | 181 MB |
+| Frosted 30%, hidden to tray | 0.00% | 0.0% | 181 MB |
+| Frosted 85%, visible | 0.12% | 1.1% | 170 MB |
+| Frosted 85%, hidden to tray | 0.00% | 0.0% | 171 MB |

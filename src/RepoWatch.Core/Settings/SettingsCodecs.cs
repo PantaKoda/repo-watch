@@ -39,6 +39,7 @@ public static partial class SettingsCodecs
                 Theme = Defined(appearance.Theme),
                 Material = Defined(appearance.Material),
                 Density = Defined(appearance.Density),
+                Motion = Defined(appearance.Motion),
                 BackgroundOpacity = opacity,
                 AccentColor = appearance.AccentColor is { } accent && AccentPattern().IsMatch(accent) ? accent : null,
             },

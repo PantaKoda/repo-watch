@@ -47,6 +47,10 @@ public sealed class AppShell(
     private DispatcherTimer? _clock;
     private DateTimeOffset _widgetDeactivatedAt = DateTimeOffset.MinValue;
     private bool _quitting;
+    private int _visualsQueued;
+    private SystemVisualsWatcher? _visualsWatcher;
+    private AppliedMaterial? _lastApplied;
+    private bool? _lastMotion;
 
     public bool CanHideToTray => tray.IsAvailable;
 
@@ -63,6 +67,13 @@ public sealed class AppShell(
             if (e.Previous.Appearance.Theme != e.Current.Appearance.Theme)
             {
                 Dispatcher.UIThread.Post(ApplyAppearance);
+                QueueVisuals(); // the solid fallback paints a theme brush
+            }
+
+            var (before, after) = (e.Previous.Appearance, e.Current.Appearance);
+            if (before.Material != after.Material || before.BackgroundOpacity != after.BackgroundOpacity || before.Motion != after.Motion)
+            {
+                QueueVisuals();
             }
         };
 
@@ -83,6 +94,10 @@ public sealed class AppShell(
             ShowInTaskbar = !CanHideToTray,
         };
         placement.Attach(_widget);
+        ApplyVisuals();
+        _widget.Opened += (_, _) => ApplyVisuals(); // the achieved material is only final once shown
+        _visualsWatcher = new SystemVisualsWatcher(_widget);
+        _visualsWatcher.Changed += (_, _) => QueueVisuals();
         _widget.Closing += OnWidgetClosing;
         _widget.Deactivated += (_, _) => _widgetDeactivatedAt = DateTimeOffset.UtcNow;
         desktop.MainWindow = _widget;
@@ -280,16 +295,58 @@ public sealed class AppShell(
     public void Dispose()
     {
         _clock?.Stop();
+        _visualsWatcher?.Dispose();
         _widgetViewModel?.Dispose();
     }
 
     /// <summary>
-    /// Tray click: hide the widget only if the user was just using it; a widget that is
-    /// covered by other windows is brought forward instead. Clicking the tray icon itself
-    /// deactivates the widget, so "just using it" means active within a short grace period.
+    /// Applies material, background opacity and motion. Only the widget's background layer becomes
+    /// see-through; other windows stay opaque. Motion is reduced on every window together, and the
+    /// widget pauses its animations while hidden or minimized so nothing animates off screen.
     /// </summary>
-    private static void BringToFront(Window window)
+    private void ApplyVisuals()
     {
+        Interlocked.Exchange(ref _visualsQueued, 0);
+        if (_widget is null || _widgetViewModel is null)
+        {
+            return;
+        }
+
+        var appearance = settings.App.Appearance;
+        var applied = WindowMaterialService.Apply(_widget, appearance);
+        _widgetViewModel.SurfaceOpacity = applied.SurfaceOpacity;
+        var motion = VisualStateService.ResolveMotion(appearance.Motion);
+        foreach (var window in new Window?[] { _settingsWindow, _repositoriesWindow, _onboardingWindow })
+        {
+            window?.Classes.Set("reduce-motion", !motion);
+        }
+
+        var onScreen = _widget.IsVisible && _widget.WindowState != WindowState.Minimized;
+        _widget.Classes.Set("reduce-motion", !motion || !onScreen);
+
+        services.GetRequiredService<VisualStateService>().Publish(applied, motion);
+        if (applied == _lastApplied && motion == _lastMotion)
+        {
+            return;
+        }
+
+        (_lastApplied, _lastMotion) = (applied, motion);
+        logger.LogInformation("Visuals applied: requested {Material}, achieved {Achieved}, surface opacity {Opacity:0.00}, motion {Motion}",
+            appearance.Material, applied.Achieved, applied.SurfaceOpacity, motion);
+    }
+
+    /// <summary>Coalesces bursts (slider drags, OS broadcast messages) into one re-apply.</summary>
+    private void QueueVisuals()
+    {
+        if (Interlocked.Exchange(ref _visualsQueued, 1) == 0)
+        {
+            Dispatcher.UIThread.Post(ApplyVisuals, DispatcherPriority.Background);
+        }
+    }
+
+    private void BringToFront(Window window)
+    {
+        window.Classes.Set("reduce-motion", !services.GetRequiredService<VisualStateService>().MotionEnabled);
         window.Show();
         if (window.WindowState == WindowState.Minimized)
         {
@@ -311,6 +368,11 @@ public sealed class AppShell(
         }
     }
 
+    /// <summary>
+    /// Tray click: hide the widget only if the user was just using it; a widget that is
+    /// covered by other windows is brought forward instead. Clicking the tray icon itself
+    /// deactivates the widget, so "just using it" means active within a short grace period.
+    /// </summary>
     private void ToggleWidget()
     {
         var wasInUse = _widget is not null

@@ -31,7 +31,7 @@ public sealed class SignInWindowTests
         var account = new AccountViewModel(kit.Accounts, shell, browser,
             new AvatarLoader(GitHubHttp.CreateClient(new QueueHandler()), NullLogger<AvatarLoader>.Instance), endpoints, new ImmediateDispatcher(), kit.Time);
         var settings = new SettingsViewModel(kit.Settings, kit.Monitors, shell, new ImmediateDispatcher(), account, kit.Watchlist,
-            new AppPaths(Path.GetTempPath(), "d.json", "u.json", "logs"));
+            new AppPaths(Path.GetTempPath(), "d.json", "u.json", "logs"), new VisualStateService());
         var window = new SettingsWindow { DataContext = settings, Width = 480, Height = 720 };
         window.Show();
         Dispatcher.UIThread.RunJobs();

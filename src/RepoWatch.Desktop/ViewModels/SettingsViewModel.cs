@@ -15,10 +15,13 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly IShell _shell;
     private readonly IUiDispatcher _dispatcher;
     private readonly WatchlistService _watchlist;
+    private readonly VisualStateService _visuals;
     private bool _applying;
 
-    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths)
+    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths, VisualStateService visuals)
     {
+        _visuals = visuals;
+        _visuals.Changed += OnVisualsChanged;
         _settings = settings;
         _monitors = monitors;
         _shell = shell;
@@ -46,6 +49,14 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<ThemePreference> Themes { get; } = Enum.GetValues<ThemePreference>();
 
+    public IReadOnlyList<WindowMaterial> Materials { get; } = Enum.GetValues<WindowMaterial>();
+
+    public IReadOnlyList<MotionPreference> MotionChoices { get; } = Enum.GetValues<MotionPreference>();
+
+    public double MinOpacityPercent => AppearanceSettings.MinBackgroundOpacity * 100;
+
+    public double MaxOpacityPercent => AppearanceSettings.MaxBackgroundOpacity * 100;
+
     public string Version { get; }
 
     public string DataDirectory { get; }
@@ -69,6 +80,26 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     public partial ThemePreference Theme { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpacityAdjustable))]
+    public partial WindowMaterial Material { get; set; }
+
+    /// <summary>Background opacity in percent (20–100). Only the background layer fades; text stays opaque.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpacityLabel))]
+    public partial double OpacityPercent { get; set; }
+
+    public string OpacityLabel => $"{Math.Round(OpacityPercent)}%";
+
+    public bool OpacityAdjustable => Material != WindowMaterial.Solid;
+
+    [ObservableProperty]
+    public partial MotionPreference Motion { get; set; }
+
+    /// <summary>What the widget actually achieved, which can differ from the request.</summary>
+    [ObservableProperty]
+    public partial string VisualStatus { get; private set; } = "";
+
+    [ObservableProperty]
     public partial bool IsDemo { get; private set; }
 
     [ObservableProperty]
@@ -83,6 +114,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _settings.ProblemChanged -= OnProblemChanged;
         _monitors.CurrentChanged -= OnMonitorChanged;
         _watchlist.Changed -= OnWatchlistChanged;
+        _visuals.Changed -= OnVisualsChanged;
         Account.Dispose();
     }
 
@@ -105,6 +137,14 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     partial void OnPositionLockedChanged(bool value) => Save(s => s with { Window = s.Window with { PositionLocked = value } });
 
     partial void OnThemeChanged(ThemePreference value) => Save(s => s with { Appearance = s.Appearance with { Theme = value } });
+
+    partial void OnMaterialChanged(WindowMaterial value) => Save(s => s with { Appearance = s.Appearance with { Material = value } });
+
+    partial void OnOpacityPercentChanged(double value) => Save(s => s with { Appearance = s.Appearance with { BackgroundOpacity = value / 100 } });
+
+    partial void OnMotionChanged(MotionPreference value) => Save(s => s with { Appearance = s.Appearance with { Motion = value } });
+
+    private void OnVisualsChanged(object? sender, EventArgs e) => _dispatcher.Post(() => VisualStatus = _visuals.Describe());
 
     [RelayCommand]
     private void EnterDemo() => _monitors.EnterDemo();
@@ -143,6 +183,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             AlwaysOnTop = app.Window.AlwaysOnTop;
             PositionLocked = app.Window.PositionLocked;
             Theme = app.Appearance.Theme;
+            Material = app.Appearance.Material;
+            OpacityPercent = app.Appearance.BackgroundOpacity * 100;
+            Motion = app.Appearance.Motion;
+            VisualStatus = _visuals.Describe();
             IsDemo = _monitors.IsDemo;
             StorageProblem = _settings.Problem;
             HasStorageProblem = StorageProblem is not null;
@@ -158,7 +202,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         var (before, after) = (e.Previous, e.Current);
         if (before.Window.AlwaysOnTop != after.Window.AlwaysOnTop
             || before.Window.PositionLocked != after.Window.PositionLocked
-            || before.Appearance.Theme != after.Appearance.Theme)
+            || before.Appearance != after.Appearance)
         {
             _dispatcher.Post(Load);
         }

@@ -229,7 +229,7 @@ public sealed class WidgetWindowTests
         var checkBoxes = window.GetVisualDescendants().OfType<CheckBox>().ToList();
         checkBoxes.Single(c => (c.Content as string)!.Contains("above other windows", StringComparison.Ordinal)).IsChecked = true;
         checkBoxes.Single(c => (c.Content as string)!.Contains("Lock", StringComparison.Ordinal)).IsChecked = true;
-        window.GetVisualDescendants().OfType<ComboBox>().Single().SelectedItem = Core.Settings.ThemePreference.Dark;
+        window.GetVisualDescendants().OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "Theme").SelectedItem = Core.Settings.ThemePreference.Dark;
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(settings.App.Window.AlwaysOnTop);

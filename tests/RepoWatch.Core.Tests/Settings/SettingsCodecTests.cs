@@ -16,6 +16,7 @@ public sealed class SettingsCodecTests
             BackgroundOpacity = 0.4,
             Density = Density.Compact,
             AccentColor = "#3366FF",
+            Motion = MotionPreference.Off,
         },
         Window = new()
         {
