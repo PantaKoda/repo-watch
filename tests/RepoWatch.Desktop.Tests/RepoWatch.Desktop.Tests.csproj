@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RepoWatch.Desktop\RepoWatch.Desktop.csproj" />
+  </ItemGroup>
+</Project>

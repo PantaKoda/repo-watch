@@ -1,0 +1,60 @@
+using Avalonia;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using RepoWatch.Desktop.Infrastructure;
+using RepoWatch.Desktop.Infrastructure.Logging;
+
+namespace RepoWatch.Desktop;
+
+internal static class Program
+{
+    [STAThread]
+    public static int Main(string[] args)
+    {
+        var paths = AppPaths.Resolve();
+        using var loggerFactory = CreateLoggerFactory(paths);
+        var logger = loggerFactory.CreateLogger(typeof(Program));
+
+        var configuration = ConfigurationLoader.Load(paths);
+        logger.LogInformation("Repo Watch {Version} starting on {OS}; data directory {DataDirectory}",
+            AppInfo.Version, Environment.OSVersion, paths.DataDirectory);
+        foreach (var error in configuration.Errors)
+        {
+            logger.LogError("Configuration error: {Error}", error);
+        }
+
+        using var services = CompositionRoot.Build(paths, configuration, loggerFactory);
+        try
+        {
+            return BuildAvaloniaApp(() => new App(services)).StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "Unhandled exception; shutting down");
+            throw;
+        }
+    }
+
+    // Entry point used by the Avalonia designer/previewer.
+    public static AppBuilder BuildAvaloniaApp() => BuildAvaloniaApp(() => new App());
+
+    private static AppBuilder BuildAvaloniaApp(Func<App> createApp) =>
+        AppBuilder.Configure(createApp)
+            .UsePlatformDetect()
+            .LogToTrace();
+
+    private static ILoggerFactory CreateLoggerFactory(AppPaths paths) =>
+        LoggerFactory.Create(builder =>
+        {
+            builder.SetMinimumLevel(LogLevel.Information);
+            builder.AddDebug();
+            try
+            {
+                builder.AddProvider(new FileLoggerProvider(paths.LogDirectory));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Unwritable data directory: continue with debug logging only.
+            }
+        });
+}

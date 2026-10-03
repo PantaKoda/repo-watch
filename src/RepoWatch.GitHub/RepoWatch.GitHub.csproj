@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- GitHub authentication, API clients, synchronization and relay client. No UI dependencies. -->
+  <ItemGroup>
+    <ProjectReference Include="..\RepoWatch.Core\RepoWatch.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+</Project>

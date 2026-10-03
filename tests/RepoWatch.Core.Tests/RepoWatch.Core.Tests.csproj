@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RepoWatch.Core\RepoWatch.Core.csproj" />
+    <ProjectReference Include="..\..\src\RepoWatch.GitHub\RepoWatch.GitHub.csproj" />
+  </ItemGroup>
+</Project>

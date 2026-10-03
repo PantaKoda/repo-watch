@@ -1,0 +1,18 @@
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local configuration and secrets — never commit
+appsettings.Local.json
+*.pem
+*.pfx
+*.snk
+.env
+.env.*

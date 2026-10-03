@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  windows:
+    # Windows is the delivery target: full build and all tests.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore RepoWatch.slnx --locked-mode
+      - run: dotnet build RepoWatch.slnx --configuration Release --no-restore
+      - run: dotnet test --solution RepoWatch.slnx --configuration Release --no-build
+
+  shared-code:
+    # Build check only for later macOS/Linux releases. Not a claim of release readiness.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore RepoWatch.slnx --locked-mode
+      - run: dotnet build RepoWatch.slnx --configuration Release --no-restore
+      - run: dotnet test --project tests/RepoWatch.Core.Tests --configuration Release --no-build
