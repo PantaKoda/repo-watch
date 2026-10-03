@@ -33,11 +33,14 @@ public static class GitHubStatusMapping
         };
     }
 
-    /// <summary>For legacy commit statuses. "error" means the status could not be produced; GitHub treats it as failing.</summary>
+    /// <summary>
+    /// For legacy commit statuses. "error" means the status could not be produced; GitHub treats it as failing.
+    /// "expected" (GraphQL) is a required status that has not reported yet.
+    /// </summary>
     public static CheckOutcome FromCommitStatusState(string? state) => state switch
     {
         "success" => CheckOutcome.Success,
-        "pending" => CheckOutcome.Queued,
+        "pending" or "expected" => CheckOutcome.Queued,
         "failure" or "error" => CheckOutcome.Failure,
         _ => CheckOutcome.Unknown,
     };

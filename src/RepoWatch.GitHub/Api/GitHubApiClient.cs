@@ -53,7 +53,7 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
 
     public async Task<ApiResult<T>> GetAsync<T>(Uri uri, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)
     {
-        var response = await SendAsync(uri, cancellationToken).ConfigureAwait(false);
+        var response = await SendAsync(token => GitHubHttp.ApiRequest(HttpMethod.Get, uri, token), cancellationToken).ConfigureAwait(false);
         if (response.Error is not null)
         {
             return ApiResult<T>.Fail(response.Error);
@@ -62,6 +62,39 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
         using var message = response.Message!;
         return await ReadAsync(message, typeInfo, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Runs a GraphQL query (POST /graphql). HTTP-level failures are classified like REST; GraphQL
+    /// errors inside a 200 response are left to the caller, which knows which fields may fail.
+    /// </summary>
+    public async Task<ApiResult<TResponse>> PostGraphQLAsync<TRequest, TResponse>(
+        TRequest request, JsonTypeInfo<TRequest> requestType, JsonTypeInfo<TResponse> responseType, CancellationToken cancellationToken)
+    {
+        var body = JsonSerializer.SerializeToUtf8Bytes(request, requestType);
+        var uri = ApiUri("graphql");
+        var response = await SendAsync(token =>
+        {
+            var message = GitHubHttp.ApiRequest(HttpMethod.Post, uri, token);
+            message.Content = new ByteArrayContent(body) { Headers = { ContentType = new MediaTypeHeaderValue("application/json") } };
+            return message;
+        }, cancellationToken).ConfigureAwait(false);
+        if (response.Error is not null)
+        {
+            return ApiResult<TResponse>.Fail(response.Error);
+        }
+
+        using var reply = response.Message!;
+        return await ReadAsync(reply, responseType, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>A classified error for GraphQL errors returned with HTTP 200.</summary>
+    public ResourceError GraphQLError(string? type) => type switch
+    {
+        "NOT_FOUND" => Error(ResourceErrorKind.NotFound, "GitHub returned not found, or not accessible to Repo Watch."),
+        "FORBIDDEN" or "INSUFFICIENT_SCOPES" => Error(ResourceErrorKind.Forbidden, "GitHub denied access to this data."),
+        "RATE_LIMITED" => Error(ResourceErrorKind.RateLimited, "GitHub's rate limit was reached; Repo Watch will wait before trying again."),
+        _ => Error(ResourceErrorKind.InvalidResponse, "GitHub reported an error for this request."),
+    };
 
     /// <summary>
     /// Follows pagination from <paramref name="first"/> (per_page=100). If <paramref name="maxPages"/> is reached
@@ -85,7 +118,8 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
                 });
             }
 
-            var response = await SendAsync(next, cancellationToken).ConfigureAwait(false);
+            var current = next;
+            var response = await SendAsync(token => GitHubHttp.ApiRequest(HttpMethod.Get, current, token), cancellationToken).ConfigureAwait(false);
             if (response.Error is not null)
             {
                 return ApiResult<PagedList<TItem>>.Fail(response.Error);
@@ -182,7 +216,7 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
         return new Uri(uri + separator + "per_page=" + PageSize);
     }
 
-    private async Task<(HttpResponseMessage? Message, ResourceError? Error)> SendAsync(Uri uri, CancellationToken cancellationToken)
+    private async Task<(HttpResponseMessage? Message, ResourceError? Error)> SendAsync(Func<string, HttpRequestMessage> createRequest, CancellationToken cancellationToken)
     {
         string? token;
         try
@@ -205,7 +239,7 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
             HttpResponseMessage message;
             try
             {
-                using var request = GitHubHttp.ApiRequest(HttpMethod.Get, uri, token);
+                using var request = createRequest(token);
                 message = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             }
             catch (HttpRequestException ex)

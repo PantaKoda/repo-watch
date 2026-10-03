@@ -29,7 +29,7 @@ public static class WorkflowRunSelection
             .ThenBy(r => r.HeadBranch, StringComparer.Ordinal)
             .ToList();
 
-        return new CommitWorkflowSummary(headSha, current, CheckRollup.From(current.Select(r => r.Outcome)));
+        return new CommitWorkflowSummary(headSha, current, CheckRollup.From(current.Select(r => r.Outcome))) { Branch = branch };
     }
 
     /// <summary>Latest attempt of one run; among observations of the same attempt, the most recently updated.</summary>

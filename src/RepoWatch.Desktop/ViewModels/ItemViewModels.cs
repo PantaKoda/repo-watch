@@ -161,10 +161,10 @@ public sealed class ActionsSectionViewModel() : SectionViewModel<RunItemViewMode
     "No workflow runs yet.", "GitHub Actions is disabled or unavailable for this repository.");
 
 public sealed class PullRequestsSectionViewModel() : SectionViewModel<PullRequestItemViewModel>(
-    "No open pull requests.", "Pull requests are unavailable for this repository.");
+    "No open pull requests to show.", "Pull requests are turned off for this repository in Repo Watch.");
 
 public sealed class IssuesSectionViewModel() : SectionViewModel<IssueItemViewModel>(
-    "No open issues.", "Issues are turned off for this repository.");
+    "No open issues.", "Issues are turned off for this repository (on GitHub or in Repo Watch).");
 
 /// <summary>
 /// One independently refreshed section (Actions, pull requests or issues): its items plus the

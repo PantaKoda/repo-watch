@@ -11,6 +11,9 @@ namespace RepoWatch.GitHub.Tests;
 /// <summary>A captured outgoing request, with its body read eagerly.</summary>
 internal sealed record RecordedRequest(HttpMethod Method, Uri Uri, IReadOnlyDictionary<string, string> Form, HttpRequestMessage Message, DateTimeOffset At)
 {
+    /// <summary>The request body as text (read before the request is disposed), if any.</summary>
+    public string? Body { get; init; }
+
     public string? Header(string name) => Message.Headers.TryGetValues(name, out var values) ? string.Join(",", values) : null;
 }
 
@@ -79,6 +82,7 @@ internal sealed class StubHandler(TimeProvider time) : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var form = new Dictionary<string, string>();
+        var text = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         if (request.Content is FormUrlEncodedContent content)
         {
             var body = await content.ReadAsStringAsync(cancellationToken);
@@ -89,7 +93,7 @@ internal sealed class StubHandler(TimeProvider time) : HttpMessageHandler
             }
         }
 
-        var recorded = new RecordedRequest(request.Method, request.RequestUri!, form, request, time.GetUtcNow());
+        var recorded = new RecordedRequest(request.Method, request.RequestUri!, form, request, time.GetUtcNow()) { Body = text };
         lock (Requests)
         {
             Requests.Add(recorded);

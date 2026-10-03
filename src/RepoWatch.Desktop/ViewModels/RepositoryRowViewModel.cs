@@ -105,7 +105,9 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         {
             { Availability: ResourceAvailability.AccessLost } => "No access",
             { Availability: ResourceAvailability.FeatureUnavailable } => "Actions unavailable",
-            { Value.DefaultBranch: { } health } => $"{metadata?.DefaultBranch ?? "default branch"}: {StatusPresentation.Label(health.Rollup.State)}",
+            { Value: { } actions } when actions.TrackedBranches.Any() => string.Join(" · ", actions.TrackedBranches.Select(b =>
+                $"{b.Branch ?? metadata?.DefaultBranch ?? "default branch"}: {StatusPresentation.Label(b.Rollup.State)}")),
+            { Value: not null } => "Tracked branch not found",
             { LastError: not null } => "Actions: couldn't load",
             _ => "Actions: not loaded",
         };

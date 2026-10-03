@@ -69,7 +69,11 @@ public sealed record WorkflowJob
 }
 
 /// <summary>Workflow health of one commit: the current run per workflow and trigger.</summary>
-public sealed record CommitWorkflowSummary(string HeadSha, IReadOnlyList<WorkflowRun> Runs, CheckRollup Rollup);
+public sealed record CommitWorkflowSummary(string HeadSha, IReadOnlyList<WorkflowRun> Runs, CheckRollup Rollup)
+{
+    /// <summary>The branch whose head this commit is, when the summary was computed for a branch.</summary>
+    public string? Branch { get; init; }
+}
 
 /// <summary>Actions data for one repository.</summary>
 public sealed record ActionsState
@@ -77,6 +81,15 @@ public sealed record ActionsState
     /// <summary>Most recent runs across branches, newest first, for the Actions list.</summary>
     public IReadOnlyList<WorkflowRun> RecentRuns { get; init; } = [];
 
-    /// <summary>Health of the default branch's head commit, kept distinct from PR failures.</summary>
+    /// <summary>
+    /// Health of the primary tracked branch's head commit (the default branch unless the user chose
+    /// branches), kept distinct from PR failures.
+    /// </summary>
     public CommitWorkflowSummary? DefaultBranch { get; init; }
+
+    /// <summary>Health of every tracked branch, primary first. Empty when only <see cref="DefaultBranch"/> is known.</summary>
+    public IReadOnlyList<CommitWorkflowSummary> Branches { get; init; } = [];
+
+    /// <summary>Every tracked branch's health, falling back to <see cref="DefaultBranch"/>.</summary>
+    public IEnumerable<CommitWorkflowSummary> TrackedBranches => Branches.Count > 0 ? Branches : DefaultBranch is { } primary ? [primary] : [];
 }

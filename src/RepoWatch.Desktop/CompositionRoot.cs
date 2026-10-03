@@ -50,6 +50,7 @@ internal static class CompositionRoot
         services.AddSingleton<AccountService>();
         services.AddSingleton<WatchlistService>();
         services.AddSingleton<AccessCatalogService>();
+        services.AddSingleton<IRepositoryMonitorFactory, GitHubMonitorFactory>();
         services.AddSingleton<MonitorCoordinator>();
         services.AddSingleton<AvatarLoader>();
 

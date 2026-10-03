@@ -26,7 +26,7 @@ On GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub
 | Metadata | Read-only (mandatory) | Repository list, names, privacy |
 | Actions | Read-only | Workflow runs and jobs |
 | Checks | Read-only | Check runs on commits and pull requests |
-| Commit statuses | Read-only | Legacy status checks |
+| Commit statuses | Read-only | Legacy status checks, and resolving a tracked branch's head commit (`GET /commits/{branch}/status`) without Contents access |
 | Issues | Read-only | Issues |
 | Pull requests | Read-only | Pull requests, reviews, review requests |
 
