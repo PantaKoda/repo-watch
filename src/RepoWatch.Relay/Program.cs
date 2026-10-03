@@ -7,8 +7,19 @@ using RepoWatch.Core.Relay;
 using RepoWatch.Relay;
 
 var builder = WebApplication.CreateBuilder(args);
-var options = builder.Configuration.GetSection(RelayServerOptions.Section).Get<RelayServerOptions>() ?? new RelayServerOptions();
-var errors = options.Validate();
+RelayServerOptions options;
+IReadOnlyList<string> errors;
+try
+{
+    options = builder.Configuration.GetSection(RelayServerOptions.Section).Get<RelayServerOptions>() ?? new RelayServerOptions();
+    errors = options.Validate();
+}
+catch (InvalidOperationException ex)
+{
+    // A value of the wrong type (e.g. a non-numeric Relay:AppId): report it like any other setting.
+    options = new RelayServerOptions();
+    errors = [ex.Message];
+}
 if (errors.Count > 0)
 {
     // Fail fast with an actionable message rather than accepting unverifiable webhooks.
@@ -101,6 +112,11 @@ app.MapPost("/sessions", async (HttpContext context, RelayHub hub, GitHubAccessC
     }
 
     var allowed = requested.Distinct().Where(access.Repositories.ContainsKey).ToDictionary(id => id, id => access.Repositories[id]);
+    if (allowed.Count == 0)
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden); // nothing this user and the app can both see
+    }
+
     var (token, session) = hub.CreateSession(access.UserId, allowed);
     var rejected = requested.Distinct().Where(id => !allowed.ContainsKey(id)).ToList();
     logger.LogInformation("Session for user {UserId}: {Allowed} repositories allowed, {Rejected} rejected", access.UserId, allowed.Count, rejected.Count);

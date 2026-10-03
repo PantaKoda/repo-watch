@@ -9,7 +9,7 @@ namespace RepoWatch.Relay;
 /// the client's own user token. The token is used only for these requests: it is never stored or logged,
 /// and never accepted in a URL.
 /// </summary>
-public sealed class GitHubAccessClient(HttpClient http)
+public sealed class GitHubAccessClient(HttpClient http, RelayServerOptions options)
 {
     public const string ApiVersion = "2026-03-10";
     private const int MaxPages = 50;
@@ -35,7 +35,8 @@ public sealed class GitHubAccessClient(HttpClient http)
                 return new AccessResult(result.Status ?? HttpStatusCode.BadGateway, identity.Id, []);
             }
 
-            installations.AddRange((result.Value.Installations ?? []).Where(i => i.Id > 0 && i.SuspendedAt is null).Select(i => i.Id));
+            // Only installations of Repo Watch's own app: a token issued to another app grants nothing here.
+            installations.AddRange((result.Value.Installations ?? []).Where(i => i.Id > 0 && i.AppId == options.AppId && i.SuspendedAt is null).Select(i => i.Id));
             next = result.Next;
         }
 
@@ -47,7 +48,8 @@ public sealed class GitHubAccessClient(HttpClient http)
                 var result = await GetAsync(next, userToken, RelayAccessJson.Default.RepositoriesDto, cancellationToken).ConfigureAwait(false);
                 if (result.Value is null)
                 {
-                    break; // an unavailable installation (e.g. SSO) grants nothing; others still count
+                    // Don't guess: a partial answer would silently drop live coverage for a whole session.
+                    return new AccessResult(result.Status ?? HttpStatusCode.BadGateway, identity.Id, []);
                 }
 
                 foreach (var repository in (result.Value.Repositories ?? []).Where(r => r.Id > 0))
@@ -112,7 +114,10 @@ public sealed class GitHubAccessClient(HttpClient http)
 
 internal sealed record UserDto([property: JsonPropertyName("id")] long Id);
 
-internal sealed record InstallationDto([property: JsonPropertyName("id")] long Id, [property: JsonPropertyName("suspended_at")] DateTimeOffset? SuspendedAt);
+internal sealed record InstallationDto(
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("app_id")] long AppId,
+    [property: JsonPropertyName("suspended_at")] DateTimeOffset? SuspendedAt);
 
 internal sealed record InstallationsDto([property: JsonPropertyName("installations")] List<InstallationDto>? Installations);
 

@@ -1,7 +1,7 @@
 # Repo Watch relay: build from the repository root:
 #   docker build -f src/RepoWatch.Relay/Dockerfile -t repowatch-relay .
 # Run (the webhook secret comes from your secret store, never from the image):
-#   docker run -p 8080:8080 -e Relay__WebhookSecret=... -v repowatch-relay-data:/app/data repowatch-relay
+#   docker run -p 8080:8080 -e Relay__WebhookSecret=... -e Relay__AppId=... -v repowatch-relay-data:/app/data repowatch-relay
 # Put it behind HTTPS (a reverse proxy or your platform's TLS termination): GitHub and the desktop app
 # only talk to it over https://.
 

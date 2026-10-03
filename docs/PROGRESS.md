@@ -676,7 +676,7 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
 - The Events API is never used.
 
 **Checks run**
-- `dotnet test --solution RepoWatch.slnx`: 391 passed (Release build clean).
+- `dotnet test --solution RepoWatch.slnx`: 391 passed (Release build clean); 395 after the review.
 - **Relay tests** (16, in-memory server with a fake GitHub API):
   - signatures over exact bytes (unsigned, forged, reformatted body);
   - stored before the 202; a duplicate is processed once;
@@ -704,6 +704,27 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
   - an unsigned webhook gets 401, a signed one 202, and a redelivery 200;
   - `/events` without a session gets 401.
 
+**Review of PR #10 (all findings addressed)**
+- **Half-open streams:** the client fails a stream after 60 seconds without any line (three missed keep-alives), so after sleep, a network switch or a NAT timeout the widget leaves Live within a minute instead of about 14 minutes. `RelayLink` also restarts the stream when waking from sleep and when the network returns.
+- **Per-repository live coverage:**
+  - Only the session's allowed repositories poll at the slower live rate.
+  - **Live** shows only when every watched repository is covered; partial coverage shows **Polling**.
+  - The relay now fails a session (502) when a GitHub installation listing fails, instead of silently covering less, and answers 403 when nothing is allowed. The link then waits for a watchlist change.
+- **Coalescing restart signal:**
+  - A bounded channel holding at most one pending signal replaces the semaphore.
+  - The stream watcher is always released when a stream ends, so no waiter is left on a dead stream.
+  - The subscribed set is recorded before pending signals are cleared. The new test caught a burst causing two sessions before this ordering fix.
+- **`Relay:AppId`** is now required. Only installations of Repo Watch's own app count, so a token issued to another app opens no session.
+- **Collaborator, team and organization removals:** documented in docs/relay.md, with at most a 15-minute window. The events that would report them need organization *Members* permission, which Repo Watch doesn't request.
+- **No full refresh on every connect:** only a first connect or a `reset` reconciles everything. A renewal resumes from `Last-Event-ID`. Rate-limit notes are in docs/relay.md.
+- **Startup with a mistyped setting:** the real relay process showed a crash with a stack trace for an empty or non-numeric `Relay:AppId`. It now reports "Configuration error: …" and exits with code 1.
+- **New tests:**
+  - a stream that goes silent leaves Live;
+  - rejected repositories get no events and keep the normal pace;
+  - partial coverage shows Polling;
+  - one new session per watchlist burst after a dropped stream;
+  - a session fails on a GitHub error, is refused when nothing is allowed, and is refused for another app's token.
+- `dotnet test`: 395 passed (two full runs); the relay and end-to-end suite passed three runs in a row.
 **Remaining limitations**
 - **Intermittent test failure:** `SqliteSettingsStoreTests.Concurrent_first_run_initialization_does_not_fail` (8 threads initializing a new database at once, 40 rounds) failed once in 7 full-suite runs and could not be reproduced: 0 failures in 12 isolated runs, 6 parallel stress runs and 8 more full runs. The original output wasn't kept; the assertion now names each exception for the next occurrence. Since Stage 09, the app's single-instance guard prevents concurrent first-run initialization in practice.
 - **Not deployed:** real GitHub webhook delivery and real end-to-end latency were not measured. That needs a deployed HTTPS relay and the GitHub App's webhook configured, both maintainer actions that weren't authorized.

@@ -27,6 +27,7 @@ public sealed class RelayFixture(TimeProvider? time = null) : WebApplicationFact
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Relay:WebhookSecret", Secret);
+        builder.UseSetting("Relay:AppId", "77");
         builder.UseSetting("Relay:DatabasePath", _database);
         builder.UseSetting("Relay:GitHubApiBaseUrl", "http://localhost:5999/api/");
         builder.UseSetting("Relay:ReplayCapacity", "20");
@@ -91,10 +92,16 @@ public sealed class RelayFixture(TimeProvider? time = null) : WebApplicationFact
     public static string Repository(long id) => "{\"id\":" + id + ",\"name\":\"r" + id + "\",\"owner\":{\"login\":\"o\"}}";
 }
 
-/// <summary>A minimal GitHub API for /user, /user/installations and /user/installations/{id}/repositories.</summary>
+/// <summary>
+/// A minimal GitHub API for /user, /user/installations and /user/installations/{id}/repositories. Repo Watch's
+/// app is 77; "ghu_otherapp" is a token of another app (its installation belongs to app 99).
+/// </summary>
 public sealed class FakeGitHub : HttpMessageHandler
 {
     public List<string> Authorizations { get; } = [];
+
+    /// <summary>When set, repository listings fail with this status (e.g. a transient 502).</summary>
+    public HttpStatusCode? RepositoryListFailure { get; set; }
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -108,6 +115,7 @@ public sealed class FakeGitHub : HttpMessageHandler
         {
             "ghu_alice" => (1, 10, new long[] { 100, 101 }),
             "ghu_bob" => (2, 20, new long[] { 200 }),
+            "ghu_otherapp" => (3, 30, new long[] { 100 }),
             _ => (0, 0, Array.Empty<long>()),
         };
         if (userId == 0)
@@ -116,8 +124,14 @@ public sealed class FakeGitHub : HttpMessageHandler
         }
 
         var path = request.RequestUri!.AbsolutePath;
+        if (RepositoryListFailure is { } failure && path.EndsWith("/repositories", StringComparison.Ordinal))
+        {
+            return Task.FromResult(new HttpResponseMessage(failure));
+        }
+
         var json = path.EndsWith("/user", StringComparison.Ordinal) ? $$"""{"id":{{userId}},"login":"u{{userId}}"}"""
-            : path.EndsWith("/user/installations", StringComparison.Ordinal) ? "{\"total_count\":1,\"installations\":[{\"id\":" + installation + ",\"suspended_at\":null}]}"
+            : path.EndsWith("/user/installations", StringComparison.Ordinal)
+                ? "{\"total_count\":1,\"installations\":[{\"id\":" + installation + ",\"app_id\":" + (token == "ghu_otherapp" ? 99 : 77) + ",\"suspended_at\":null}]}"
             : path.EndsWith($"/user/installations/{installation}/repositories", StringComparison.Ordinal)
                 ? "{\"total_count\":" + repositories.Length + ",\"repositories\":[" + string.Join(",", repositories.Select(r => "{\"id\":" + r + "}")) + "]}"
             : null;

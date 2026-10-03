@@ -131,17 +131,22 @@ public sealed class LiveUpdateTests : IDisposable
     }
 
     [Fact]
-    public async Task Events_for_repositories_the_user_cannot_access_never_arrive()
+    public async Task Repositories_the_relay_rejects_get_no_events_and_the_widget_does_not_claim_live()
     {
-        using var monitor = Monitor("ghu_alice", out _, 100, 200); // 200 belongs to another user
-        await WaitUntil(() => monitor.State == ConnectionState.Live);
-        await Task.Delay(300, TestContext.Current.CancellationToken);
-        var before = _source.Count("pulls", 200);
+        using var monitor = Monitor("ghu_alice", out _, 100, 200); // 200 belongs to another user: rejected
+        await WaitUntil(() => _source.Count("repo", 100) >= 1 && _source.Count("repo", 200) >= 1);
 
+        // The stream works for 100...
+        var before100 = _source.Count("pulls", 100);
+        await _relay.DeliverAsync("pull_request", $$"""{"action":"opened","repository":{{RelayFixture.Repository(100)}}}""");
+        await WaitUntil(() => _source.Count("pulls", 100) > before100);
+
+        // ...but never carries events for 200, and since 200 isn't covered, the badge says Polling, not Live.
+        var before200 = _source.Count("pulls", 200);
         await _relay.DeliverAsync("pull_request", $$"""{"action":"opened","repository":{{RelayFixture.Repository(200)}}}""");
         await Task.Delay(800, TestContext.Current.CancellationToken);
-
-        Assert.Equal(before, _source.Count("pulls", 200));
+        Assert.Equal(before200, _source.Count("pulls", 200));
+        Assert.Equal(ConnectionState.Polling, monitor.State);
     }
 
     [Fact]
@@ -212,5 +217,83 @@ public sealed class LiveUpdateTests : IDisposable
         await WaitUntil(() => monitor.State == ConnectionState.Polling);
         await Task.Delay(500, TestContext.Current.CancellationToken);
         Assert.Equal(ConnectionState.Polling, monitor.State);
+    }
+
+    /// <summary>A scriptable relay: counts sessions; each stream says "connected" and then stays silent until ended.</summary>
+    private sealed class ScriptedRelay : HttpMessageHandler
+    {
+        private System.IO.Pipelines.Pipe? _current;
+
+        public int Sessions;
+
+        public async Task EndStreamAsync()
+        {
+            if (_current is { } pipe)
+            {
+                await pipe.Writer.CompleteAsync();
+            }
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/sessions", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref Sessions);
+                var body = await request.Content!.ReadAsStringAsync(cancellationToken);
+                var ids = System.Text.Json.JsonDocument.Parse(body).RootElement.GetProperty("repositoryIds").EnumerateArray().Select(e => e.GetInt64()).ToList();
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent($$"""{"sessionToken":"s","expiresAt":"{{DateTimeOffset.UtcNow.AddMinutes(15):O}}","allowed":[{{string.Join(",", ids)}}],"rejected":[]}""",
+                        System.Text.Encoding.UTF8, "application/json"),
+                };
+            }
+
+            var pipe = new System.IO.Pipelines.Pipe();
+            _current = pipe;
+            await pipe.Writer.WriteAsync(": connected\n\n"u8.ToArray(), cancellationToken);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StreamContent(pipe.Reader.AsStream()) };
+        }
+    }
+
+    private PollingRepositoryMonitor ScriptedMonitor(ScriptedRelay relay, TimeSpan idleTimeout, out RelayLink link, params long[] ids)
+    {
+        var hour = TimeSpan.FromHours(1);
+        var settings = new AccountSettings { Watchlist = ids.Select(id => new WatchedRepository { RepositoryId = id, Owner = "o", Name = $"r{id}" }).ToList() };
+        var monitor = new PollingRepositoryMonitor(Account, settings, _source, "u1", TimeProvider.System, NullLogger.Instance, CancellationToken.None,
+            new PollingIntervals { Active = hour, PullRequests = hour, Issues = hour, Quiet = hour, Failed = hour, MaxBackoff = hour });
+        link = new RelayLink(monitor, new RelayClient(new HttpClient(relay) { Timeout = Timeout.InfiniteTimeSpan }, new Uri("https://relay.example.test/")),
+            new Tokens("ghu_alice"), TimeProvider.System, NullLogger.Instance, CancellationToken.None, idleTimeout: idleTimeout);
+        monitor.Attach(link);
+        return monitor;
+    }
+
+    [Fact]
+    public async Task A_stream_that_goes_silent_stops_counting_as_live()
+    {
+        var relay = new ScriptedRelay();
+        using var monitor = ScriptedMonitor(relay, TimeSpan.FromMilliseconds(400), out _, 100);
+        await WaitUntil(() => monitor.State == ConnectionState.Live);
+
+        // No keep-alives arrive (a half-open connection after sleep or a network switch).
+        await WaitUntil(() => monitor.State == ConnectionState.Polling, seconds: 5);
+    }
+
+    [Fact]
+    public async Task A_watchlist_change_after_a_dropped_stream_creates_one_new_session()
+    {
+        var relay = new ScriptedRelay();
+        using var monitor = ScriptedMonitor(relay, TimeSpan.FromMinutes(5), out var link, 100);
+        await WaitUntil(() => monitor.State == ConnectionState.Live);
+        await relay.EndStreamAsync(); // the relay closes the stream: the link backs off before retrying
+        await WaitUntil(() => monitor.State == ConnectionState.Polling);
+        var sessions = Volatile.Read(ref relay.Sessions);
+
+        monitor.ApplyWatchlist(new AccountSettings { Watchlist = [new() { RepositoryId = 100, Owner = "o", Name = "r100" }, new() { RepositoryId = 101, Owner = "o", Name = "r101" }] });
+        monitor.ApplyWatchlist(new AccountSettings { Watchlist = [new() { RepositoryId = 100, Owner = "o", Name = "r100" }, new() { RepositoryId = 101, Owner = "o", Name = "r101" }] });
+
+        await WaitUntil(() => monitor.State == ConnectionState.Live);
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+        Assert.Equal(sessions + 1, Volatile.Read(ref relay.Sessions)); // one restart for the burst, not one per event
+        Assert.Equal(relay.Sessions, link.SessionsCreated);
     }
 }

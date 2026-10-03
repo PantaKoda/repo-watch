@@ -15,6 +15,12 @@ public sealed class RelayServerOptions
     /// <summary>The GitHub App's webhook secret, used to verify X-Hub-Signature-256. Required.</summary>
     public string WebhookSecret { get; set; } = "";
 
+    /// <summary>
+    /// The Repo Watch GitHub App's numeric ID (public). Only installations of this app count when the relay
+    /// checks a user's access, so a token issued to another app can't open a session. Required.
+    /// </summary>
+    public long AppId { get; set; }
+
     /// <summary>SQLite file for durable deliveries.</summary>
     public string DatabasePath { get; set; } = "relay.db";
 
@@ -45,6 +51,11 @@ public sealed class RelayServerOptions
         if (!Uri.TryCreate(GitHubApiBaseUrl, UriKind.Absolute, out var api) || !(api.Scheme == Uri.UriSchemeHttps || (api.Scheme == Uri.UriSchemeHttp && api.IsLoopback)))
         {
             errors.Add("Relay:GitHubApiBaseUrl must be an https:// URL.");
+        }
+
+        if (AppId <= 0)
+        {
+            errors.Add("Relay:AppId must be set to the GitHub App's numeric App ID (shown on the app's settings page).");
         }
 
         if (SessionMinutes is < 1 or > 60)

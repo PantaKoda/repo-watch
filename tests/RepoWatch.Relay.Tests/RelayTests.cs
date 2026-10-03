@@ -94,6 +94,19 @@ public sealed class RelayTests : IDisposable
     }
 
     [Fact]
+    public async Task Sessions_fail_rather_than_silently_shrink_and_need_something_allowed()
+    {
+        var client = _relay.CreateClient();
+
+        _relay.GitHub.RepositoryListFailure = HttpStatusCode.BadGateway; // a transient GitHub error on one installation
+        Assert.Equal(HttpStatusCode.BadGateway, (await PostSession(client, "ghu_alice")).StatusCode);
+
+        _relay.GitHub.RepositoryListFailure = null;
+        Assert.Equal(HttpStatusCode.Forbidden, (await PostSession(client, "ghu_bob")).StatusCode); // bob can't see 100: nothing allowed
+        Assert.Equal(HttpStatusCode.Forbidden, (await PostSession(client, "ghu_otherapp")).StatusCode); // another app's token: its installation doesn't count
+    }
+
+    [Fact]
     public async Task Tokens_are_accepted_only_in_the_authorization_header()
     {
         var client = _relay.CreateClient();

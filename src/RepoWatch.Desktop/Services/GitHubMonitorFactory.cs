@@ -36,7 +36,7 @@ public sealed class GitHubMonitorFactory(AccountService accounts, HttpClient htt
         // Optional live updates: the relay pushes "what changed"; polling remains the fallback and reconciles.
         if (options.Relay.IsConfigured && Uri.TryCreate(options.Relay.BaseUrl!.TrimEnd('/') + "/", UriKind.Absolute, out var relay))
         {
-            monitor.Attach(new RelayLink(monitor, new RelayClient(RelayHttp.Value, relay), session, time, loggers.CreateLogger<RelayLink>(), session.Lifetime));
+            monitor.Attach(new RelayLink(monitor, new RelayClient(RelayHttp.Value, relay), session, time, loggers.CreateLogger<RelayLink>(), session.Lifetime, conditions));
         }
 
         return monitor;

@@ -48,10 +48,13 @@ public sealed class RelayClient(HttpClient http, Uri baseUrl)
 
     /// <summary>
     /// Streams events until the relay ends the stream or <paramref name="cancellationToken"/> fires.
-    /// <paramref name="connected"/> is called once the relay accepted the stream.
+    /// <paramref name="connected"/> is called once the relay accepted the stream. The relay sends keep-alives,
+    /// so silence longer than <paramref name="idleTimeout"/> means a dead connection (sleep, network switch,
+    /// NAT timeout) that TCP alone would not notice for hours: the stream then fails with <see cref="TimeoutException"/>.
     /// </summary>
     /// <exception cref="HttpRequestException">The relay couldn't be reached or refused the stream.</exception>
-    public async IAsyncEnumerable<RelayMessage> StreamAsync(string sessionToken, long? lastEventId, Action connected,
+    /// <exception cref="TimeoutException">Nothing arrived for <paramref name="idleTimeout"/>.</exception>
+    public async IAsyncEnumerable<RelayMessage> StreamAsync(string sessionToken, long? lastEventId, Action connected, TimeSpan idleTimeout,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connected);
@@ -72,8 +75,27 @@ public sealed class RelayClient(HttpClient http, Uri baseUrl)
         connected();
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), Encoding.UTF8);
         var parser = new SseParser();
-        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+        while (true)
         {
+            string? line;
+            using (var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                idle.CancelAfter(idleTimeout);
+                try
+                {
+                    line = await reader.ReadLineAsync(idle.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TimeoutException($"The relay sent nothing for {idleTimeout.TotalSeconds:0} s.");
+                }
+            }
+
+            if (line is null)
+            {
+                yield break;
+            }
+
             if (parser.Feed(line) is { } message)
             {
                 yield return message;

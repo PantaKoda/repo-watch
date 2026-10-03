@@ -6,7 +6,14 @@ Repo Watch works with polling alone. The relay adds near-real-time updates. GitH
 GitHub ──webhook (HTTPS, signed)──► relay ──server-sent events (HTTPS, per-session)──► desktop app ──REST/GraphQL──► GitHub
 ```
 
-When the relay is unreachable, the app polls exactly as without it, and the badge shows **Polling**. While the event stream is connected the badge shows **Live**; polling continues more slowly, to reconcile. A connected stream alone doesn't mean every value is fresh. Every part still has its own freshness label.
+When the relay is unreachable, the app polls exactly as without it, and the badge shows **Polling**.
+
+Live coverage is per repository:
+- Only the repositories the relay's session allows poll more slowly (×4, to reconcile).
+- The badge shows **Live** only when every watched repository is covered.
+- A stream that sends nothing for 60 seconds counts as dead (the relay sends a keep-alive every 20). Waking from sleep and a network change also restart the stream. A dead connection therefore never keeps the badge on Live.
+
+A connected stream still doesn't mean every value is fresh: every part keeps its own freshness label.
 
 ## What the relay does
 
@@ -17,7 +24,7 @@ When the relay is unreachable, the app polls exactly as without it, and the badg
 | Duplicates | `X-GitHub-Delivery` is unique: a redelivery is answered 200 and processed once. |
 | Failures | Failed processing is retried with exponential backoff (up to `MaxDeliveryAttempts`). A malformed payload is dropped at once. Finished deliveries are kept `DeliveryRetentionDays`. |
 | Untrusted payloads | Only IDs and the action are read. Nothing in a payload is ever executed or forwarded as content. |
-| Who may listen | `POST /sessions` with the user's GitHub token in the `Authorization` header. The relay asks GitHub who the user is and which of the requested repositories this user *and* the app can access, and grants only those. The token is used for those requests only: it is never stored, logged or accepted in a URL. |
+| Who may listen | `POST /sessions` with the user's GitHub token in the `Authorization` header. The relay asks GitHub who the user is and which of the requested repositories this user *and* the app can access, counting only installations of Repo Watch's own app (`AppId`). It grants only those. The token is used for those requests only: it is never stored, logged or accepted in a URL. If GitHub fails part-way, the session fails (502) rather than silently covering less. If nothing is allowed, the answer is 403. |
 | Sessions | Random session tokens, stored as hashes, valid `SessionMinutes` (default 15). The app renews about a minute before expiry. |
 | Revocation | `installation` deleted or suspended, `installation_repositories` removed, `repository` deleted, and `github_app_authorization` revoked all remove the affected repositories from sessions, or end the user's sessions, immediately. |
 | Ordering and gaps | Events carry increasing sequence IDs. A reconnect sends `Last-Event-ID` and gets the missed events in order from a bounded buffer (`ReplayCapacity`). A gap beyond the buffer, an ID from a previous relay run, or a client too slow to keep up gets `reset`, and the app refreshes everything. |
@@ -50,6 +57,7 @@ Everything is in the `Relay` section, set through `appsettings.json` or environm
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `WebhookSecret` | none | **Required**, at least 16 characters. The relay refuses to start without it. Secret store only, never in the repository. |
+| `AppId` | none | **Required**: the GitHub App's numeric App ID (public, shown on the app's settings page). Tokens issued to other apps open no session. |
 | `DatabasePath` | `data/relay.db` | SQLite file for deliveries. Use a persistent volume. |
 | `GitHubApiBaseUrl` | `https://api.github.com` | Used only to confirm sessions. |
 | `SessionMinutes` | 15 | 1–60. |
@@ -66,7 +74,7 @@ The desktop app's own setting is `Relay:BaseUrl` in its `appsettings.json` or us
 dotnet run --project src/RepoWatch.Relay --urls http://127.0.0.1:5088
 ```
 
-Set `Relay__WebhookSecret` in the environment first, for example `local-development-secret-0123`. To deliver a test webhook, sign the exact body:
+Set `Relay__WebhookSecret` (for example `local-development-secret-0123`) and `Relay__AppId` in the environment first. To deliver a test webhook, sign the exact body:
 
 ```bash
 body='{"action":"completed","repository":{"id":123}}'
@@ -82,7 +90,7 @@ To receive real GitHub webhooks during development you need a public HTTPS URL t
 
 ```bash
 docker build -f src/RepoWatch.Relay/Dockerfile -t repowatch-relay .
-docker run -p 8080:8080 -e Relay__WebhookSecret=… -v repowatch-relay-data:/app/data repowatch-relay
+docker run -p 8080:8080 -e Relay__WebhookSecret=… -e Relay__AppId=… -v repowatch-relay-data:/app/data repowatch-relay
 ```
 
 Put it behind HTTPS (a reverse proxy or the platform's TLS), point the GitHub App webhook at it, and set the desktop `Relay:BaseUrl`. One instance is enough. The replay buffer and sessions are in memory, so after a restart clients get `reset` and refresh everything, and no deliveries are lost because they are in SQLite.
@@ -92,4 +100,5 @@ Put it behind HTTPS (a reverse proxy or the platform's TLS), point the GitHub Ap
 - **Latency** measured in-process (signed webhook → in-memory relay → desktop link → targeted refresh request): about 20 ms. The real end-to-end time adds GitHub's webhook delivery and the network, and depends on the deployment; it was not measured, because no relay has been deployed.
 - **Restarts:** sessions and the replay buffer don't survive a relay restart. Clients reconnect, renew their session, and reconcile.
 - **Single instance:** several instances behind a load balancer would need shared session and event state, which isn't implemented.
-- **Rate limits:** each session creation makes a few GitHub API calls with the user's token (user, installations, repositories), about every 14 minutes per running app.
+- **Rate limits:** each session creation makes a few GitHub API calls with the user's token (user, installations, repositories), about every 14 minutes per running app. A first connect or a `reset` refreshes every watched repository once. A renewal or reconnect resumes from `Last-Event-ID` without a full refresh.
+- **Collaborator, team or organization removals:** these don't end a session early. Subscribing to the events that would report them (`member`, `membership`, `organization`) needs organization *Members* permission, which Repo Watch doesn't request. So a user removed from a repository while the app stays installed can keep receiving invalidations, which carry only IDs and parts, until the session expires (at most 15 minutes, or `SessionMinutes`). The next session re-checks access with GitHub.
