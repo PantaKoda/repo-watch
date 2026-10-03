@@ -1,0 +1,21 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+        xmlns:v="using:RepoWatch.Desktop.Views"
+        x:Class="RepoWatch.Desktop.Views.RepositoriesWindow"
+        x:DataType="vm:RepositoriesViewModel"
+        Title="Repo Watch repositories"
+        Width="560" Height="680" MinWidth="360" MinHeight="360"
+        WindowStartupLocation="CenterScreen">
+  <TabControl SelectedIndex="{Binding SelectedTab}" Margin="12,4,12,12">
+    <TabItem Header="Watched">
+      <v:WatchlistView DataContext="{Binding Watchlist}" Margin="0,8,0,0" />
+    </TabItem>
+    <TabItem Header="Add repositories">
+      <v:RepositoryPickerView DataContext="{Binding Picker}" Margin="0,8,0,0" />
+    </TabItem>
+    <TabItem Header="Access">
+      <v:AccessView DataContext="{Binding Access}" Margin="0,8,0,0" />
+    </TabItem>
+  </TabControl>
+</Window>

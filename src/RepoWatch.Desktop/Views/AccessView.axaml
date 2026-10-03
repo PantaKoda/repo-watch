@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+             xmlns:c="using:RepoWatch.Desktop.Controls"
+             x:Class="RepoWatch.Desktop.Views.AccessView"
+             x:DataType="vm:AccessViewModel">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
+      <TextBlock Text="{Binding Links.Notice}" IsVisible="{Binding Links.HasNotice}" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}" />
+      <TextBlock Text="{Binding SsoHiddenText}" IsVisible="{Binding SsoHiddenText, Converter={x:Static ObjectConverters.IsNotNull}}" TextWrapping="Wrap" FontWeight="SemiBold" />
+      <WrapPanel>
+        <Button Content="Grant access on GitHub" Classes="accent" Command="{Binding GrantAccessCommand}" IsVisible="{Binding CanGrantAccess}" Margin="0,0,8,6" />
+        <Button Content="Refresh list" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsLoading}" Margin="0,0,8,6" />
+      </WrapPanel>
+      <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" IsVisible="{Binding StatusText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      <TextBlock IsVisible="{Binding ShowNoInstallations}" TextWrapping="Wrap" FontWeight="SemiBold"
+                 Text="Repo Watch isn't installed on any account you can access yet." />
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Asked an organization to install Repo Watch? An owner has to approve the request before its repositories appear here." />
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Removing a repository from the widget doesn't uninstall Repo Watch or change its GitHub permissions. Use Manage access for that." />
+    </StackPanel>
+    <ScrollViewer>
+      <ItemsControl ItemsSource="{Binding Installations}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:InstallationItemViewModel">
+            <Border BorderBrush="{DynamicResource WidgetBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+              <Grid ColumnDefinitions="Auto,*">
+                <c:StatusDot Tone="{Binding Tone}" Margin="0,5,10,0" VerticalAlignment="Top" />
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <TextBlock Classes="title" Text="{Binding Owner}" />
+                  <TextBlock Classes="secondary" Text="{Binding Kind}" />
+                  <TextBlock Classes="secondary" Text="{Binding Scope}" />
+                  <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+                  <WrapPanel Margin="0,4,0,0">
+                    <Button Content="Manage access" Command="{Binding ManageCommand}" IsVisible="{Binding CanManage}" Margin="0,0,8,0" />
+                    <Button Content="Authorize single sign-on" Command="{Binding AuthorizeSsoCommand}" IsVisible="{Binding CanAuthorizeSso}" />
+                  </WrapPanel>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

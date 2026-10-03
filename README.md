@@ -2,7 +2,7 @@
 
 A Windows-first desktop widget for monitoring GitHub Actions, pull requests and issues, built with C#, .NET and Avalonia. The shared core and UI are kept portable for later macOS/Linux releases.
 
-> **Status: early development.** The widget, tray icon, settings window and window placement work, with labeled demo data. GitHub sign-in works and was verified against github.com: device flow, Windows Credential Manager storage, token renewal and sign-out (see [docs/github-app-setup.md](docs/github-app-setup.md)). Repository selection and live data come in Stages 05–06. GitHub sign-in, repository monitoring and the widget UI are **not implemented yet**. See [docs/PROGRESS.md](docs/PROGRESS.md) for current state.
+> **Status: early development.** The widget, tray icon, settings window and window placement work, with labeled demo data. GitHub sign-in works and was verified against github.com: device flow, Windows Credential Manager storage, token renewal and sign-out (see [docs/github-app-setup.md](docs/github-app-setup.md)). Choosing repositories works: onboarding, the repository picker and the watchlist, verified with a real account. Live repository data comes in Stage 06. GitHub sign-in, repository monitoring and the widget UI are **not implemented yet**. See [docs/PROGRESS.md](docs/PROGRESS.md) for current state.
 
 ## Platform baseline
 

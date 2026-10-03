@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+             xmlns:c="using:RepoWatch.Desktop.Controls"
+             x:Class="RepoWatch.Desktop.Views.WatchlistView"
+             x:DataType="vm:WatchlistViewModel">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8">
+      <TextBlock Text="{Binding Links.Notice}" IsVisible="{Binding Links.HasNotice}" TextWrapping="Wrap" Foreground="{DynamicResource StatusWarningBrush}" />
+      <TextBlock Text="Order in the widget" FontWeight="SemiBold" />
+      <RadioButton GroupName="order" Content="Needs attention first (failures, then problems, then running)" IsChecked="{Binding AttentionFirst}" />
+      <RadioButton GroupName="order" Content="My order (use Move up / Move down)" IsChecked="{Binding ManualOrder}" />
+    </StackPanel>
+
+    <Panel>
+      <StackPanel IsVisible="{Binding IsEmpty}" Spacing="8" VerticalAlignment="Center" Margin="8">
+        <TextBlock Text="The widget isn't watching any repositories yet." FontWeight="SemiBold" TextWrapping="Wrap" />
+        <Button Content="Add repositories" Classes="accent" Command="{Binding AddRepositoriesCommand}" />
+      </StackPanel>
+      <ScrollViewer>
+        <ItemsControl ItemsSource="{Binding Items}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:WatchedItemViewModel">
+              <Border BorderBrush="{DynamicResource WidgetBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                <StackPanel Spacing="4">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <c:StatusDot Tone="{Binding AccessTone}" Margin="0,5,10,0" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Classes="title" Text="{Binding Name}" />
+                      <TextBlock Classes="secondary" Text="{Binding AccessText}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+                      <Button Content="Move up" Command="{Binding MoveUpCommand}" IsEnabled="{Binding !IsFirst}" Margin="4,0,0,0" FontSize="12" />
+                      <Button Content="Move down" Command="{Binding MoveDownCommand}" IsEnabled="{Binding !IsLast}" Margin="4,0,0,0" FontSize="12" />
+                      <Button Content="Remove" Command="{Binding RemoveCommand}" Margin="4,0,0,0" FontSize="12"
+                              ToolTip.Tip="Stop watching in this widget. GitHub access is unchanged." />
+                    </StackPanel>
+                  </Grid>
+                  <Button Content="Manage access on GitHub" Command="{Binding ManageAccessCommand}" IsVisible="{Binding CanManageAccess}" FontSize="12" />
+                  <Expander Header="Options">
+                    <StackPanel Spacing="6">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Pull requests" VerticalAlignment="Center" />
+                        <ComboBox ItemsSource="{Binding PullRequestScopes}" SelectedItem="{Binding PullRequests}" MinWidth="110"
+                                  AutomationProperties.Name="Pull requests to show" />
+                      </StackPanel>
+                      <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Mine: authored by you or requesting your review. All: every open pull request. None: hide pull requests." />
+                      <CheckBox Content="Show issues" IsChecked="{Binding ShowIssues}" />
+                      <CheckBox Content="Notifications for this repository" IsChecked="{Binding NotificationsEnabled}" />
+                      <TextBlock Text="Branches (default branch if empty)" />
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding Branches}" PlaceholderText="e.g. main, release" AutomationProperties.Name="Branches" />
+                        <Button Grid.Column="1" Content="Save" Command="{Binding SaveBranchesCommand}" Margin="6,0,0,0" />
+                      </Grid>
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding WorkflowSummary}" VerticalAlignment="Center" />
+                        <Button Content="Choose workflows…" Command="{Binding LoadWorkflowsCommand}" FontSize="12" />
+                      </StackPanel>
+                      <TextBlock Text="{Binding WorkflowStatus}" Classes="secondary" TextWrapping="Wrap"
+                                 IsVisible="{Binding WorkflowStatus, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                      <ItemsControl ItemsSource="{Binding Workflows}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:WorkflowChoiceViewModel">
+                            <CheckBox IsChecked="{Binding IsSelected}">
+                              <StackPanel>
+                                <TextBlock Text="{Binding Name}" />
+                                <TextBlock Classes="secondary" Text="{Binding Path}" />
+                              </StackPanel>
+                            </CheckBox>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </Expander>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Panel>
+  </DockPanel>
+</UserControl>

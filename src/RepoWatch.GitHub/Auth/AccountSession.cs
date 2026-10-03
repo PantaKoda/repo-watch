@@ -29,7 +29,7 @@ public sealed class TokenUnavailableException(string message) : Exception(messag
 /// <item>A rejected refresh moves to <see cref="SessionStatus.ReconnectRequired"/>; nothing retries.</item>
 /// </list>
 /// </summary>
-public sealed class AccountSession : IDisposable
+public sealed class AccountSession : Api.IAccessTokenSource, IDisposable
 {
     /// <summary>Renew this long before the access token expires.</summary>
     public static readonly TimeSpan RenewalMargin = TimeSpan.FromMinutes(5);

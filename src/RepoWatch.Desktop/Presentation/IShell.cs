@@ -13,6 +13,9 @@ public interface IShell
 
     void OpenSettings();
 
+    /// <summary>Opens the repository manager on a tab (or the onboarding flow if it was never finished).</summary>
+    void OpenRepositories(ViewModels.RepositoriesTab tab);
+
     /// <summary>Opens settings and starts GitHub sign-in.</summary>
     void BeginSignIn();
 

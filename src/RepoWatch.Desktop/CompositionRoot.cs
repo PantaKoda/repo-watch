@@ -48,6 +48,9 @@ internal static class CompositionRoot
             ? new Platform.Windows.WindowsCredentialStore()
             : new SessionCredentialStore());
         services.AddSingleton<AccountService>();
+        services.AddSingleton<WatchlistService>();
+        services.AddSingleton<AccessCatalogService>();
+        services.AddSingleton<MonitorCoordinator>();
         services.AddSingleton<AvatarLoader>();
 
         // Monitoring and platform adapters.

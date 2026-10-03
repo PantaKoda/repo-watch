@@ -42,6 +42,9 @@ public interface IRepositoryMonitor
     /// <summary>Watched repositories in manual order.</summary>
     IReadOnlyList<MonitoredRepository> Repositories { get; }
 
+    /// <summary>How the user wants these repositories ordered in the widget.</summary>
+    RepositoryOrdering Ordering => RepositoryOrdering.AttentionFirst;
+
     bool IsRefreshing { get; }
 
     /// <summary>Raised when any of the above changes. May be raised on any thread.</summary>

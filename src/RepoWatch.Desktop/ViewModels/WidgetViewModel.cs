@@ -199,6 +199,9 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     private void SignIn() => _shell.BeginSignIn();
 
     [RelayCommand]
+    private void AddRepositories() => _shell.OpenRepositories(RepositoriesTab.Add);
+
+    [RelayCommand]
     private void Hide() => _shell.HideWidget();
 
     [RelayCommand]
@@ -287,8 +290,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         var refreshing = _monitor.IsRefreshing;
         var allowReorder = !IsInteracting;
 
-        // Watchlist ordering is per account (Stage 05); attention-first is the default.
-        var ordered = AttentionPolicy.Order(_monitor.Repositories, RepositoryOrdering.AttentionFirst);
+        var ordered = AttentionPolicy.Order(_monitor.Repositories, _monitor.Ordering);
         HasPendingReorder = !CollectionReconciler.Reconcile(
             Repositories,
             ordered,

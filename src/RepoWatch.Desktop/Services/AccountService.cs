@@ -38,7 +38,6 @@ public sealed class AccountService : IDisposable
     private readonly HttpClient _http;
     private readonly ICredentialStore _secureStore;
     private readonly SettingsService _settings;
-    private readonly MonitorHost _monitors;
     private readonly IUiDispatcher _dispatcher;
     private readonly TimeProvider _time;
     private readonly ILoggerFactory _loggers;
@@ -51,7 +50,7 @@ public sealed class AccountService : IDisposable
 
     public AccountService(
         RepoWatchOptions options, GitHubEndpoints endpoints, HttpClient http, ICredentialStore store,
-        SettingsService settings, MonitorHost monitors, IUiDispatcher dispatcher, TimeProvider time, ILoggerFactory loggers)
+        SettingsService settings, IUiDispatcher dispatcher, TimeProvider time, ILoggerFactory loggers)
     {
         _options = options;
         _endpoints = endpoints;
@@ -59,7 +58,6 @@ public sealed class AccountService : IDisposable
         _secureStore = store;
         _store = store;
         _settings = settings;
-        _monitors = monitors;
         _dispatcher = dispatcher;
         _time = time;
         _loggers = loggers;
@@ -449,16 +447,7 @@ public sealed class AccountService : IDisposable
             State = state;
             Identity = identity;
             Detail = detail;
-            // Until real monitoring exists (Stage 06), a signed-in account monitors nothing: say so.
-            _monitors.SetBase(new StatusOnlyMonitor(state switch
-            {
-                AccountState.Restoring => ConnectionState.Connecting,
-                AccountState.SignedIn => ConnectionState.SignedInIdle,
-                AccountState.Offline => ConnectionState.Offline,
-                AccountState.ReconnectRequired => ConnectionState.ReconnectRequired,
-                _ => ConnectionState.NotSignedIn,
-            }));
-            Changed?.Invoke(this, EventArgs.Empty);
+            Changed?.Invoke(this, EventArgs.Empty); // MonitorCoordinator updates what the widget shows
         });
     }
 

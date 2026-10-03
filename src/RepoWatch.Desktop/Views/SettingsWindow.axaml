@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+        xmlns:v="using:RepoWatch.Desktop.Views"
         x:Class="RepoWatch.Desktop.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="Repo Watch settings"
@@ -13,66 +14,15 @@
       </Border>
 
       <TextBlock Classes="heading" Text="Account" />
-      <TextBlock Text="{Binding NotConfiguredText}" TextWrapping="Wrap" IsVisible="{Binding Account.IsNotConfigured}" />
-
-      <!-- Signed in (or offline with stored credentials) -->
-      <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding Account.IsSignedIn}">
-        <Border Width="40" Height="40" CornerRadius="20" ClipToBounds="True" Margin="0,0,12,0" VerticalAlignment="Top"
-                Background="{DynamicResource WidgetBorderBrush}">
-          <Image Source="{Binding Account.Avatar}" Stretch="UniformToFill" />
-        </Border>
-        <StackPanel Grid.Column="1" Spacing="2">
-          <TextBlock Classes="title" Text="{Binding Account.Login}" />
-          <TextBlock Classes="secondary" Text="{Binding Account.DisplayName}" IsVisible="{Binding Account.DisplayName, Converter={x:Static ObjectConverters.IsNotNull}}" />
-          <TextBlock Text="{Binding Account.StateText}" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding Account.StorageText}" TextWrapping="Wrap" Classes="secondary" />
-          <WrapPanel Margin="0,4,0,0">
-            <Button Content="Sign out" Command="{Binding Account.SignOutCommand}" Margin="0,0,8,8" />
-            <Button Content="Review access on GitHub" Command="{Binding Account.ManageAuthorizationCommand}" Margin="0,0,8,8" />
-          </WrapPanel>
-          <TextBlock TextWrapping="Wrap" Classes="secondary"
-                     Text="Signing out removes Repo Watch's local credentials. To revoke its authorization on GitHub, use Review access on GitHub." />
-        </StackPanel>
-      </Grid>
-
-      <!-- Session expired or revoked -->
-      <StackPanel Spacing="6" IsVisible="{Binding Account.NeedsReconnect}">
-        <TextBlock Text="{Binding Account.StateText}" TextWrapping="Wrap" FontWeight="SemiBold" />
-        <WrapPanel>
-          <Button Content="Sign out" Command="{Binding Account.SignOutCommand}" Margin="0,0,8,8" />
-          <Button Content="Try again" Command="{Binding Account.RetryCommand}" Margin="0,0,8,8" />
-        </WrapPanel>
-      </StackPanel>
-
-      <Button Content="Sign in with GitHub" Classes="accent" Command="{Binding Account.SignInCommand}" IsVisible="{Binding Account.ShowSignIn}" />
-
-      <!-- Device flow in progress -->
-      <Border IsVisible="{Binding Account.IsSigningIn}" BorderBrush="{DynamicResource WidgetBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
-        <StackPanel Spacing="8">
-          <TextBlock Text="{Binding Account.FlowStatus}" TextWrapping="Wrap" />
-          <SelectableTextBlock Text="{Binding Account.UserCode}" FontSize="26" FontWeight="SemiBold" FontFamily="Cascadia Mono, Consolas, monospace"
-                               IsVisible="{Binding Account.UserCode, Converter={x:Static ObjectConverters.IsNotNull}}"
-                               AutomationProperties.Name="Sign-in code" />
-          <TextBlock Text="{Binding Account.ExpiresText}" Classes="secondary" />
-          <WrapPanel>
-            <Button Content="Copy code" Command="{Binding Account.CopyCodeCommand}" Margin="0,0,8,8" />
-            <Button Content="Open GitHub" Command="{Binding Account.OpenVerificationPageCommand}" Margin="0,0,8,8" />
-            <Button Content="Cancel" Command="{Binding Account.CancelSignInCommand}" Margin="0,0,8,8" />
-          </WrapPanel>
-          <TextBlock TextWrapping="Wrap" Classes="secondary"
-                     Text="Repo Watch never asks for your GitHub password. Approve the request in your browser; this window updates by itself." />
-        </StackPanel>
-      </Border>
-
-      <TextBlock Text="{Binding Account.Message}" IsVisible="{Binding Account.HasMessage}" TextWrapping="Wrap" />
+      <v:AccountView DataContext="{Binding Account}" />
 
       <TextBlock Classes="heading" Text="Repositories" />
-      <TextBlock TextWrapping="Wrap"
-                 Text="Choosing which repositories to watch arrives in the next version. Until then you can explore the widget with labeled sample data." />
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Explore demo data" Command="{Binding EnterDemoCommand}" IsVisible="{Binding !IsDemo}" />
-        <Button Content="Exit demo" Command="{Binding ExitDemoCommand}" IsVisible="{Binding IsDemo}" />
-      </StackPanel>
+      <TextBlock TextWrapping="Wrap" Text="{Binding RepositoriesSummary}" />
+      <WrapPanel>
+        <Button Content="Manage repositories…" Command="{Binding ManageRepositoriesCommand}" Margin="0,0,8,8" />
+        <Button Content="Explore demo data" Command="{Binding EnterDemoCommand}" IsVisible="{Binding !IsDemo}" Margin="0,0,8,8" />
+        <Button Content="Exit demo" Command="{Binding ExitDemoCommand}" IsVisible="{Binding IsDemo}" Margin="0,0,8,8" />
+      </WrapPanel>
 
       <TextBlock Classes="heading" Text="Widget" />
       <CheckBox Content="Keep the widget above other windows" IsChecked="{Binding AlwaysOnTop}" />

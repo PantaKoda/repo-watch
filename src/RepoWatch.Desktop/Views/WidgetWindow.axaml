@@ -210,7 +210,7 @@
         <StackPanel IsVisible="{Binding ShowEmptyWatchlist}" Margin="16" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="No repositories selected" FontSize="16" FontWeight="SemiBold" />
           <TextBlock TextWrapping="Wrap" Text="Choose the repositories this widget should watch." />
-          <Button Content="Add repositories" Command="{Binding OpenSettingsCommand}" Classes="accent" />
+          <Button Content="Add repositories" Command="{Binding AddRepositoriesCommand}" Classes="accent" />
         </StackPanel>
 
         <!-- Repository list (compact and expanded) -->

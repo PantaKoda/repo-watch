@@ -1,0 +1,60 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+        xmlns:v="using:RepoWatch.Desktop.Views"
+        x:Class="RepoWatch.Desktop.Views.OnboardingWindow"
+        x:DataType="vm:OnboardingViewModel"
+        Title="Set up Repo Watch"
+        Width="560" Height="640" MinWidth="360" MinHeight="420"
+        WindowStartupLocation="CenterScreen">
+  <DockPanel Margin="20,12,20,16">
+    <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,12">
+      <TextBlock Classes="secondary" Text="{Binding StepNumber}" />
+      <TextBlock Text="{Binding StepTitle}" FontSize="20" FontWeight="SemiBold" />
+    </StackPanel>
+
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+      <Button Content="Back" Command="{Binding BackCommand}" IsVisible="{Binding CanGoBack}" />
+      <Button Grid.Column="2" Content="{Binding NextLabel}" Classes="accent" Command="{Binding NextCommand}" IsEnabled="{Binding CanGoNext}" />
+    </Grid>
+
+    <Panel>
+      <!-- 1. Sign in -->
+      <ScrollViewer IsVisible="{Binding IsSignInStep}">
+        <StackPanel Spacing="10">
+          <TextBlock TextWrapping="Wrap"
+                     Text="Repo Watch signs in through GitHub in your browser. You'll get a short code to enter on GitHub; Repo Watch never sees your password." />
+          <v:AccountView DataContext="{Binding Account}" />
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- 2. Grant repository access -->
+      <DockPanel IsVisible="{Binding IsGrantStep}">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,8">
+          <TextBlock TextWrapping="Wrap"
+                     Text="Repo Watch can only read repositories you grant it on GitHub: personal or organization, public or private. Granting access doesn't add anything to the widget; you choose that next." />
+          <TextBlock Text="{Binding GrantSummary}" TextWrapping="Wrap" FontWeight="SemiBold" />
+        </StackPanel>
+        <v:AccessView DataContext="{Binding Access}" />
+      </DockPanel>
+
+      <!-- 3. Choose repositories -->
+      <DockPanel IsVisible="{Binding IsChooseStep}">
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Text="Choose the repositories this widget should watch. You can change this later in Settings › Manage repositories." />
+        <v:RepositoryPickerView DataContext="{Binding Picker}" />
+      </DockPanel>
+
+      <!-- 4. Appearance -->
+      <StackPanel IsVisible="{Binding IsAppearanceStep}" Spacing="10">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="Theme" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" MinWidth="140" AutomationProperties.Name="Theme" />
+        </StackPanel>
+        <CheckBox Content="Keep the widget above other windows" IsChecked="{Binding AlwaysOnTop}" />
+        <TextBlock Classes="secondary" TextWrapping="Wrap"
+                   Text="Transparency and more appearance options arrive in a later version. Everything here can be changed in Settings." />
+      </StackPanel>
+    </Panel>
+  </DockPanel>
+</Window>
