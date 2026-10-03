@@ -126,6 +126,10 @@ public sealed class RepositoryDataTests
         Assert.Equal("main", health.Branch);
         Assert.Equal(RollupState.NoChecks, health.Rollup.State); // loaded, and no checks: not "unknown"
 
+        // The missing primary branch is reported, never silently replaced by the next one.
+        Assert.Null(result.Value.DefaultBranch);
+        Assert.Equal(["gone"], result.Value.MissingBranches);
+
         var (disabled, disabledHandler) = Create();
         disabledHandler.Status(HttpStatusCode.NotFound);
         var unavailable = await disabled.GetActionsAsync(new ActionsRequest("octo-test", "hello", ["main"], []), TestContext.Current.CancellationToken);
@@ -143,48 +147,68 @@ public sealed class RepositoryDataTests
         Assert.Equal(ResourceErrorKind.ServerError, result.Error!.Kind);
     }
 
-    private static string PullRequest(int number, string author, string mergeable = "MERGEABLE", bool draft = false, string reviewRequests = "", string reviews = "", string contexts = "", int contextTotal = -1)
-    {
-        var total = contextTotal < 0 ? contexts.Split("__typename").Length - 1 : contextTotal;
-        var rollup = contexts.Length == 0 && contextTotal < 0 ? "null" : "{\"contexts\":{\"totalCount\":" + total + ",\"nodes\":[" + contexts + "]}}";
-        return "{\"databaseId\":" + (number * 100) + ",\"number\":" + number + ",\"title\":\"PR " + number + " <script>\",\"url\":\"https://github.com/octo-test/hello/pull/" + number + "\","
-            + "\"isDraft\":" + (draft ? "true" : "false") + ",\"createdAt\":\"2026-10-01T10:00:00Z\",\"updatedAt\":\"2026-10-03T10:00:00Z\",\"mergeable\":\"" + mergeable + "\","
-            + "\"headRefName\":\"feature-" + number + "\",\"baseRefName\":\"main\",\"headRefOid\":\"" + PrSha + "\",\"author\":{\"login\":\"" + author + "\"},"
-            + "\"reviewRequests\":{\"totalCount\":0,\"nodes\":[" + reviewRequests + "]},"
-            + "\"reviews\":{\"totalCount\":0,\"nodes\":[" + reviews + "]},"
-            + "\"commits\":{\"totalCount\":1,\"nodes\":[{\"commit\":{\"statusCheckRollup\":" + rollup + "}}]}}";
-    }
-    private static string CheckRun(long id, string name, long suite, string status, string? conclusion) =>
-        $$$$"""{"__typename":"CheckRun","databaseId":{{{{id}}}},"name":"{{{{name}}}}","status":"{{{{status}}}}","conclusion":{{{{(conclusion is null ? "null" : $"\"{conclusion}\"")}}}},"url":"https://github.com/octo-test/hello/runs/{{{{id}}}}","startedAt":"2026-10-03T10:00:00Z","completedAt":null,"checkSuite":{"databaseId":{{{{suite}}}},"app":{"databaseId":15368}}}""";
+    private static string PullRequest(int number, string author, string mergeable = "MERGEABLE", bool draft = false, string reviewRequests = "", string reviews = "") =>
+        "{\"databaseId\":" + (number * 100) + ",\"number\":" + number + ",\"title\":\"PR " + number + " <script>\",\"url\":\"https://github.com/octo-test/hello/pull/" + number + "\","
+        + "\"isDraft\":" + (draft ? "true" : "false") + ",\"createdAt\":\"2026-10-01T10:00:00Z\",\"updatedAt\":\"2026-10-03T10:0" + (number % 10) + ":00Z\",\"mergeable\":\"" + mergeable + "\","
+        + "\"headRefName\":\"feature-" + number + "\",\"baseRefName\":\"main\",\"headRefOid\":\"" + PrSha + "\",\"author\":{\"login\":\"" + author + "\"},"
+        + "\"reviewRequests\":{\"totalCount\":0,\"nodes\":[" + reviewRequests + "]},"
+        + "\"reviews\":{\"totalCount\":0,\"nodes\":[" + reviews + "]}}";
 
-    private static string Status(string context, string state) =>
-        $$"""{"__typename":"StatusContext","context":"{{context}}","state":"{{state}}","targetUrl":"https://ci.example.test/{{context}}","createdAt":"2026-10-03T10:00:00Z"}""";
+    // REST shapes for GET /commits/{sha}/check-runs and /commits/{sha}/status.
+    private static string CheckRun(long id, string name, long suite, string status, string? conclusion) =>
+        "{\"id\":" + id + ",\"name\":\"" + name + "\",\"head_sha\":\"" + PrSha + "\",\"status\":\"" + status + "\",\"conclusion\":" + (conclusion is null ? "null" : "\"" + conclusion + "\"")
+        + ",\"html_url\":\"https://github.com/octo-test/hello/runs/" + id + "\",\"started_at\":\"2026-10-03T10:00:00Z\",\"completed_at\":null,\"check_suite\":{\"id\":" + suite + "},\"app\":{\"id\":15368}}";
+
+    private static string CheckRuns(int total, params string[] runs) => "{\"total_count\":" + total + ",\"check_runs\":[" + string.Join(",", runs) + "]}";
+
+    private static string Status(long id, string context, string state) =>
+        "{\"id\":" + id + ",\"context\":\"" + context + "\",\"state\":\"" + state + "\",\"target_url\":\"https://ci.example.test/" + context + "\",\"created_at\":\"2026-10-03T10:00:00Z\"}";
+
+    private static string Statuses(int total, params string[] statuses) =>
+        "{\"state\":\"pending\",\"sha\":\"" + PrSha + "\",\"total_count\":" + total + ",\"statuses\":[" + string.Join(",", statuses) + "]}";
+
+    private static StubHandler NoChecks(StubHandler handler, int pullRequests = 1)
+    {
+        for (var i = 0; i < pullRequests; i++)
+        {
+            handler.Json(CheckRuns(0)).Json(Statuses(0));
+        }
+
+        return handler;
+    }
 
     private static string Review(long id, string author, string state, string sha, string submitted = "2026-10-02T10:00:00Z") =>
-        $$$"""{"databaseId":{{{id}}},"state":"{{{state}}}","submittedAt":"{{{submitted}}}","url":"https://github.com/octo-test/hello/pull/1#pullrequestreview-{{{id}}}","author":{"login":"{{{author}}}"},"commit":{"oid":"{{{sha}}}"}}""";
+        "{\"databaseId\":" + id + ",\"state\":\"" + state + "\",\"submittedAt\":\"" + submitted + "\",\"url\":\"https://github.com/octo-test/hello/pull/1#pullrequestreview-" + id
+        + "\",\"author\":{\"login\":\"" + author + "\"},\"commit\":{\"oid\":\"" + sha + "\"}}";
 
     private static string PullRequests(int total, params string[] nodes) =>
-        $$$$$"""{"data":{"repository":{"pullRequests":{"totalCount":{{{{{total}}}}},"nodes":[{{{{{string.Join(",", nodes)}}}}}]}}}}""";
+        "{\"data\":{\"repository\":{\"pullRequests\":{\"totalCount\":" + total + ",\"nodes\":[" + string.Join(",", nodes) + "]}}}}";
 
     [Fact]
     public async Task Pull_requests_keep_reviews_checks_and_mergeability_separate()
     {
         var (client, handler) = Create();
         handler.Json(PullRequests(57,
-            PullRequest(1, "octo-test",
-                reviewRequests: """{"requestedReviewer":{"__typename":"Team","slug":"core","organization":{"login":"acme"}}}""",
-                reviews: string.Join(",", Review(1, "alice", "APPROVED", "0000000000000000000000000000000000000000"), Review(2, "bob", "CHANGES_REQUESTED", PrSha), Review(3, "bob", "COMMENTED", PrSha, "2026-10-02T11:00:00Z")),
-                contexts: string.Join(",", CheckRun(10, "build", 900, "COMPLETED", "FAILURE"), CheckRun(11, "build", 900, "COMPLETED", "SUCCESS"), CheckRun(12, "build", 901, "IN_PROGRESS", null), Status("ci/legacy", "FAILURE")))));
+                PullRequest(1, "octo-test",
+                    reviewRequests: """{"requestedReviewer":{"__typename":"Team","slug":"core","organization":{"login":"acme"}}}""",
+                    reviews: string.Join(",", Review(1, "alice", "APPROVED", "0000000000000000000000000000000000000000"), Review(2, "bob", "CHANGES_REQUESTED", PrSha), Review(3, "bob", "COMMENTED", PrSha, "2026-10-02T11:00:00Z")))))
+            .Json(CheckRuns(3, CheckRun(10, "build", 900, "completed", "failure"), CheckRun(11, "build", 900, "completed", "success"), CheckRun(12, "build", 901, "in_progress", null)))
+            .Json(Statuses(1, Status(5, "ci/legacy", "failure")));
 
         var result = await client.GetPullRequestsAsync("octo-test", "hello", mineOnly: false, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
 
-        var request = handler.Requests.Single();
-        Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal("https://api.github.com/graphql", request.Uri.ToString());
-        using (var body = JsonDocument.Parse(request.Body!))
+        var graphql = handler.Requests[0];
+        Assert.Equal(HttpMethod.Post, graphql.Method);
+        Assert.Equal("https://api.github.com/graphql", graphql.Uri.ToString());
+        using (var body = JsonDocument.Parse(graphql.Body!))
         {
             Assert.Equal("octo-test", body.RootElement.GetProperty("variables").GetProperty("owner").GetString());
+            // Commit data in GraphQL needs Contents access, which Repo Watch doesn't request.
+            Assert.DoesNotContain("statusCheckRollup", body.RootElement.GetProperty("query").GetString(), StringComparison.Ordinal);
         }
+
+        Assert.Equal($"https://api.github.com/repos/octo-test/hello/commits/{PrSha}/check-runs?per_page=100", handler.Requests[1].Uri.ToString());
+        Assert.Equal($"https://api.github.com/repos/octo-test/hello/commits/{PrSha}/status?per_page=100", handler.Requests[2].Uri.ToString());
 
         var state = result.Value!;
         Assert.Equal(ItemCount.Exact(57), state.OpenCount); // totalCount, not the page size
@@ -204,29 +228,162 @@ public sealed class RepositoryDataTests
         Assert.Equal(new ReviewRequest(ReviewerKind.Team, "acme/core"), Assert.Single(reviews.PendingRequests));
     }
 
+    private static string Search(int issueCount, params string[] nodes) =>
+        "{\"issueCount\":" + issueCount + ",\"nodes\":[" + string.Join(",", nodes) + "]}";
+
+    private static string MyPullRequests(string authored, string requested) =>
+        "{\"data\":{\"authored\":" + authored + ",\"requested\":" + requested + "}}";
+
     [Fact]
-    public async Task Mine_keeps_authored_and_directly_requested_pull_requests_only()
+    public async Task Mine_searches_authored_and_requested_pull_requests_beyond_the_newest_page()
     {
         var (client, handler) = Create();
-        handler.Json(PullRequests(3,
-            PullRequest(1, "Octo-Test"),
-            PullRequest(2, "someone", reviewRequests: """{"requestedReviewer":{"__typename":"User","login":"octo-test"}}"""),
-            PullRequest(3, "someone", reviewRequests: """{"requestedReviewer":{"__typename":"Team","slug":"core","organization":{"login":"acme"}}}""")));
+        const string RequestsMe = """{"requestedReviewer":{"__typename":"User","login":"octo-test"}}""";
+        handler.Json(MyPullRequests(
+            Search(2, PullRequest(1, "Octo-Test"), PullRequest(7, "octo-test", reviewRequests: RequestsMe)),
+            Search(3,
+                PullRequest(7, "octo-test", reviewRequests: RequestsMe),
+                PullRequest(2, "someone", reviewRequests: RequestsMe),
+                PullRequest(3, "someone", reviewRequests: """{"requestedReviewer":{"__typename":"Team","slug":"core","organization":{"login":"acme"}}}"""))));
+        NoChecks(handler, 3);
 
-        var result = await client.GetPullRequestsAsync("octo-test", "hello", mineOnly: true, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
+        var result = await client.GetPullRequestsAsync("octo-org", "hello", mineOnly: true, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
 
-        // A team request is not "for me" without established membership.
-        Assert.Equal([1, 2], result.Value!.Items.Select(e => e.PullRequest.Number));
-        Assert.Equal(ItemCount.Exact(3), result.Value.OpenCount);
+        using (var body = JsonDocument.Parse(handler.Requests[0].Body!))
+        {
+            var variables = body.RootElement.GetProperty("variables");
+            Assert.Equal("is:pr is:open repo:octo-org/hello author:octo-test", variables.GetProperty("authored").GetString());
+            Assert.Equal("is:pr is:open repo:octo-org/hello review-requested:octo-test", variables.GetProperty("requested").GetString());
+        }
+
+        // De-duplicated across both searches, newest first; a team-only request is not "for me".
+        Assert.Equal([7, 2, 1], result.Value!.Items.Select(e => e.PullRequest.Number));
+        Assert.Equal(ItemCount.Exact(3), result.Value.OpenCount); // both searches returned every result
+    }
+
+    [Fact]
+    public async Task Mine_counts_are_lower_bounds_when_a_search_was_cut_off()
+    {
+        var (client, handler) = Create();
+        NoChecks(handler.Json(MyPullRequests(Search(75, PullRequest(1, "octo-test")), Search(0))));
+
+        var result = await client.GetPullRequestsAsync("octo-org", "hello", mineOnly: true, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ItemCount.AtLeast(1), result.Value!.OpenCount);
+        Assert.Equal("1+", result.Value.OpenCount.ToString());
+    }
+
+    [Fact]
+    public async Task A_field_error_fails_only_that_pull_requests_reviews()
+    {
+        var (client, handler) = Create();
+        handler.Json("{\"data\":{\"repository\":{\"pullRequests\":{\"totalCount\":2,\"nodes\":[" + PullRequest(1, "a") + "," + PullRequest(2, "b") + "]}}},"
+            + "\"errors\":[{\"type\":\"FORBIDDEN\",\"message\":\"Resource not accessible by integration\",\"path\":[\"repository\",\"pullRequests\",\"nodes\",0,\"reviews\"]}]}");
+        NoChecks(handler, 2);
+
+        var result = await client.GetPullRequestsAsync("octo-test", "hello", mineOnly: false, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
+
+        var first = result.Value!.Items.Single(e => e.PullRequest.Number == 1);
+        Assert.Null(first.Reviews.Value); // unknown, not "no reviews"
+        Assert.Equal(ResourceErrorKind.Forbidden, first.Reviews.LastError!.Kind);
+        Assert.NotNull(result.Value.Items.Single(e => e.PullRequest.Number == 2).Reviews.Value);
+    }
+
+    [Fact]
+    public async Task An_error_not_tied_to_one_pull_request_fails_its_reviews()
+    {
+        var (client, handler) = Create();
+        NoChecks(handler.Json("{\"data\":{\"repository\":{\"pullRequests\":{\"totalCount\":1,\"nodes\":[" + PullRequest(1, "a") + "]}}},\"errors\":[{\"type\":\"SOMETHING_NEW\",\"message\":\"x\"}]}"));
+
+        var result = await client.GetPullRequestsAsync("octo-test", "hello", mineOnly: false, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(result.Value!.Items);
+        Assert.NotNull(entry.Reviews.LastError);
+        Assert.Equal(RollupState.NoChecks, entry.Checks.Value!.Rollup.State); // checks come from REST
+    }
+
+    [Fact]
+    public async Task Denied_checks_are_unknown_not_no_checks()
+    {
+        var (client, handler) = Create();
+        handler.Json(PullRequests(2, PullRequest(1, "a"), PullRequest(2, "b")))
+            .Status(HttpStatusCode.Forbidden)
+            .Json(CheckRuns(0)).Json(Statuses(0));
+
+        var result = await client.GetPullRequestsAsync("octo-test", "hello", mineOnly: false, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
+
+        var denied = result.Value!.Items[0].Checks;
+        Assert.Null(denied.Value);
+        Assert.Equal(ResourceErrorKind.Forbidden, denied.LastError!.Kind);
+        Assert.Equal(RollupState.NoChecks, result.Value.Items[1].Checks.Value!.Rollup.State);
+    }
+
+    [Fact]
+    public async Task Checks_stop_loading_after_a_rate_limit_and_are_capped()
+    {
+        var (client, handler) = Create();
+        var reset = Time().GetUtcNow().AddMinutes(5).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        handler.Json(PullRequests(3, PullRequest(1, "a"), PullRequest(2, "b"), PullRequest(3, "c")))
+            .JsonWithHeaders("""{"message":"API rate limit exceeded"}""", HttpStatusCode.Forbidden, ("x-ratelimit-remaining", "0"), ("x-ratelimit-reset", reset));
+
+        var result = await client.GetPullRequestsAsync("octo-test", "hello", mineOnly: false, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, handler.Requests.Count); // no further check requests after the limit
+        Assert.All(result.Value!.Items, e => Assert.Equal(ResourceErrorKind.RateLimited, e.Checks.LastError!.Kind));
+
+        var (many, manyHandler) = Create();
+        manyHandler.Json(PullRequests(12, Enumerable.Range(1, 12).Select(n => PullRequest(n, "a")).ToArray()));
+        NoChecks(manyHandler, RepositoryDataClient.ChecksLoadedFor);
+        var capped = await many.GetPullRequestsAsync("octo-test", "hello", mineOnly: false, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
+        Assert.Equal(1 + (2 * RepositoryDataClient.ChecksLoadedFor), manyHandler.Requests.Count);
+        Assert.Equal(Freshness.NotLoaded, capped.Value!.Items[^1].Checks.GetFreshness(Time().GetUtcNow(), TimeSpan.FromMinutes(10)));
+    }
+
+    [Fact]
+    public async Task GraphQL_rate_limits_use_the_reset_header()
+    {
+        var (client, handler) = Create();
+        var reset = Time().GetUtcNow().AddMinutes(20).ToUnixTimeSeconds();
+        handler.JsonWithHeaders("""{"data":null,"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}""", HttpStatusCode.OK,
+            ("x-ratelimit-remaining", "0"), ("x-ratelimit-reset", reset.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        var result = await client.GetIssuesAsync("octo-test", "hello", TestContext.Current.CancellationToken);
+
+        Assert.Equal(ResourceErrorKind.RateLimited, result.Error!.Kind);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(reset), result.Error.RetryAt);
+    }
+
+    [Fact]
+    public async Task A_connection_reset_while_reading_the_body_is_a_network_error()
+    {
+        var (client, handler) = Create();
+        handler.Content(new ThrowingContent());
+
+        var result = await client.GetRepositoryAsync(Key, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ResourceErrorKind.Network, result.Error!.Kind);
+    }
+
+    private sealed class ThrowingContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) => throw new IOException("connection reset");
+
+        protected override Task<Stream> CreateContentReadStreamAsync() => throw new HttpIOException(HttpRequestError.ResponseEnded, "connection reset");
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 
     [Fact]
     public async Task Incomplete_checks_never_roll_up_to_passing_and_missing_checks_are_no_checks()
     {
         var (client, handler) = Create();
-        handler.Json(PullRequests(2,
-            PullRequest(1, "a", contexts: CheckRun(10, "build", 900, "COMPLETED", "SUCCESS"), contextTotal: 150),
-            PullRequest(2, "b", mergeable: "UNKNOWN", draft: true)));
+        handler.Json(PullRequests(2, PullRequest(1, "a"), PullRequest(2, "b", mergeable: "UNKNOWN", draft: true)))
+            .Json(CheckRuns(150, CheckRun(10, "build", 900, "completed", "success"))).Json(Statuses(0))
+            .Json(CheckRuns(0)).Json(Statuses(0));
 
         var result = await client.GetPullRequestsAsync("octo-test", "hello", mineOnly: false, "octo-test", Time().GetUtcNow(), TestContext.Current.CancellationToken);
 
@@ -250,7 +407,6 @@ public sealed class RepositoryDataTests
         Assert.Equal(ResourceErrorKind.NotFound, result.Error!.Kind);
         Assert.DoesNotContain("octo-test/hello", result.Error.Message, StringComparison.Ordinal);
     }
-
     [Fact]
     public async Task Issue_counts_are_exact_and_exclude_pull_requests()
     {

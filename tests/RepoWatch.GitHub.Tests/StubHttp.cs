@@ -55,6 +55,13 @@ internal sealed class StubHandler(TimeProvider time) : HttpMessageHandler
         return this;
     }
 
+    /// <summary>A 200 response with the given content (e.g. one that fails while being read).</summary>
+    public StubHandler Content(HttpContent content)
+    {
+        _responses.Enqueue(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content }));
+        return this;
+    }
+
     public StubHandler Throws(Exception exception)
     {
         _responses.Enqueue(_ => throw exception);

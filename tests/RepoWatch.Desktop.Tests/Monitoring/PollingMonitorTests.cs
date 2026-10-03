@@ -271,6 +271,60 @@ public sealed class PollingMonitorTests
         await WaitUntil(() => source.Calls.Count(c => c == "repo 1") >= 3);
     }
 
+    [Fact]
+    public async Task An_unexpected_exception_does_not_stop_polling()
+    {
+        var calls = 0;
+        var source = new FakeDataSource();
+        source.Repository = id => Interlocked.Increment(ref calls) == 1
+            ? throw new InvalidOperationException("mapping bug")
+            : ApiResult<RepositoryInfo>.Ok(FakeDataSource.Info(id));
+        using var monitor = Create(source, Watching(Watch(1)));
+
+        // The first refresh throws; it is recorded (values kept) and retried later instead of ending the loop.
+        await WaitUntil(() => Snapshot(monitor, 1).Metadata.LastError is not null);
+        Assert.Contains("unexpected problem", Snapshot(monitor, 1).Metadata.LastError!.Message, StringComparison.Ordinal);
+
+        // The loop is still alive: the next refresh succeeds.
+        await monitor.RefreshAsync(cancellationToken: TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        Assert.True(Snapshot(monitor, 1).Metadata.HasValue);
+        Assert.Null(Snapshot(monitor, 1).Metadata.LastError);
+    }
+
+    [Fact]
+    public async Task Manual_refresh_answers_at_once_while_rate_limited()
+    {
+        var source = new FakeDataSource
+        {
+            Actions = _ => SectionResult<ActionsState>.Fail(Error(ResourceErrorKind.RateLimited, DateTimeOffset.UtcNow.AddMinutes(30))),
+        };
+        using var monitor = Create(source, Watching(Watch(1), Watch(2)));
+        await monitor.RefreshAsync(cancellationToken: TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        // Both waiters completed although repository 2 was never refreshed; another request completes immediately.
+        Assert.DoesNotContain("repo 2", source.Calls);
+        await monitor.RefreshAsync(cancellationToken: TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        Assert.Equal(DateTimeOffset.UtcNow.AddMinutes(30), Snapshot(monitor, 1).Actions.LastError!.RetryAt!.Value, TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task Restored_access_shows_a_sections_own_error_instead_of_no_access()
+    {
+        var source = new FakeDataSource { Repository = _ => ApiResult<RepositoryInfo>.Fail(Error(ResourceErrorKind.NotFound)) };
+        using var monitor = Create(source, Watching(Watch(1)));
+        await monitor.RefreshAsync(cancellationToken: TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        Assert.Equal(ResourceAvailability.AccessLost, Snapshot(monitor, 1).Issues.Availability);
+
+        source.Repository = id => ApiResult<RepositoryInfo>.Ok(FakeDataSource.Info(id));
+        source.Issues = _ => SectionResult<IssuesState>.Fail(Error(ResourceErrorKind.ServerError));
+        await monitor.RefreshAsync(cancellationToken: TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var issues = Snapshot(monitor, 1).Issues;
+        Assert.NotEqual(ResourceAvailability.AccessLost, issues.Availability);
+        Assert.Equal(ResourceErrorKind.ServerError, issues.LastError!.Kind);
+        Assert.Equal(ResourceAvailability.Available, Snapshot(monitor, 1).Actions.Availability);
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         for (var i = 0; i < 500 && !condition(); i++)

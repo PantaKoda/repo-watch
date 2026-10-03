@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using RepoWatch.GitHub.Api;
 
 namespace RepoWatch.GitHub.Repositories;
 
@@ -63,8 +65,53 @@ internal sealed record RunDto
     [JsonPropertyName("pull_requests")] public List<RunPullRequestDto>? PullRequests { get; init; }
 }
 
-/// <summary>The combined status of a ref; only the resolved head commit is read.</summary>
-internal sealed record CombinedStatusDto([property: JsonPropertyName("sha")] string? Sha);
+/// <summary>The combined status of a ref or commit: the resolved head commit and its legacy statuses.</summary>
+internal sealed record CombinedStatusDto(
+    [property: JsonPropertyName("sha")] string? Sha,
+    [property: JsonPropertyName("total_count")] int TotalCount = 0,
+    [property: JsonPropertyName("statuses")] List<StatusDto?>? Statuses = null);
+
+internal sealed record StatusDto
+{
+    [JsonPropertyName("id")] public long Id { get; init; }
+
+    [JsonPropertyName("context")] public string? Context { get; init; }
+
+    [JsonPropertyName("state")] public string? State { get; init; }
+
+    [JsonPropertyName("target_url")] public string? TargetUrl { get; init; }
+
+    [JsonPropertyName("created_at")] public DateTimeOffset? CreatedAt { get; init; }
+}
+
+internal sealed record IdOnlyDto([property: JsonPropertyName("id")] long Id);
+
+internal sealed record CheckRunsPageDto(
+    [property: JsonPropertyName("total_count")] int TotalCount,
+    [property: JsonPropertyName("check_runs")] List<CheckRunDto?>? CheckRuns);
+
+internal sealed record CheckRunDto
+{
+    [JsonPropertyName("id")] public long Id { get; init; }
+
+    [JsonPropertyName("name")] public string? Name { get; init; }
+
+    [JsonPropertyName("head_sha")] public string? HeadSha { get; init; }
+
+    [JsonPropertyName("status")] public string? Status { get; init; }
+
+    [JsonPropertyName("conclusion")] public string? Conclusion { get; init; }
+
+    [JsonPropertyName("html_url")] public string? HtmlUrl { get; init; }
+
+    [JsonPropertyName("started_at")] public DateTimeOffset? StartedAt { get; init; }
+
+    [JsonPropertyName("completed_at")] public DateTimeOffset? CompletedAt { get; init; }
+
+    [JsonPropertyName("check_suite")] public IdOnlyDto? CheckSuite { get; init; }
+
+    [JsonPropertyName("app")] public IdOnlyDto? App { get; init; }
+}
 
 // GraphQL shapes.
 
@@ -72,9 +119,11 @@ internal sealed record GraphQLRequest(
     [property: JsonPropertyName("query")] string Query,
     [property: JsonPropertyName("variables")] Dictionary<string, string> Variables);
 
+/// <summary>A GraphQL error. <see cref="Path"/> mixes field names and list indexes, e.g. ["repository","pullRequests","nodes",3,"reviews"].</summary>
 internal sealed record GraphQLErrorDto(
     [property: JsonPropertyName("type")] string? Type,
-    [property: JsonPropertyName("message")] string? Message);
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("path")] List<JsonElement>? Path = null);
 
 internal sealed record LoginNode([property: JsonPropertyName("login")] string? Login);
 
@@ -86,7 +135,26 @@ internal sealed record Connection<T>(
 
 internal sealed record PullRequestsResponse(
     [property: JsonPropertyName("data")] PullRequestsData? Data,
-    [property: JsonPropertyName("errors")] List<GraphQLErrorDto>? Errors);
+    [property: JsonPropertyName("errors")] List<GraphQLErrorDto>? Errors) : IGraphQLResponse
+{
+    public IReadOnlyList<string?> ErrorTypes => Errors?.Select(e => e.Type).ToList() ?? [];
+}
+
+/// <summary>Two searches: pull requests I authored, and pull requests requesting my review.</summary>
+internal sealed record MyPullRequestsResponse(
+    [property: JsonPropertyName("data")] MyPullRequestsData? Data,
+    [property: JsonPropertyName("errors")] List<GraphQLErrorDto>? Errors) : IGraphQLResponse
+{
+    public IReadOnlyList<string?> ErrorTypes => Errors?.Select(e => e.Type).ToList() ?? [];
+}
+
+internal sealed record MyPullRequestsData(
+    [property: JsonPropertyName("authored")] SearchConnection? Authored,
+    [property: JsonPropertyName("requested")] SearchConnection? Requested);
+
+internal sealed record SearchConnection(
+    [property: JsonPropertyName("issueCount")] int IssueCount,
+    [property: JsonPropertyName("nodes")] List<PullRequestNode?>? Nodes);
 
 internal sealed record PullRequestsData([property: JsonPropertyName("repository")] PullRequestsRepository? Repository);
 
@@ -122,7 +190,6 @@ internal sealed record PullRequestNode
 
     [JsonPropertyName("reviews")] public Connection<ReviewNode>? Reviews { get; init; }
 
-    [JsonPropertyName("commits")] public Connection<CommitNode>? Commits { get; init; }
 }
 
 internal sealed record ReviewRequestNode([property: JsonPropertyName("requestedReviewer")] RequestedReviewerNode? RequestedReviewer);
@@ -155,51 +222,12 @@ internal sealed record ReviewNode
     [JsonPropertyName("commit")] public OidNode? Commit { get; init; }
 }
 
-internal sealed record CommitNode([property: JsonPropertyName("commit")] CommitDetail? Commit);
-
-internal sealed record CommitDetail([property: JsonPropertyName("statusCheckRollup")] StatusCheckRollupNode? StatusCheckRollup);
-
-internal sealed record StatusCheckRollupNode([property: JsonPropertyName("contexts")] Connection<CheckContextNode>? Contexts);
-
-internal sealed record DatabaseIdNode([property: JsonPropertyName("databaseId")] long DatabaseId);
-
-internal sealed record CheckSuiteNode(
-    [property: JsonPropertyName("databaseId")] long DatabaseId,
-    [property: JsonPropertyName("app")] DatabaseIdNode? App);
-
-/// <summary>A CheckRun or StatusContext from the rollup union; fields of the other type are null.</summary>
-internal sealed record CheckContextNode
-{
-    [JsonPropertyName("__typename")] public string? TypeName { get; init; }
-
-    [JsonPropertyName("databaseId")] public long DatabaseId { get; init; }
-
-    [JsonPropertyName("name")] public string? Name { get; init; }
-
-    [JsonPropertyName("status")] public string? Status { get; init; }
-
-    [JsonPropertyName("conclusion")] public string? Conclusion { get; init; }
-
-    [JsonPropertyName("url")] public string? Url { get; init; }
-
-    [JsonPropertyName("startedAt")] public DateTimeOffset? StartedAt { get; init; }
-
-    [JsonPropertyName("completedAt")] public DateTimeOffset? CompletedAt { get; init; }
-
-    [JsonPropertyName("checkSuite")] public CheckSuiteNode? CheckSuite { get; init; }
-
-    [JsonPropertyName("context")] public string? Context { get; init; }
-
-    [JsonPropertyName("state")] public string? State { get; init; }
-
-    [JsonPropertyName("targetUrl")] public string? TargetUrl { get; init; }
-
-    [JsonPropertyName("createdAt")] public DateTimeOffset? CreatedAt { get; init; }
-}
-
 internal sealed record IssuesResponse(
     [property: JsonPropertyName("data")] IssuesData? Data,
-    [property: JsonPropertyName("errors")] List<GraphQLErrorDto>? Errors);
+    [property: JsonPropertyName("errors")] List<GraphQLErrorDto>? Errors) : IGraphQLResponse
+{
+    public IReadOnlyList<string?> ErrorTypes => Errors?.Select(e => e.Type).ToList() ?? [];
+}
 
 internal sealed record IssuesData([property: JsonPropertyName("repository")] IssuesRepository? Repository);
 
@@ -231,7 +259,9 @@ internal sealed record IssueNode
 [JsonSerializable(typeof(RepositoryInfoDto))]
 [JsonSerializable(typeof(RunsPageDto))]
 [JsonSerializable(typeof(CombinedStatusDto))]
+[JsonSerializable(typeof(CheckRunsPageDto))]
 [JsonSerializable(typeof(GraphQLRequest))]
 [JsonSerializable(typeof(PullRequestsResponse))]
+[JsonSerializable(typeof(MyPullRequestsResponse))]
 [JsonSerializable(typeof(IssuesResponse))]
 internal sealed partial class RepositoryDataJsonContext : JsonSerializerContext;

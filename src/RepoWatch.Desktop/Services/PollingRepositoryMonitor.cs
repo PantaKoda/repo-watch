@@ -149,6 +149,13 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         var waits = new List<Task>();
         lock (_gate)
         {
+            // While rate limited, requesting now would only hit the limit again: answer at once (the
+            // sections already say when polling resumes) instead of leaving the command waiting.
+            if (_pausedUntil is { } until && until > _time.GetUtcNow())
+            {
+                return Task.CompletedTask;
+            }
+
             foreach (var entry in _entries.Values.Where(e => repository is null || e.Key == repository))
             {
                 entry.DueAt = DateTimeOffset.MinValue;
@@ -243,10 +250,6 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         {
             // Disposed: signed out, account changed, or the watchlist lost a repository.
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "The polling loop stopped unexpectedly");
-        }
     }
 
     private async Task WaitAsync(TimeSpan wait, CancellationToken cancellationToken)
@@ -275,10 +278,21 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
 
         try
         {
-            var refreshed = await RepositoryRefresh.RunAsync(_source, snapshot, watch, _login, _time, cancellationToken, update =>
+            RepositorySnapshot refreshed;
+            try
             {
-                Publish(entry, watch, update); // partial progress: each section appears as it loads
-            }).ConfigureAwait(false);
+                refreshed = await RepositoryRefresh.RunAsync(_source, snapshot, watch, _login, _time, cancellationToken, update =>
+                {
+                    Publish(entry, watch, update); // partial progress: each section appears as it loads
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Never let one unexpected failure end polling: record it, keep cached values, retry later.
+                _logger.LogError(ex, "Refreshing repository {RepositoryId} failed unexpectedly", entry.Key.RepositoryId);
+                refreshed = RepositoryRefresh.FailedAll(snapshot, new ResourceError(ResourceErrorKind.Unknown,
+                    $"Repo Watch hit an unexpected problem ({ex.GetType().Name}); it will try again.", _time.GetUtcNow()));
+            }
 
             Publish(entry, watch, refreshed);
             var now = _time.GetUtcNow();
@@ -297,6 +311,11 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
                     var until = limited.RetryAt is { } retry && retry > now ? retry : now + _intervals.Failed;
                     _pausedUntil = until - now > _intervals.MaxRateLimitWait ? now + _intervals.MaxRateLimitWait : until;
                     _logger.LogWarning("GitHub rate limit reached; polling paused until {Until:u}", _pausedUntil);
+                    foreach (var other in _entries.Values)
+                    {
+                        other.Waiters?.TrySetResult(); // nothing more will happen before the reset
+                        other.Waiters = null;
+                    }
                 }
 
                 entry.LastOffline = error?.Kind is ResourceErrorKind.Network or ResourceErrorKind.Timeout;

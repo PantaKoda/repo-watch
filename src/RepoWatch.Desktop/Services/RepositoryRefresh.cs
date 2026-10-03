@@ -25,19 +25,18 @@ public static class RepositoryRefresh
         if (!info.IsSuccess)
         {
             var error = info.Error!;
-            return LosesAccess(error.Kind)
-                ? snapshot.WithAccessLost(error)
-                : snapshot with
-                {
-                    Metadata = snapshot.Metadata.Failed(error),
-                    Actions = snapshot.Actions.Failed(error),
-                    PullRequests = snapshot.PullRequests.Failed(error),
-                    Issues = snapshot.Issues.Failed(error),
-                };
+            return LosesAccess(error.Kind) ? snapshot.WithAccessLost(error) : FailedAll(snapshot, error);
         }
 
         var metadata = info.Value!.Metadata;
-        snapshot = snapshot with { Metadata = snapshot.Metadata.Succeeded(metadata, time.GetUtcNow()) };
+        // Access is back: clear "access lost" so a section's next failure shows its own error, not "No access".
+        snapshot = snapshot with
+        {
+            Metadata = snapshot.Metadata.Succeeded(metadata, time.GetUtcNow()),
+            Actions = Restored(snapshot.Actions),
+            PullRequests = Restored(snapshot.PullRequests),
+            Issues = Restored(snapshot.Issues),
+        };
         progress?.Invoke(snapshot);
 
         var branches = watch.Branches.Count > 0 ? watch.Branches : [metadata.DefaultBranch];
@@ -65,6 +64,20 @@ public static class RepositoryRefresh
         return snapshot with { Issues = Apply(snapshot.Issues, issues, time) };
     }
 
+    /// <summary>Records one failure on every section, keeping their values (e.g. offline, or an unexpected error).</summary>
+    public static RepositorySnapshot FailedAll(RepositorySnapshot snapshot, ResourceError error)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(error);
+        return snapshot with
+        {
+            Metadata = snapshot.Metadata.Failed(error),
+            Actions = snapshot.Actions.Failed(error),
+            PullRequests = snapshot.PullRequests.Failed(error),
+            Issues = snapshot.Issues.Failed(error),
+        };
+    }
+
     /// <summary>The error that should drive the next refresh time: rate limits first, then connectivity.</summary>
     public static ResourceError? WorstError(RepositorySnapshot snapshot)
     {
@@ -88,6 +101,9 @@ public static class RepositoryRefresh
 
     /// <summary>404, 403 and SSO on the repository itself mean Repo Watch can no longer see it.</summary>
     private static bool LosesAccess(ResourceErrorKind kind) => kind is ResourceErrorKind.NotFound or ResourceErrorKind.Forbidden or ResourceErrorKind.SsoRequired;
+
+    private static Resource<T> Restored<T>(Resource<T> resource) where T : class =>
+        resource.Availability == ResourceAvailability.AccessLost ? Resource<T>.NotLoaded : resource;
 
     private static Resource<T> Apply<T>(Resource<T> resource, SectionResult<T> result, TimeProvider time) where T : class => result switch
     {

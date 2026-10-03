@@ -90,6 +90,9 @@ public sealed record ActionsState
     /// <summary>Health of every tracked branch, primary first. Empty when only <see cref="DefaultBranch"/> is known.</summary>
     public IReadOnlyList<CommitWorkflowSummary> Branches { get; init; } = [];
 
+    /// <summary>Tracked branches GitHub did not find (deleted, renamed, or an empty repository). Shown, never silently dropped.</summary>
+    public IReadOnlyList<string> MissingBranches { get; init; } = [];
+
     /// <summary>Every tracked branch's health, falling back to <see cref="DefaultBranch"/>.</summary>
     public IEnumerable<CommitWorkflowSummary> TrackedBranches => Branches.Count > 0 ? Branches : DefaultBranch is { } primary ? [primary] : [];
 }

@@ -67,13 +67,15 @@ MonitorCoordinator ─► IRepositoryMonitorFactory (GitHubMonitorFactory) ─�
                                                                           (one loop, one repo at a time)                      └─ RepositoryDataClient
                                                                                                                                   ├─ REST  GET /repositories/{id}                     metadata (follows renames)
                                                                                                                                   ├─ REST  GET /actions/runs, /commits/{branch}/status, /actions/runs?head_sha=
-                                                                                                                                  ├─ GraphQL pullRequests + reviews + reviewRequests + mergeable + statusCheckRollup
+                                                                                                                                  ├─ GraphQL pullRequests (All) or search author:/review-requested: (Mine) + reviews + reviewRequests + mergeable
+                                                                                                                                  ├─ REST  GET /commits/{sha}/check-runs and /status for the 10 newest listed PRs
                                                                                                                                   └─ GraphQL issues (totalCount excludes pull requests)
 ```
 
 - The coordinator creates a polling monitor only when an account is signed in and its watchlist is non-empty. Watchlist edits apply in place; removals, sign-out and account changes dispose the monitor, which also runs on the session's `Lifetime`.
 - `RepositoryRefresh` loads metadata first: 404/403/SSO there means access was lost, and every section's cached content is withheld. Otherwise Actions, pull requests and issues load and fail independently, each keeping its last good value.
 - Branch health uses the branch head from the combined-status endpoint (Commit statuses: read), so Repo Watch needs no Contents permission. A head commit with no runs is "No checks", even if older commits failed.
+- PR checks use REST because GraphQL commit data (`statusCheckRollup`) needs Contents access (denied live). GraphQL partial errors are mapped by path to the affected PR's reviews.
 - Merge state comes from GraphQL `mergeable` (conflicts only). Branch protection and required checks are not read, so nothing is shown as "ready to merge". Team review requests are never treated as "for me".
 - Intervals are targets (active 20 s, normal 90 s, after failure 60 s). A rate limit pauses all polling until the reset. Stage 07 adds ETags, persistence and the bounded scheduler.
 

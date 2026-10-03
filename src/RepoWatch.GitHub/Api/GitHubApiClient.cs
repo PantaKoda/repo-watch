@@ -16,6 +16,12 @@ public interface IAccessTokenSource
     Task<string?> HandleUnauthorizedAsync(string rejectedAccessToken, CancellationToken cancellationToken = default);
 }
 
+/// <summary>A GraphQL response body; lets the client recognize errors that apply to the whole request.</summary>
+public interface IGraphQLResponse
+{
+    IReadOnlyList<string?> ErrorTypes { get; }
+}
+
 /// <summary>Result of an API call: a value, or a classified error. Never both.</summary>
 public sealed record ApiResult<T>(T? Value, ResourceError? Error)
 {
@@ -84,7 +90,16 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
         }
 
         using var reply = response.Message!;
-        return await ReadAsync(reply, responseType, cancellationToken).ConfigureAwait(false);
+        var result = await ReadAsync(reply, responseType, cancellationToken).ConfigureAwait(false);
+
+        // GraphQL reports its rate limit as an error inside a 200 response; the reset time is still in the headers.
+        if (result.Value is IGraphQLResponse { ErrorTypes: var types } && types.Contains("RATE_LIMITED"))
+        {
+            var now = time.GetUtcNow();
+            return ApiResult<TResponse>.Fail(GraphQLError("RATE_LIMITED") with { RetryAt = RetryAt(reply, now) ?? ResetAt(reply) });
+        }
+
+        return result;
     }
 
     /// <summary>A classified error for GraphQL errors returned with HTTP 200.</summary>
@@ -296,8 +311,9 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
         {
             return ApiResult<T>.Fail(Error(ResourceErrorKind.InvalidResponse, "GitHub returned a response Repo Watch couldn't read."));
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
+            // A reset while reading the body (ResponseHeadersRead) surfaces as HttpIOException, an IOException.
             return ApiResult<T>.Fail(Error(ResourceErrorKind.Network, $"The connection to GitHub was interrupted: {ex.Message}"));
         }
     }
@@ -346,6 +362,9 @@ public sealed class GitHubApiClient(HttpClient http, GitHubEndpoints endpoints, 
             ? DateTimeOffset.FromUnixTimeSeconds(epoch)
             : null;
     }
+
+    private static DateTimeOffset? ResetAt(HttpResponseMessage message) =>
+        long.TryParse(Header(message, "x-ratelimit-reset"), out var epoch) ? DateTimeOffset.FromUnixTimeSeconds(epoch) : null;
 
     private static string? Header(HttpResponseMessage message, string name) =>
         message.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null;
