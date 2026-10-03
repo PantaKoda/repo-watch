@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Stage 10: webhook receiver, durable delivery handling and authenticated SSE. No UI dependencies. -->
+  <PropertyGroup>
+    <RootNamespace>RepoWatch.Relay</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RepoWatch.Core\RepoWatch.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RepoWatch.Relay.Tests" />
+    <InternalsVisibleTo Include="RepoWatch.Desktop.Tests" />
+  </ItemGroup>
+</Project>

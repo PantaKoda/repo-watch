@@ -16,7 +16,7 @@ On GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub
 | Expire user authorization tokens | **Enabled**. Repo Watch renews tokens; never disable expiry |
 | Request user authorization (OAuth) during installation | Disabled |
 | **Enable Device Flow** | **Enabled**. Without it, sign-in fails with "Device flow is not enabled" |
-| Webhook → Active | Disabled for now. Live mode (Stage 10) adds a relay with its own webhook secret |
+| Webhook → Active | Off for polling only. For live updates, turn it on and point it at a deployed relay: see [relay.md](relay.md) (URL, secret, events) |
 | Where can this GitHub App be installed? | **Any account**, so other users and organizations can install it |
 
 ### Repository permissions (read-only)
@@ -32,7 +32,7 @@ On GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub
 
 Request **no write permissions**. Merges, comments, reviews and workflow re-runs open GitHub in the browser. Add Contents or organization/team permissions only together with a documented feature that needs them.
 
-No account permissions and no event subscriptions are needed for the polling mode.
+No account permissions and no event subscriptions are needed for the polling mode. Live updates subscribe to the events listed in [relay.md](relay.md); they need no extra permissions.
 
 ## 2. Copy the public identifiers
 

@@ -80,6 +80,8 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     private RepositoryOrdering _ordering;
     private RepositoryKey? _focus;
     private double _slowdown = 1;
+    private bool _live;
+    private readonly List<IDisposable> _companions = [];
     private DateTimeOffset _lastPrune;
     private DateTimeOffset? _pausedUntil;
     private bool _refreshing;
@@ -265,6 +267,18 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         {
             _conditions.Changed -= OnConditionsChanged;
             _conditions.Resumed -= OnResumed;
+        }
+
+        List<IDisposable> companions;
+        lock (_gate)
+        {
+            companions = [.. _companions];
+            _companions.Clear();
+        }
+
+        foreach (var companion in companions)
+        {
+            companion.Dispose();
         }
 
         _stop.Cancel();
@@ -540,7 +554,72 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     }
 
     private double CurrentSlowdown() =>
-        PollingPolicy.Slowdown(_conditions?.IsWidgetVisible ?? true, _conditions?.IsOnBattery ?? false, _budget?.IsLow ?? false);
+        PollingPolicy.Slowdown(_conditions?.IsWidgetVisible ?? true, _conditions?.IsOnBattery ?? false, _budget?.IsLow ?? false, _live);
+
+    /// <summary>Something that lives as long as this monitor (the relay link); disposed with it.</summary>
+    public void Attach(IDisposable companion)
+    {
+        lock (_gate)
+        {
+            _companions.Add(companion);
+        }
+    }
+
+    /// <summary>
+    /// The relay says these parts of a repository changed: refresh them now (coalesced with anything
+    /// already due). Unknown repositories are ignored, so a relay can't make the app fetch anything unwatched.
+    /// </summary>
+    public void Invalidate(long repositoryId, RefreshParts parts)
+    {
+        lock (_gate)
+        {
+            if (!_entries.TryGetValue(repositoryId, out var entry))
+            {
+                return;
+            }
+
+            foreach (var part in Parts.Where(p => parts.HasFlag(p)))
+            {
+                entry.Due[part] = DateTimeOffset.MinValue;
+                if (entry.InFlight)
+                {
+                    entry.Requeued |= part;
+                }
+            }
+        }
+
+        Signal();
+    }
+
+    /// <summary>Refresh everything soon (relay reconnect, replay gap): events may have been missed.</summary>
+    public void ReconcileAll()
+    {
+        lock (_gate)
+        {
+            foreach (var entry in _entries.Values)
+            {
+                entry.MarkAllDue();
+            }
+        }
+
+        Signal();
+    }
+
+    /// <summary>The relay stream is connected (live) or not (polling only).</summary>
+    public void SetLive(bool live)
+    {
+        lock (_gate)
+        {
+            if (_live == live)
+            {
+                return;
+            }
+
+            _live = live;
+        }
+
+        OnConditionsChanged(this, EventArgs.Empty); // recompute slowdown (pulls due times in when leaving live) and state
+    }
 
     private void Prune(IReadOnlyCollection<WatchedRepository> watched)
     {
@@ -568,8 +647,10 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     {
         lock (_gate)
         {
+            // "Live" needs both: the relay stream is connected and the last refreshes reached GitHub.
             return IsPausedByUser ? ConnectionState.Paused
                 : _entries.Count > 0 && _entries.Values.All(e => e.LastOffline) ? ConnectionState.Offline
+                : _live ? ConnectionState.Live
                 : ConnectionState.Polling;
         }
     }

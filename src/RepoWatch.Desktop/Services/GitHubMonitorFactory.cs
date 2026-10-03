@@ -4,6 +4,7 @@ using RepoWatch.Core.Identity;
 using RepoWatch.Core.Settings;
 using RepoWatch.GitHub;
 using RepoWatch.GitHub.Api;
+using RepoWatch.GitHub.Relay;
 using RepoWatch.GitHub.Repositories;
 
 namespace RepoWatch.Desktop.Services;
@@ -28,8 +29,24 @@ public sealed class GitHubMonitorFactory(AccountService accounts, HttpClient htt
         var budget = new RateBudget(time);
         var accountCache = cache.ForAccount(account);
         var client = new RepositoryDataClient(new GitHubApiClient(http, endpoints, session, time, accountCache, budget));
-        return new PollingRepositoryMonitor(account, settings, new RepositoryDataSource(client), identity.Login, time,
+        var monitor = new PollingRepositoryMonitor(account, settings, new RepositoryDataSource(client), identity.Login, time,
             loggers.CreateLogger<PollingRepositoryMonitor>(), session.Lifetime, PollingIntervals.From(options.Polling), conditions, accountCache, budget,
             cacheOptions: options.Cache);
+
+        // Optional live updates: the relay pushes "what changed"; polling remains the fallback and reconciles.
+        if (options.Relay.IsConfigured && Uri.TryCreate(options.Relay.BaseUrl!.TrimEnd('/') + "/", UriKind.Absolute, out var relay))
+        {
+            monitor.Attach(new RelayLink(monitor, new RelayClient(RelayHttp.Value, relay), session, time, loggers.CreateLogger<RelayLink>(), session.Lifetime));
+        }
+
+        return monitor;
     }
+
+    /// <summary>The event stream stays open, so the relay gets its own client without a request timeout.</summary>
+    private static readonly Lazy<HttpClient> RelayHttp = new(() =>
+    {
+        var client = GitHubHttp.CreateClient();
+        client.Timeout = Timeout.InfiniteTimeSpan;
+        return client;
+    });
 }

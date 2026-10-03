@@ -160,7 +160,8 @@ public sealed class SqliteSettingsStoreTests : IDisposable
             threads.ForEach(t => t.Start());
             threads.ForEach(t => t.Join());
 
-            Assert.Empty(errors);
+            // Name the failures, so an intermittent one (seen once under full-suite load) can be diagnosed.
+            Assert.True(errors.IsEmpty, $"round {round}: " + string.Join("; ", errors.Select(e => $"{e.GetType().Name}: {e.Message}")));
         }
     }
 
