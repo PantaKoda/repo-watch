@@ -76,6 +76,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial bool PositionLocked { get; set; }
 
+    /// <summary>Stops all requests to GitHub until switched off; cached data stays visible.</summary>
+    [ObservableProperty]
+    public partial bool MonitoringPaused { get; set; }
+
     [ObservableProperty]
     public partial ThemePreference Theme { get; set; }
 
@@ -136,6 +140,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     partial void OnPositionLockedChanged(bool value) => Save(s => s with { Window = s.Window with { PositionLocked = value } });
 
+    partial void OnMonitoringPausedChanged(bool value) => Save(s => s with { MonitoringPaused = value });
+
     partial void OnThemeChanged(ThemePreference value) => Save(s => s with { Appearance = s.Appearance with { Theme = value } });
 
     partial void OnMaterialChanged(WindowMaterial value) => Save(s => s with { Appearance = s.Appearance with { Material = value } });
@@ -182,6 +188,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             var app = _settings.App;
             AlwaysOnTop = app.Window.AlwaysOnTop;
             PositionLocked = app.Window.PositionLocked;
+            MonitoringPaused = app.MonitoringPaused;
             Theme = app.Appearance.Theme;
             Material = app.Appearance.Material;
             OpacityPercent = app.Appearance.BackgroundOpacity * 100;
@@ -202,6 +209,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         var (before, after) = (e.Previous, e.Current);
         if (before.Window.AlwaysOnTop != after.Window.AlwaysOnTop
             || before.Window.PositionLocked != after.Window.PositionLocked
+            || before.MonitoringPaused != after.MonitoringPaused
             || before.Appearance != after.Appearance)
         {
             _dispatcher.Post(Load);

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using RepoWatch.Core.Configuration;
 using RepoWatch.Core.Identity;
 using RepoWatch.Core.Settings;
 using RepoWatch.GitHub;
@@ -11,7 +12,8 @@ namespace RepoWatch.Desktop.Services;
 /// Builds the polling monitor on the current account session. The monitor runs on the session's
 /// lifetime, so signing out cancels its requests even before the coordinator disposes it.
 /// </summary>
-public sealed class GitHubMonitorFactory(AccountService accounts, HttpClient http, GitHubEndpoints endpoints, TimeProvider time, ILoggerFactory loggers)
+public sealed class GitHubMonitorFactory(AccountService accounts, HttpClient http, GitHubEndpoints endpoints, TimeProvider time, ILoggerFactory loggers,
+    RepoWatchOptions options, PollingConditions conditions, Storage.RepositoryCache cache)
     : IRepositoryMonitorFactory
 {
     public IWatchlistAwareMonitor? Create(AccountKey account, AccountSettings settings)
@@ -21,8 +23,13 @@ public sealed class GitHubMonitorFactory(AccountService accounts, HttpClient htt
             return null;
         }
 
-        var client = new RepositoryDataClient(new GitHubApiClient(http, endpoints, session, time));
+        // One budget and one ETag cache per account: the scheduler slows down on the budget GitHub reports.
+        // The cache handle belongs to this sign-in: after sign-out clears the account, it writes nothing more.
+        var budget = new RateBudget(time);
+        var accountCache = cache.ForAccount(account);
+        var client = new RepositoryDataClient(new GitHubApiClient(http, endpoints, session, time, accountCache, budget));
         return new PollingRepositoryMonitor(account, settings, new RepositoryDataSource(client), identity.Login, time,
-            loggers.CreateLogger<PollingRepositoryMonitor>(), session.Lifetime);
+            loggers.CreateLogger<PollingRepositoryMonitor>(), session.Lifetime, PollingIntervals.From(options.Polling), conditions, accountCache, budget,
+            cacheOptions: options.Cache);
     }
 }

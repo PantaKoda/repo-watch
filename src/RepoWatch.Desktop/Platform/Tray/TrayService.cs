@@ -5,16 +5,18 @@ using Microsoft.Extensions.Logging;
 namespace RepoWatch.Desktop.Platform.Tray;
 
 /// <summary>
-/// Notification-area icon with Show, Settings and Quit. Treated as available only where the
+/// Notification-area icon with Show, Pause monitoring, Settings and Quit. Treated as available only where the
 /// platform reliably provides one; elsewhere the widget stays in the taskbar instead.
 /// </summary>
 public sealed class TrayService(ILogger<TrayService> logger) : IDisposable
 {
     private TrayIcon? _icon;
+    private NativeMenuItem? _pause;
 
     public bool IsAvailable { get; private set; }
 
-    public void Initialize(Application application, WindowIcon icon, Action toggleWidget, Action showWidget, Action openSettings, Action quit)
+    public void Initialize(Application application, WindowIcon icon, Action toggleWidget, Action showWidget, Action openSettings, Action quit,
+        Action togglePause, bool paused)
     {
         ArgumentNullException.ThrowIfNull(application);
 
@@ -29,6 +31,10 @@ public sealed class TrayService(ILogger<TrayService> logger) : IDisposable
         {
             var menu = new NativeMenu();
             menu.Items.Add(Item("Show widget", showWidget));
+            _pause = Item("Pause monitoring", togglePause);
+            _pause.ToggleType = MenuItemToggleType.CheckBox;
+            _pause.IsChecked = paused;
+            menu.Items.Add(_pause);
             menu.Items.Add(Item("Settings…", openSettings));
             menu.Items.Add(new NativeMenuItemSeparator());
             menu.Items.Add(Item("Quit Repo Watch", quit));
@@ -42,6 +48,15 @@ public sealed class TrayService(ILogger<TrayService> logger) : IDisposable
         {
             logger.LogWarning(ex, "Creating the tray icon failed; the widget stays in the taskbar");
             IsAvailable = false;
+        }
+    }
+
+    /// <summary>Reflects the Pause monitoring setting in the menu.</summary>
+    public void SetPaused(bool paused)
+    {
+        if (_pause is not null)
+        {
+            _pause.IsChecked = paused;
         }
     }
 

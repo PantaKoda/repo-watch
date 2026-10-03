@@ -77,7 +77,10 @@ MonitorCoordinator ─► IRepositoryMonitorFactory (GitHubMonitorFactory) ─�
 - Branch health uses the branch head from the combined-status endpoint (Commit statuses: read), so Repo Watch needs no Contents permission. A head commit with no runs is "No checks", even if older commits failed.
 - PR checks use REST because GraphQL commit data (`statusCheckRollup`) needs Contents access (denied live). GraphQL partial errors are mapped by path to the affected PR's reviews.
 - Merge state comes from GraphQL `mergeable` (conflicts only). Branch protection and required checks are not read, so nothing is shown as "ready to merge". Team review requests are never treated as "for me".
-- Intervals are targets (active 20 s, normal 90 s, after failure 60 s). A rate limit pauses all polling until the reset. Stage 07 adds ETags, persistence and the bounded scheduler.
+- **Scheduling** (`PollingPolicy`, `PollingConditions`): per-part due times (Actions 20 s active/180 s quiet, PRs 90 s, issues 120 s, metadata 180 s). There is one serial loop per account; focus and active work go first.
+  - Slowdown: hidden ×3, battery ×2, low `RateBudget` ×2. Failures use exponential backoff with jitter. A rate limit pauses until its reset.
+  - Pause monitoring stops all requests. Wake and network return refresh at once.
+- **Caching** (`RepositoryCache`, SQLite migration 2, keyed by account): last good snapshots (restored as "Cached" at start) and REST ETag bodies for conditional requests (`IConditionalCache` in `GitHubApiClient`). Writes go through a per-sign-in `AccountCache`, which refuses writes once sign-out clears the account. There is a bounded in-memory LRU, hourly pruning, and configurable retention (`Cache` options). Never holds tokens.
 
 ## Domain model (Core)
 

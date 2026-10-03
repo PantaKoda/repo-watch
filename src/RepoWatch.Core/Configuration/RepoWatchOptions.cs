@@ -11,6 +11,8 @@ public sealed class RepoWatchOptions
 
     public PollingOptions Polling { get; set; } = new();
 
+    public CacheOptions Cache { get; set; } = new();
+
     public RelayOptions Relay { get; set; } = new();
 }
 
@@ -47,6 +49,16 @@ public sealed class PollingOptions
     public int IssueSeconds { get; set; } = 120;
 
     public int QuietSeconds { get; set; } = 180;
+}
+
+/// <summary>Retention of the local cache of repository data (snapshots and ETag bodies).</summary>
+public sealed class CacheOptions
+{
+    /// <summary>Cached data older than this is deleted.</summary>
+    public int RetentionDays { get; set; } = 30;
+
+    /// <summary>Most cached REST responses kept per account (oldest go first).</summary>
+    public int MaxCachedResponses { get; set; } = 2000;
 }
 
 /// <summary>Optional live-update relay (Stage 10). Polling works without it.</summary>

@@ -186,6 +186,13 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Back() => ShowDetails = false;
 
+    partial void OnShowDetailsChanged(bool value) => UpdateFocus();
+
+    partial void OnSelectedRepositoryChanged(RepositoryRowViewModel? value) => UpdateFocus();
+
+    /// <summary>The repository whose details are open is refreshed first and more often.</summary>
+    private void UpdateFocus() => _monitor.SetFocus(ShowDetails ? SelectedRepository?.Key : null);
+
     /// <summary>Escape: leave details first, then collapse the widget.</summary>
     [RelayCommand]
     private void Collapse()

@@ -43,6 +43,7 @@ internal sealed class FakeDataSource : IRepositoryDataSource
         IsArchived = false,
         DefaultBranch = "main",
         HtmlUrl = new Uri($"https://github.com/octo/repo{id}"),
+        HasIssues = hasIssues,
     }, hasIssues);
 
     public Task<ApiResult<RepositoryInfo>> GetRepositoryAsync(RepositoryKey key, CancellationToken cancellationToken)
@@ -80,11 +81,16 @@ public sealed class PollingMonitorTests
 {
     internal static readonly AccountKey Account = new("github.com", 4242);
 
-    private static readonly PollingIntervals Quiet = new()
+    private static readonly PollingIntervals Quiet = Every(TimeSpan.FromHours(1));
+
+    internal static PollingIntervals Every(TimeSpan interval) => new()
     {
-        Active = TimeSpan.FromHours(1),
-        Normal = TimeSpan.FromHours(1),
-        Failed = TimeSpan.FromHours(1),
+        Active = interval,
+        PullRequests = interval,
+        Issues = interval,
+        Quiet = interval,
+        Failed = interval,
+        MaxBackoff = interval,
     };
 
     private static AccountSettings Watching(params WatchedRepository[] repositories) => new() { Watchlist = repositories };
@@ -230,7 +236,7 @@ public sealed class PollingMonitorTests
         {
             Actions = _ => SectionResult<ActionsState>.Fail(Error(ResourceErrorKind.RateLimited, DateTimeOffset.UtcNow.AddMinutes(30))),
         };
-        using var monitor = Create(source, Watching(Watch(1), Watch(2)), Quiet with { Normal = TimeSpan.Zero, Failed = TimeSpan.Zero });
+        using var monitor = Create(source, Watching(Watch(1), Watch(2)), Every(TimeSpan.Zero));
         await WaitUntil(() => source.Calls.Contains("actions repo1 main"));
         await Task.Delay(300, TestContext.Current.CancellationToken);
 
@@ -245,7 +251,7 @@ public sealed class PollingMonitorTests
     public async Task Disposing_stops_all_requests()
     {
         var source = new FakeDataSource();
-        var monitor = Create(source, Watching(Watch(1)), Quiet with { Normal = TimeSpan.FromMilliseconds(20) });
+        var monitor = Create(source, Watching(Watch(1)), Every(TimeSpan.FromMilliseconds(20)));
         await WaitUntil(() => source.Calls.Count(c => c == "repo 1") >= 2);
 
         monitor.Dispose();
@@ -268,7 +274,11 @@ public sealed class PollingMonitorTests
         var source = new FakeDataSource { Actions = _ => SectionResult<ActionsState>.Ok(new ActionsState { RecentRuns = [running] }) };
         using var monitor = Create(source, Watching(Watch(1)), Quiet with { Active = TimeSpan.FromMilliseconds(20) });
 
-        await WaitUntil(() => source.Calls.Count(c => c == "repo 1") >= 3);
+        // Only the Actions part runs on the active interval; metadata, pull requests and issues keep their own schedule.
+        await WaitUntil(() => source.Calls.Count(c => c.StartsWith("actions", StringComparison.Ordinal)) >= 3);
+        Assert.Equal(1, source.Calls.Count(c => c == "repo 1"));
+        Assert.Equal(1, source.Calls.Count(c => c.StartsWith("pulls", StringComparison.Ordinal)));
+        Assert.Equal(1, source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal)));
     }
 
     [Fact]

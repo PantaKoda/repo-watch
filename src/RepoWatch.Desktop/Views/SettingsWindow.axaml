@@ -23,6 +23,9 @@
         <Button Content="Explore demo data" Command="{Binding EnterDemoCommand}" IsVisible="{Binding !IsDemo}" Margin="0,0,8,8" />
         <Button Content="Exit demo" Command="{Binding ExitDemoCommand}" IsVisible="{Binding IsDemo}" Margin="0,0,8,8" />
       </WrapPanel>
+      <CheckBox Content="Pause monitoring" IsChecked="{Binding MonitoringPaused}" />
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="While paused, Repo Watch sends no requests to GitHub and shows the last data it had. Also available from the tray menu." />
 
       <TextBlock Classes="heading" Text="Widget" />
       <CheckBox Content="Keep the widget above other windows" IsChecked="{Binding AlwaysOnTop}" />

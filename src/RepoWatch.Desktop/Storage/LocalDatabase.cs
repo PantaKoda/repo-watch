@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 namespace RepoWatch.Desktop.Storage;
 
 /// <summary>
-/// The local SQLite database. Holds settings now and cached snapshots in later stages.
+/// The local SQLite database: settings, and per-account caches of repository snapshots and ETags.
 /// Never stores tokens or other secrets.
 /// <para>
 /// Schema migrations are ordered SQL scripts; <c>PRAGMA user_version</c> records how many have
@@ -30,6 +30,27 @@ public sealed class LocalDatabase
             reason      TEXT    NOT NULL,
             backed_up_at TEXT   NOT NULL
         );
+        """,
+
+        // 2: per-account caches of private repository content. Cleared on sign-out; never holds secrets.
+        """
+        CREATE TABLE repository_snapshots (
+            account       TEXT    NOT NULL,
+            repository_id INTEGER NOT NULL,
+            format        INTEGER NOT NULL,
+            json          TEXT    NOT NULL,
+            saved_at      TEXT    NOT NULL,
+            PRIMARY KEY (account, repository_id)
+        );
+        CREATE TABLE http_cache (
+            account  TEXT NOT NULL,
+            url      TEXT NOT NULL,
+            etag     TEXT NOT NULL,
+            body     TEXT NOT NULL,
+            saved_at TEXT NOT NULL,
+            PRIMARY KEY (account, url)
+        );
+        CREATE INDEX http_cache_saved ON http_cache (account, saved_at);
         """,
     ];
 
