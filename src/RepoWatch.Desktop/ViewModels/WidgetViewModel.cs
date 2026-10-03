@@ -327,8 +327,8 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         }
 
         var (label, tone) = StatusPresentation.Connection(_monitor.State);
-        ConnectionLabel = label;
-        ConnectionTone = tone;
+        ConnectionLabel = StatusPresentation.WithRetry(label, _monitor.IsRateLimited, _monitor.RetryAt);
+        ConnectionTone = _monitor.IsRateLimited ? StatusTone.Warning : tone;
         IsDemo = _monitor.State == ConnectionState.Demo;
         IsRefreshing = refreshing;
         HasRepositories = Repositories.Count > 0;

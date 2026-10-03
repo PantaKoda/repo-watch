@@ -150,7 +150,8 @@ internal sealed record MyPullRequestsResponse(
 
 internal sealed record MyPullRequestsData(
     [property: JsonPropertyName("authored")] SearchConnection? Authored,
-    [property: JsonPropertyName("requested")] SearchConnection? Requested);
+    [property: JsonPropertyName("requested")] SearchConnection? Requested,
+    [property: JsonPropertyName("merged")] Connection<MergedNode>? Merged = null);
 
 internal sealed record SearchConnection(
     [property: JsonPropertyName("issueCount")] int IssueCount,
@@ -158,7 +159,16 @@ internal sealed record SearchConnection(
 
 internal sealed record PullRequestsData([property: JsonPropertyName("repository")] PullRequestsRepository? Repository);
 
-internal sealed record PullRequestsRepository([property: JsonPropertyName("pullRequests")] Connection<PullRequestNode>? PullRequests);
+internal sealed record PullRequestsRepository(
+    [property: JsonPropertyName("pullRequests")] Connection<PullRequestNode>? PullRequests,
+    [property: JsonPropertyName("merged")] Connection<MergedNode>? Merged = null);
+
+/// <summary>A recently merged pull request (number, title, URL and merge time only).</summary>
+internal sealed record MergedNode(
+    [property: JsonPropertyName("number")] int Number,
+    [property: JsonPropertyName("title")] string? Title,
+    [property: JsonPropertyName("url")] string? Url,
+    [property: JsonPropertyName("mergedAt")] DateTimeOffset? MergedAt);
 
 internal sealed record PullRequestNode
 {

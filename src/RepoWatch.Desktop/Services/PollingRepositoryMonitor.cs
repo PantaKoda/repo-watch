@@ -153,6 +153,36 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         }
     }
 
+    public bool IsRateLimited
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _pausedUntil is { } until && until > _time.GetUtcNow();
+            }
+        }
+    }
+
+    public DateTimeOffset? RetryAt
+    {
+        get
+        {
+            lock (_gate)
+            {
+                var now = _time.GetUtcNow();
+                if (_pausedUntil is { } until && until > now)
+                {
+                    return until;
+                }
+
+                return State == ConnectionState.Offline && _entries.Count > 0
+                    ? _entries.Values.Select(e => e.NextDue).Min() is var due && due > now ? due : now
+                    : null;
+            }
+        }
+    }
+
     public event EventHandler? Changed;
 
     public void ApplyWatchlist(AccountSettings settings)

@@ -12,6 +12,14 @@ internal static class Program
     public static int Main(string[] args)
     {
         var paths = AppPaths.Resolve();
+
+        // One instance per user and data folder: a second launch shows the running widget and exits.
+        using var instance = new Platform.SingleInstance(paths.DataDirectory);
+        if (!instance.IsFirst)
+        {
+            return instance.SignalFirst(TimeSpan.FromSeconds(3)) ? 0 : 1;
+        }
+
         using var loggerFactory = CreateLoggerFactory(paths);
         var logger = loggerFactory.CreateLogger(typeof(Program));
 
@@ -23,7 +31,7 @@ internal static class Program
             logger.LogError("Configuration error: {Error}", error);
         }
 
-        using var services = CompositionRoot.Build(paths, configuration, loggerFactory);
+        using var services = CompositionRoot.Build(paths, configuration, loggerFactory, instance);
         try
         {
             return BuildAvaloniaApp(() => new App(services)).StartWithClassicDesktopLifetime(args);

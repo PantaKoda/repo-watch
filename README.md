@@ -9,7 +9,7 @@ A Windows-first desktop widget for monitoring GitHub Actions, pull requests and 
 | Item | Version |
 | --- | --- |
 | .NET SDK | 10.0 (LTS), pinned by `global.json` (`10.0.100`, rolls forward to the latest installed 10.0 feature band) |
-| Target framework | `net10.0` |
+| Target framework | `net10.0` (shared projects, tests); the desktop app also builds `net10.0-windows10.0.19041.0`, the Windows build with native notifications |
 | Avalonia | 12.1.3 |
 | Supported Windows | Windows 10 version 1809 or later and Windows 11, x64 and ARM64. Mica backdrop (later stage) requires Windows 11. |
 | macOS / Linux | Shared code builds in CI; **not** release-ready or supported yet. |
@@ -29,13 +29,13 @@ dotnet build RepoWatch.slnx
 ```
 
 ```bash
-dotnet run --project src/RepoWatch.Desktop
+dotnet run --project src/RepoWatch.Desktop -f net10.0-windows10.0.19041.0
 ```
 
 To explore the widget with labeled sample data (no GitHub access needed):
 
 ```bash
-dotnet run --project src/RepoWatch.Desktop -- --demo
+dotnet run --project src/RepoWatch.Desktop -f net10.0-windows10.0.19041.0 -- --demo
 ```
 
 ```bash
@@ -92,7 +92,10 @@ Unknown keys, wrongly typed values, malformed JSON and invalid values stop start
 | --- | --- |
 | `%LOCALAPPDATA%\RepoWatch\repowatch.config.json` | Optional configuration override |
 | Windows Credential Manager, `RepoWatch:github/<host>/<userId>` | GitHub access and refresh tokens. The only place tokens are stored. Removed on sign-out. |
-| `%LOCALAPPDATA%\RepoWatch\repowatch.db` | SQLite database: settings, plus per-account caches of watched repositories' last data and REST ETags (private repository content). The caches are removed for an account on sign-out and pruned after 30 days or when a repository is no longer watched. Never contains tokens. |
+| `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `RepoWatch` | Only while **Start Repo Watch when I sign in** is on; removed when it is turned off. Also visible in Task Manager → Startup apps. |
+| `HKCU\Software\Classes\AppUserModelId\RepoWatch.Desktop` | The app identity Windows needs to show Repo Watch notifications (display name only). |
+| `%LOCALAPPDATA%\RepoWatch\repowatch.db` | SQLite database: settings, plus per-account caches of watched repositories' last data and REST ETags (private repository content). Also the notification history (event keys: repository IDs, branch names, commit SHAs, run attempts; no titles). The caches are removed for an account on sign-out and pruned after 30 days (configurable) or when a repository is no longer watched. Never contains tokens. |
+| `%LOCALAPPDATA%\RepoWatch\diagnostics\` | Diagnostics archives you create from Settings → Export diagnostics: versions, states, counts and redacted logs; no tokens, codes, repository names or content. |
 | `%LOCALAPPDATA%\RepoWatch\logs\` | Daily rolling logs, newest 7 files kept. Tokens and private content must never be logged. |
 
 ## Repository layout

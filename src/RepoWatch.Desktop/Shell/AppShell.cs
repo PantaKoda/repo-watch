@@ -51,6 +51,7 @@ public sealed class AppShell(
     private SystemVisualsWatcher? _visualsWatcher;
     private AppliedMaterial? _lastApplied;
     private bool? _lastMotion;
+    private Platform.Windows.GlobalShortcut? _shortcut;
 
     public bool CanHideToTray => tray.IsAvailable;
 
@@ -109,8 +110,37 @@ public sealed class AppShell(
         _visualsWatcher.Changed += (_, _) => QueueVisuals();
         _widget.Closing += OnWidgetClosing;
         _widget.Deactivated += (_, _) => _widgetDeactivatedAt = DateTimeOffset.UtcNow;
-        desktop.MainWindow = _widget;
+        // Started by the OS at sign-in with "Start minimized": stay in the tray until asked.
+        var startedAtLogin = desktop.Args?.Contains(Platform.Startup.StartupArguments.AtLogin, StringComparer.OrdinalIgnoreCase) == true;
+        if (!(startedAtLogin && settings.App.Startup.StartMinimized && CanHideToTray))
+        {
+            desktop.MainWindow = _widget;
+        }
+
         desktop.ShutdownRequested += (_, _) => settings.Flush();
+
+        // A second launch asks this one to show the widget.
+        if (services.GetService<Platform.SingleInstance>() is { } instance)
+        {
+            instance.ActivationRequested += (_, _) => Dispatcher.UIThread.Post(ShowWidget);
+            instance.Listen();
+        }
+
+        ApplyStartupRegistration();
+        _shortcut = new Platform.Windows.GlobalShortcut(_widget, ToggleFromShortcut);
+        ApplyShortcut();
+        settings.AppChanged += (_, e) =>
+        {
+            if (e.Previous.Startup != e.Current.Startup)
+            {
+                Dispatcher.UIThread.Post(ApplyStartupRegistration);
+            }
+
+            if (e.Previous.Window.ShowHideShortcut != e.Current.Window.ShowHideShortcut)
+            {
+                Dispatcher.UIThread.Post(ApplyShortcut);
+            }
+        };
 
         _clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _clock.Tick += (_, _) => _widgetViewModel.Tick();
@@ -118,6 +148,7 @@ public sealed class AppShell(
 
         // The coordinator drives what the widget observes from the account and watchlist.
         services.GetRequiredService<MonitorCoordinator>();
+        services.GetRequiredService<NotificationService>();
 
         // Restore the signed-in account in the background; the widget shows the outcome.
         _ = RestoreAccountAsync();
@@ -304,6 +335,7 @@ public sealed class AppShell(
     public void Dispose()
     {
         _clock?.Stop();
+        _shortcut?.Dispose();
         _visualsWatcher?.Dispose();
         _widgetViewModel?.Dispose();
     }
@@ -355,6 +387,47 @@ public sealed class AppShell(
         if (Interlocked.Exchange(ref _visualsQueued, 1) == 0)
         {
             Dispatcher.UIThread.Post(ApplyVisuals, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>The setting is the source of truth; this also repairs an entry pointing at an old location.</summary>
+    private void ApplyStartupRegistration()
+    {
+        var startup = services.GetRequiredService<Platform.Startup.IStartupRegistration>();
+        var wanted = settings.App.Startup.StartAtLogin;
+        // Turning off always removes the entry (also one left by an older install location).
+        if (startup.IsSupported && (wanted ? !startup.IsRegistered : true) && !startup.Set(wanted))
+        {
+            logger.LogWarning("Couldn't {Change} start at sign-in", wanted ? "turn on" : "turn off");
+        }
+    }
+
+    private void ApplyShortcut()
+    {
+        if (_shortcut is null)
+        {
+            return;
+        }
+
+        var wanted = settings.App.Window.ShowHideShortcut;
+        var ok = _shortcut.Set(wanted);
+        var integration = services.GetRequiredService<DesktopIntegration>();
+        integration.SetShortcutStatus(!wanted ? "The Show/Hide shortcut is off."
+            : ok ? $"{Platform.Windows.GlobalShortcut.Description} shows or hides the widget from anywhere."
+            : OperatingSystem.IsWindows()
+                ? $"{Platform.Windows.GlobalShortcut.Description} is already used by another app, so it isn't available; use the tray icon."
+                : "The Show/Hide shortcut isn't available on this system; use the tray icon.");
+    }
+
+    private void ToggleFromShortcut()
+    {
+        if (_widget is { IsVisible: true } && _widget.WindowState != WindowState.Minimized)
+        {
+            HideWidget();
+        }
+        else
+        {
+            ShowWidget();
         }
     }
 

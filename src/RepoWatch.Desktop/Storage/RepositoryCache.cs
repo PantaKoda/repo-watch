@@ -68,6 +68,7 @@ public sealed class RepositoryCache(LocalDatabase database, TimeProvider time, I
                 command.CommandText = """
                     DELETE FROM repository_snapshots WHERE account = $account;
                     DELETE FROM http_cache WHERE account = $account;
+                    DELETE FROM notification_history WHERE account = $account;
                     """;
                 command.Parameters.AddWithValue("$account", account.StorageKey);
                 command.ExecuteNonQuery();
@@ -332,6 +333,7 @@ public sealed class AccountCache : IConditionalCache
             Execute(connection, transaction, """
                 DELETE FROM repository_snapshots WHERE account = $account AND saved_at < $cutoff;
                 DELETE FROM http_cache WHERE account = $account AND saved_at < $cutoff;
+                DELETE FROM notification_history WHERE account = $account AND created_at < $cutoff;
                 """, ("$cutoff", cutoff));
 
             foreach (var id in Ids(connection, transaction).Where(id => !ids.Contains(id)))
@@ -356,6 +358,45 @@ public sealed class AccountCache : IConditionalCache
             _index.Clear();
             _recent.Clear();
         }
+    }
+
+    /// <summary>
+    /// Records a notification event once. Returns false if it was recorded before (announced, suppressed
+    /// or part of the silent baseline), or if this sign-in has ended.
+    /// </summary>
+    public bool TryRecordNotification(string key, string outcome)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        var added = false;
+        _owner.Write(_account, _epoch, "recording a notification", connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT OR IGNORE INTO notification_history (account, key, outcome, created_at) VALUES ($account, $key, $outcome, $now);";
+            command.Parameters.AddWithValue("$account", _account.StorageKey);
+            command.Parameters.AddWithValue("$key", key);
+            command.Parameters.AddWithValue("$outcome", outcome);
+            command.Parameters.AddWithValue("$now", _owner.Now());
+            added = command.ExecuteNonQuery() == 1;
+        });
+        return added;
+    }
+
+    /// <summary>Recorded notification outcomes, newest first (for tests and diagnostics).</summary>
+    public IReadOnlyList<(string Key, string Outcome)> NotificationHistory()
+    {
+        var rows = new List<(string, string)>();
+        _owner.Run("reading notification history", connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT key, outcome FROM notification_history WHERE account = $account ORDER BY created_at DESC, rowid DESC;";
+            command.Parameters.AddWithValue("$account", _account.StorageKey);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add((reader.GetString(0), reader.GetString(1)));
+            }
+        });
+        return rows;
     }
 
     /// <summary>Cached responses on disk (for tests and diagnostics).</summary>

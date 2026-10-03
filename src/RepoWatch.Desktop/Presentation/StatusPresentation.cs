@@ -89,6 +89,15 @@ public static class StatusPresentation
         _ => "Merge state unknown",
     };
 
+    /// <summary>"Rate limited · until 14:30" or "Offline · retry 14:05": what happens next, not just the state.</summary>
+    public static string WithRetry(string label, bool rateLimited, DateTimeOffset? retryAt)
+    {
+        var at = retryAt?.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture);
+        return rateLimited && at is not null ? $"Rate limited · until {at}"
+            : at is not null ? $"{label} · retry {at}"
+            : label;
+    }
+
     public static (string Label, StatusTone Tone) Connection(ConnectionState state) => state switch
     {
         ConnectionState.Demo => ("Demo data", StatusTone.Neutral),

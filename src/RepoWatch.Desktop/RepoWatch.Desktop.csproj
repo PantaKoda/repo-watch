@@ -5,6 +5,15 @@
     <RootNamespace>RepoWatch.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!--
+      net10.0 is the portable build (tests, later macOS/Linux). The Windows build adds native toast
+      notifications through the Windows SDK projections; code for it is compiled only under WINDOWS.
+      EnableWindowsTargeting lets the solution build on macOS/Linux CI as well.
+    -->
+    <TargetFramework />
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>
