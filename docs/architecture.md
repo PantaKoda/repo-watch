@@ -128,3 +128,12 @@ No client secret or private key is ever embedded in the desktop app. Server-only
 - **Tokens:** radii, type sizes and paddings are defined in `App.axaml`. Colors live in the light/dark theme dictionaries. Status colors are fixed; the accent (`AccentPalette`) only re-colors the HUD brushes and the Fluent accent.
 - **Materials:** `WindowMaterialService` requests a material and reads back what was achieved. Only the background layers take the surface opacity. The light theme keeps at least 75% so dark text stays readable.
 - **Classes on windows:** `reduce-motion` (Motion setting or Windows animation preference; also set while the widget is hidden) and `compact` (Density).
+
+## Desktop integration (Stage 09)
+
+- **Builds:** `net10.0` (portable, tests) and `net10.0-windows10.0.19041.0` (Windows app). Windows-only code sits under `Platform/Windows` and `#if WINDOWS`, or behind `OperatingSystem.IsWindows()`.
+- **Notifications:** `NotificationService` observes the current monitor and runs `NotificationPolicy.Detect(previous, current)` per repository.
+  - Each event key is recorded once in `notification_history` with its outcome (shown, baseline, off or quiet), so nothing is announced twice or bursts out later.
+  - Delivery goes through `INotificationSink`: `WindowsToastSink` in the Windows build, unsupported elsewhere.
+- **Startup:** `IStartupRegistration` (Windows Run key). `SingleInstance` (mutex plus named pipe). `GlobalShortcut` (RegisterHotKey on the widget window). `DesktopIntegration` reports each one's availability to Settings.
+- **Diagnostics:** `DiagnosticsService` writes a zip of the summary and the logs, all passed through `Redactor`.

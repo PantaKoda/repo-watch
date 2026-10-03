@@ -95,6 +95,9 @@ public sealed record WindowSettings : SettingsRecord
 
     public bool Expanded { get; init; }
 
+    /// <summary>System-wide shortcut that shows or hides the widget, where the platform allows one.</summary>
+    public bool ShowHideShortcut { get; init; } = true;
+
     /// <summary>Remembered placements, one per display configuration.</summary>
     public IReadOnlyList<WindowPlacement> Placements { get; init; } = [];
 }

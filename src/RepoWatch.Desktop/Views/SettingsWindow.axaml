@@ -27,9 +27,36 @@
       <TextBlock Classes="secondary" TextWrapping="Wrap"
                  Text="While paused, Repo Watch sends no requests to GitHub and shows the last data it had. Also available from the tray menu." />
 
+      <TextBlock Classes="heading" Text="Notifications" />
+      <CheckBox Content="Show notifications" IsChecked="{Binding NotificationsEnabled}" />
+      <StackPanel Margin="24,0,0,0" Spacing="2" IsEnabled="{Binding NotificationsEnabled}">
+        <CheckBox Content="CI starts failing on a tracked branch" IsChecked="{Binding NotifyCiFailure}" />
+        <CheckBox Content="CI passes again" IsChecked="{Binding NotifyCiRecovery}" />
+        <CheckBox Content="Someone requests my review" IsChecked="{Binding NotifyReviewRequested}" />
+        <CheckBox Content="A pull request I track is merged" IsChecked="{Binding NotifyMerged}" />
+        <CheckBox Content="Hide private repository names and titles in notifications" IsChecked="{Binding HidePrivateDetails}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <CheckBox Content="Quiet hours from" IsChecked="{Binding QuietHoursEnabled}" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding Hours}" SelectedItem="{Binding QuietStart}" IsEnabled="{Binding QuietHoursEnabled}" AutomationProperties.Name="Quiet hours start" />
+          <TextBlock Text="to" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding Hours}" SelectedItem="{Binding QuietEnd}" IsEnabled="{Binding QuietHoursEnabled}" AutomationProperties.Name="Quiet hours end" />
+        </StackPanel>
+      </StackPanel>
+      <TextBlock Classes="secondary" TextWrapping="Wrap"
+                 Text="Each event is announced once. Events during quiet hours, or of a switched-off type, are skipped, not saved for later. Per-repository switches are in Manage repositories." />
+      <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding NotificationStatus}" />
+      <Button Content="Show a test notification" Command="{Binding TestNotificationCommand}" />
+
+      <TextBlock Classes="heading" Text="Startup" />
+      <CheckBox Content="Start Repo Watch when I sign in" IsChecked="{Binding StartAtLogin}" IsEnabled="{Binding StartupSupported}" />
+      <CheckBox Content="Start minimized to the tray" IsChecked="{Binding StartMinimized}" IsEnabled="{Binding CanStartMinimized}" Margin="24,0,0,0" />
+      <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding StartupStatus}" />
+
       <TextBlock Classes="heading" Text="Widget" />
       <CheckBox Content="Keep the widget above other windows" IsChecked="{Binding AlwaysOnTop}" />
       <CheckBox Content="Lock the widget's position" IsChecked="{Binding PositionLocked}" />
+      <CheckBox Content="Show/Hide shortcut (Ctrl+Alt+R)" IsChecked="{Binding ShowHideShortcut}" />
+      <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding ShortcutStatus}" />
       <TextBlock Text="{Binding TrayDescription}" TextWrapping="Wrap" Classes="secondary" />
       <Button Content="Show widget" Command="{Binding ShowWidgetCommand}" />
 
@@ -67,6 +94,7 @@
       <SelectableTextBlock Text="{Binding DataDirectory, StringFormat='Data folder: {0}'}" TextWrapping="Wrap" />
       <StackPanel Orientation="Horizontal" Spacing="8">
         <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />
+        <Button Content="Export diagnostics" Command="{Binding ExportDiagnosticsCommand}" IsVisible="{Binding CanExportDiagnostics}" />
         <Button Content="Quit Repo Watch" Command="{Binding QuitCommand}" />
       </StackPanel>
       <TextBlock Text="{Binding ActionMessage}" IsVisible="{Binding HasActionMessage}" TextWrapping="Wrap" Classes="secondary" />

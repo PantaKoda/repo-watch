@@ -52,6 +52,18 @@ public sealed class LocalDatabase
         );
         CREATE INDEX http_cache_saved ON http_cache (account, saved_at);
         """,
+
+        // 3: notification history per account, so an event is announced once, also across restarts.
+        // Keys hold repository IDs, branch names, commit SHAs and run attempts, never titles.
+        """
+        CREATE TABLE notification_history (
+            account    TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            outcome    TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (account, key)
+        );
+        """,
     ];
 
     private readonly string _connectionString;

@@ -12,7 +12,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 06 | Fetch and normalize real GitHub data | completed |
 | 07 | Durable caching and efficient synchronization | completed |
 | 08 | Modern visuals and real transparency | blocked (only the DPI check at 125%/150% remains; see Stage 08) |
-| 09 | Desktop behavior and notifications | pending |
+| 09 | Desktop behavior and notifications | completed |
 | 10 | Near-real-time delivery (relay) | pending |
 | 11 | Package and validate the Windows release | pending |
 | 12 | Later macOS/Linux releases | pending |
@@ -558,3 +558,81 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
 
 **Not verified (environment)**
 - **High contrast and remote desktop:** both need system changes or another machine. Their solid fallbacks are unit-tested. The "no transparency granted" fallback (surface painted solid) is unit-tested; it was not seen because this machine grants transparency.
+
+## Stage 09 — Desktop behavior and notifications: completed
+
+**Implemented**
+- **Windows build target:** the desktop project builds `net10.0` (portable; tests, later macOS/Linux) and `net10.0-windows10.0.19041.0` (the Windows app, with native toasts via the Windows SDK projections). `EnableWindowsTargeting` keeps the macOS/Linux CI build working. Run with `-f net10.0-windows10.0.19041.0`.
+- **Start at login:** opt-in, through the per-user Run key (`IStartupRegistration`, `WindowsStartupRegistration`).
+  - The setting is the source of truth: it is reconciled at every start, and a moved executable is re-registered.
+  - **Start minimized** applies only when started by the OS (`--startup`) and a tray is available.
+- **Single instance per user and data folder** (named mutex plus a current-user-only named pipe): a second launch shows the running widget and exits.
+- **Show/Hide shortcut Ctrl+Alt+R** (`RegisterHotKey` on the widget's window, which keeps its handle while hidden). It can be turned off. If another app owns the combination, Settings says so and points to the tray icon. Position lock already existed.
+- **Notifications** (`NotificationPolicy` in Core, `NotificationService`, `WindowsToastSink`):
+  - **Events:**
+    - CI failure: a tracked branch head is failing, keyed by commit and the failing runs' attempts, so an old failed run reappearing in a list doesn't count but a failing re-run does.
+    - CI recovery: failing, then passing.
+    - A direct review request (team requests don't count).
+    - A merge of a tracked PR. The "recently merged" PRs are now fetched in the same GraphQL query; in "Mine" scope, only PRs the user authored.
+  - **Once only:** each event is recorded once per account in SQLite (`notification_history`, migration 3) with its outcome: shown, baseline, off or quiet. It is never announced twice, also across restarts, and nothing suppressed bursts out later.
+  - **Silent baseline:** the first observation of a repository (start, account change, re-added repository) records events without announcing them. Demo data never notifies, and removed repositories stop at once.
+  - **Settings:** master switch, one switch per event type, per-repository switch (Manage repositories), quiet hours with whole-hour start and end, "Hide private repository names and titles", a status line reflecting the OS setting, and **Show a test notification**.
+  - **Toasts:** plain text only. Clicking one opens the GitHub page through the validated browser adapter; nothing takes focus before the click. Windows Do not disturb and per-app switches apply.
+  - Sign-out clears the account's notification history, through the same per-sign-in cache handle, so nothing is written back afterwards.
+- **Connection state:** the widget badge shows what happens next: "Offline · retry 14:05" or "Rate limited · until 14:30". "Reconnect required" keeps its single action.
+- **Diagnostics export** (Settings → About): a zip in `diagnostics/` with versions, OS, account, connection, pause, visibility and power state, notification availability, counts per attention level, and the rotated logs. Everything passes through `Redactor` (GitHub tokens of every prefix, Bearer headers, token/code fields, device user codes). No settings documents, cached data, repository names, titles or bodies. Logs already roll daily with 7 files kept and 5 MB per day.
+
+**Checks run**
+- `dotnet test --solution RepoWatch.slnx`: 367 passed before the review (372 after).
+- **New tests:**
+  - **Core policy:**
+    - the first observation is a silent baseline;
+    - a failure is keyed by commit and attempt, so a re-run is a new event;
+    - an old failed run in the list isn't a branch failure;
+    - recovery needs a failure first;
+    - only direct review requests count;
+    - only tracked merges count;
+    - private details are hidden;
+    - each per-type and per-repository switch works.
+  - **Service:**
+    - no burst at start;
+    - announced once, also across a restart;
+    - quiet hours skip events without saving them for later;
+    - switched-off repositories and types stay silent;
+    - hidden private details;
+    - a refusing OS and then re-enabled: no burst;
+    - removed repositories and demo data are silent;
+    - sign-out stops notifications and clears the history.
+  - **Redaction** cases.
+  - **The diagnostics archive** contains no token and no login or repository names.
+  - **Single-instance activation**, with independent data folders.
+  - **Startup registration** against a test registry key, never the real Run key: write, detect a moved executable, remove, idempotent.
+  - **The Settings controls.**
+- **Real app** (Windows build, Debug, signed out, fresh data folder):
+  1. With Start at login on, the real Run entry was `"…\RepoWatch.exe" --startup`. A `--startup` launch with Start minimized stayed hidden in the tray.
+  2. A second launch exited with code 0, leaving one instance, and the first instance's widget became visible.
+  3. Ctrl+Alt+R hid the widget, and pressing it again showed it.
+  4. Idle while signed out with the widget visible, over 20 s: 0.01% of all cores' CPU, 174 MB working set, 124 MB private.
+  5. Turning Start at login off removed the Run entry at the next start. Nothing was left registered afterwards.
+- **A real Windows toast** shown through `WindowsToastSink` from the Windows build. Windows reported availability Enabled; the toast appeared titled "Repo Watch" (screenshot `artifacts/screenshots/stage09/toast.png`, not committed).
+
+**Review of PR #9 (all findings fixed)**
+- **No history at restart.** Data restored from the cache is a baseline, not a previous state, so the first live refresh after a restart doesn't announce what happened while Repo Watch was closed. Service test: start from a cached snapshot.
+- **Review requests are transitions.** The event is the change from "not requested" to "requested", keyed by the pull request's update time. Pushes don't repeat it, and a re-request after reviewing is a new event.
+- **CI failure** announces only failures that weren't already failing on that branch, so fewer failures after a re-run is not news.
+- **Merges in "Mine" mode** come from the repository's recently merged list (as in "All"), filtered to tracked pull requests. That also covers ones under review. The service remembers pull requests seen open in the last hour, so a merge that shows a poll late is still caught.
+- **SingleInstance:**
+  - The pipe name includes the session.
+  - The listener waits 500 ms after IOException or UnauthorizedAccessException instead of spinning.
+  - The parallel test run exposed a real bug: `ReleaseMutex` throws when `Dispose` runs on another thread. The handle is now just closed (ownership never depends on waiting).
+- `dotnet test`: 372 passed (three full runs). The real-app checks 1–5 were repeated with the same results.
+
+**Remaining limitations**
+- **Clicking a toast after Repo Watch has exited** does nothing: there is no COM activator. While it runs, clicks open the page. The toast has no app icon yet.
+- **Live notifications from real GitHub events** weren't triggered: that would mean causing a CI failure or a review request in a real repository, which is a repository mutation that isn't authorized. The event logic is covered end to end with fixtures.
+- **Network use while signed in and polling** was not measured: that needs a device-flow sign-in. Signed-out idle CPU and memory are recorded above.
+- **Old history:** notification history older than the retention period (30 days) is pruned. A state that has been failing for longer than that would be announced once more after a restart.
+- **Merges** are found among the 10 most recently merged pull requests of the repository.
+
+**Next concrete task**
+- Stage 10: the relay. That means an ASP.NET Core webhook receiver with signature verification and durable deliveries, plus authenticated SSE, with the desktop client falling back to polling.

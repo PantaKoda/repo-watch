@@ -18,9 +18,14 @@ namespace RepoWatch.Desktop;
 
 internal static class CompositionRoot
 {
-    public static ServiceProvider Build(AppPaths paths, ConfigurationLoadResult configuration, ILoggerFactory loggerFactory)
+    public static ServiceProvider Build(AppPaths paths, ConfigurationLoadResult configuration, ILoggerFactory loggerFactory, SingleInstance? instance = null)
     {
         var services = new ServiceCollection();
+        if (instance is not null)
+        {
+            services.AddSingleton(instance);
+        }
+
         services.AddSingleton(paths);
         services.AddSingleton(configuration);
         services.AddSingleton(configuration.Options);
@@ -53,6 +58,17 @@ internal static class CompositionRoot
         services.AddSingleton<AccessCatalogService>();
         services.AddSingleton<PollingConditions>(sp => new PollingConditions(sp.GetRequiredService<SettingsService>(), sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IRepositoryMonitorFactory, GitHubMonitorFactory>();
+#if WINDOWS
+        services.AddSingleton<Platform.Notifications.INotificationSink, Platform.Windows.WindowsToastSink>();
+#else
+        services.AddSingleton<Platform.Notifications.INotificationSink, Platform.Notifications.UnsupportedNotificationSink>();
+#endif
+        services.AddSingleton<NotificationService>();
+        services.AddSingleton<Platform.Startup.IStartupRegistration>(_ => OperatingSystem.IsWindows() && Environment.ProcessPath is { } exe
+            ? new Platform.Startup.WindowsStartupRegistration(exe)
+            : new Platform.Startup.UnsupportedStartupRegistration());
+        services.AddSingleton<DiagnosticsService>();
+        services.AddSingleton<DesktopIntegration>();
         services.AddSingleton<MonitorCoordinator>();
         services.AddSingleton<AvatarLoader>();
 

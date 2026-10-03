@@ -47,6 +47,12 @@ public interface IRepositoryMonitor
 
     bool IsRefreshing { get; }
 
+    /// <summary>When requests resume, if they are held back: a rate-limit reset, or the next attempt while offline.</summary>
+    DateTimeOffset? RetryAt => null;
+
+    /// <summary>True while GitHub's rate limit holds requests back (see <see cref="RetryAt"/>).</summary>
+    bool IsRateLimited => false;
+
     /// <summary>Raised when any of the above changes. May be raised on any thread.</summary>
     event EventHandler? Changed;
 

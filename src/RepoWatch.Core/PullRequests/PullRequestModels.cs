@@ -108,9 +108,15 @@ public sealed record PullRequestEntry
     public Resource<ReviewSummary> Reviews { get; init; } = Resource<ReviewSummary>.NotLoaded;
 }
 
+/// <summary>A pull request that was merged recently; used to notify when a tracked pull request merges.</summary>
+public sealed record MergedPullRequest(int Number, string Title, Uri HtmlUrl, DateTimeOffset MergedAt);
+
 public sealed record PullRequestsState
 {
     public IReadOnlyList<PullRequestEntry> Items { get; init; } = [];
 
     public required ItemCount OpenCount { get; init; }
+
+    /// <summary>Most recently merged pull requests in the same scope (newest first).</summary>
+    public IReadOnlyList<MergedPullRequest> RecentlyMerged { get; init; } = [];
 }

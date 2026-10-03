@@ -16,10 +16,17 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
     private readonly WatchlistService _watchlist;
     private readonly VisualStateService _visuals;
+    private readonly DesktopIntegration? _integration;
     private bool _applying;
 
-    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths, VisualStateService visuals)
+    public SettingsViewModel(SettingsService settings, MonitorHost monitors, IShell shell, IUiDispatcher dispatcher, AccountViewModel account, WatchlistService watchlist, AppPaths paths, VisualStateService visuals, DesktopIntegration? integration = null)
     {
+        _integration = integration;
+        if (_integration is not null)
+        {
+            _integration.Changed += OnIntegrationChanged;
+        }
+
         _visuals = visuals;
         _visuals.Changed += OnVisualsChanged;
         _settings = settings;
@@ -56,6 +63,50 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     public IReadOnlyList<AccentPreset> Accents => AccentPalette.Presets;
 
     public IReadOnlyList<Density> Densities { get; } = Enum.GetValues<Density>();
+
+    /// <summary>Whole hours for quiet hours, shown as "22:00".</summary>
+    public IReadOnlyList<string> Hours { get; } = Enumerable.Range(0, 24).Select(h => $"{h:00}:00").ToList();
+
+    [ObservableProperty] public partial bool NotificationsEnabled { get; set; }
+
+    [ObservableProperty] public partial bool NotifyCiFailure { get; set; }
+
+    [ObservableProperty] public partial bool NotifyCiRecovery { get; set; }
+
+    [ObservableProperty] public partial bool NotifyReviewRequested { get; set; }
+
+    [ObservableProperty] public partial bool NotifyMerged { get; set; }
+
+    /// <summary>Leave private repositories' names and titles out of notification text.</summary>
+    [ObservableProperty] public partial bool HidePrivateDetails { get; set; }
+
+    [ObservableProperty] public partial bool QuietHoursEnabled { get; set; }
+
+    [ObservableProperty] public partial string QuietStart { get; set; } = "22:00";
+
+    [ObservableProperty] public partial string QuietEnd { get; set; } = "07:00";
+
+    [ObservableProperty] public partial string NotificationStatus { get; private set; } = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanStartMinimized))]
+    public partial bool StartAtLogin { get; set; }
+
+    [ObservableProperty] public partial bool StartMinimized { get; set; }
+
+    public bool CanStartMinimized => StartAtLogin && StartupSupported;
+
+    public bool StartupSupported => _integration?.Startup.IsSupported == true;
+
+    public string StartupStatus => StartupSupported
+        ? "Off by default. You can also turn it off in Task Manager → Startup apps."
+        : "Starting at sign-in isn't supported on this system yet.";
+
+    [ObservableProperty] public partial bool ShowHideShortcut { get; set; }
+
+    [ObservableProperty] public partial string ShortcutStatus { get; private set; } = "";
+
+    public bool CanExportDiagnostics => _integration?.CanExportDiagnostics == true;
 
     public double MinOpacityPercent => AppearanceSettings.MinBackgroundOpacity * 100;
 
@@ -130,6 +181,11 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _monitors.CurrentChanged -= OnMonitorChanged;
         _watchlist.Changed -= OnWatchlistChanged;
         _visuals.Changed -= OnVisualsChanged;
+        if (_integration is not null)
+        {
+            _integration.Changed -= OnIntegrationChanged;
+        }
+
         Account.Dispose();
     }
 
@@ -164,6 +220,80 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     partial void OnAccentChanged(AccentPreset value) => Save(s => s with { Appearance = s.Appearance with { AccentColor = value?.Hex } });
 
     partial void OnDensityChanged(Density value) => Save(s => s with { Appearance = s.Appearance with { Density = value } });
+
+    partial void OnNotificationsEnabledChanged(bool value) => Save(s => s with { Notifications = s.Notifications with { Enabled = value } });
+
+    partial void OnNotifyCiFailureChanged(bool value) => Save(s => s with { Notifications = s.Notifications with { CiFailure = value } });
+
+    partial void OnNotifyCiRecoveryChanged(bool value) => Save(s => s with { Notifications = s.Notifications with { CiRecovery = value } });
+
+    partial void OnNotifyReviewRequestedChanged(bool value) => Save(s => s with { Notifications = s.Notifications with { ReviewRequested = value } });
+
+    partial void OnNotifyMergedChanged(bool value) => Save(s => s with { Notifications = s.Notifications with { PullRequestMerged = value } });
+
+    partial void OnHidePrivateDetailsChanged(bool value) => Save(s => s with { Notifications = s.Notifications with { HidePrivateDetails = value } });
+
+    partial void OnQuietHoursEnabledChanged(bool value) => Save(s => s with { Notifications = s.Notifications with { QuietHours = s.Notifications.QuietHours with { Enabled = value } } });
+
+    partial void OnQuietStartChanged(string value) => Save(s => s with { Notifications = s.Notifications with { QuietHours = s.Notifications.QuietHours with { Start = ParseHour(value) } } });
+
+    partial void OnQuietEndChanged(string value) => Save(s => s with { Notifications = s.Notifications with { QuietHours = s.Notifications.QuietHours with { End = ParseHour(value) } } });
+
+    partial void OnStartAtLoginChanged(bool value) => Save(s => s with { Startup = s.Startup with { StartAtLogin = value } });
+
+    partial void OnStartMinimizedChanged(bool value) => Save(s => s with { Startup = s.Startup with { StartMinimized = value } });
+
+    partial void OnShowHideShortcutChanged(bool value) => Save(s => s with { Window = s.Window with { ShowHideShortcut = value } });
+
+    [RelayCommand]
+    private void TestNotification()
+    {
+        var shown = _integration?.ShowTestNotification() == true;
+        UpdateIntegrationStatus();
+        if (!shown)
+        {
+            NotificationStatus += " The test notification wasn't shown.";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportDiagnosticsAsync()
+    {
+        try
+        {
+            var file = _integration?.ExportDiagnostics();
+            ActionMessage = file is null
+                ? "Diagnostics aren't available in this build."
+                : $"Saved {Path.GetFileName(file)} in the diagnostics folder of the data folder. It contains versions, states, counts and logs with secrets removed; no repository names or content.";
+            if (file is not null)
+            {
+                await _shell.OpenDataFolderAsync();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ActionMessage = $"Couldn't write the diagnostics archive ({ex.GetType().Name}).";
+        }
+    }
+
+    private static TimeOnly ParseHour(string value) =>
+        int.TryParse(value.AsSpan(0, Math.Min(2, value.Length)), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var hour)
+            ? new TimeOnly(Math.Clamp(hour, 0, 23), 0)
+            : new TimeOnly(22, 0);
+
+    private void OnIntegrationChanged(object? sender, EventArgs e) => _dispatcher.Post(UpdateIntegrationStatus);
+
+    private void UpdateIntegrationStatus()
+    {
+        ShortcutStatus = _integration?.ShortcutStatus ?? "The Show/Hide shortcut isn't available here.";
+        NotificationStatus = (_integration?.Notifications ?? Platform.Notifications.NotificationAvailability.Unsupported) switch
+        {
+            Platform.Notifications.NotificationAvailability.Available => "Notifications are shown by the system and follow its Do not disturb settings.",
+            Platform.Notifications.NotificationAvailability.DisabledByUser => "Notifications for Repo Watch are turned off in the system settings (Settings → System → Notifications).",
+            Platform.Notifications.NotificationAvailability.DisabledByPolicy => "Notifications are turned off by your organization's policy.",
+            _ => "Notifications aren't supported in this build or on this system.",
+        };
+    }
 
     private void OnVisualsChanged(object? sender, EventArgs e) => _dispatcher.Post(() => VisualStatus = _visuals.Describe());
 
@@ -210,6 +340,20 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             Motion = app.Appearance.Motion;
             Accent = AccentPalette.Find(app.Appearance.AccentColor);
             Density = app.Appearance.Density;
+            var notifications = app.Notifications;
+            NotificationsEnabled = notifications.Enabled;
+            NotifyCiFailure = notifications.CiFailure;
+            NotifyCiRecovery = notifications.CiRecovery;
+            NotifyReviewRequested = notifications.ReviewRequested;
+            NotifyMerged = notifications.PullRequestMerged;
+            HidePrivateDetails = notifications.HidePrivateDetails;
+            QuietHoursEnabled = notifications.QuietHours.Enabled;
+            QuietStart = $"{notifications.QuietHours.Start.Hour:00}:00";
+            QuietEnd = $"{notifications.QuietHours.End.Hour:00}:00";
+            StartAtLogin = app.Startup.StartAtLogin;
+            StartMinimized = app.Startup.StartMinimized;
+            ShowHideShortcut = app.Window.ShowHideShortcut;
+            UpdateIntegrationStatus();
             VisualStatus = _visuals.Describe();
             IsDemo = _monitors.IsDemo;
             StorageProblem = _settings.Problem;
@@ -227,6 +371,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         if (before.Window.AlwaysOnTop != after.Window.AlwaysOnTop
             || before.Window.PositionLocked != after.Window.PositionLocked
             || before.MonitoringPaused != after.MonitoringPaused
+            || before.Notifications != after.Notifications
+            || before.Startup != after.Startup
+            || before.Window.ShowHideShortcut != after.Window.ShowHideShortcut
             || before.Appearance != after.Appearance)
         {
             _dispatcher.Post(Load);
