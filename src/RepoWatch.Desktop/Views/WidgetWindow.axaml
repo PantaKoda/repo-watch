@@ -190,6 +190,12 @@
           </WrapPanel>
         </StackPanel>
 
+        <!-- Restoring the stored sign-in at startup -->
+        <StackPanel IsVisible="{Binding ShowConnectingState}" Margin="16" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="Connecting to GitHub…" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock TextWrapping="Wrap" Text="Checking your saved sign-in." />
+        </StackPanel>
+
         <!-- Session expired or revoked: one explicit action, no retry loop -->
         <StackPanel IsVisible="{Binding ShowReconnectState}" Margin="16" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="Reconnect to GitHub" FontSize="16" FontWeight="SemiBold" />

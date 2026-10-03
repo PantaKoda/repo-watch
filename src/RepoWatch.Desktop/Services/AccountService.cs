@@ -22,16 +22,21 @@ public enum SignInOutcome
 
 public sealed record SignInResult(SignInOutcome Outcome, string? Message = null);
 
+/// <summary>A device-flow sign-in in progress. Contains only the user code, never the device code.</summary>
+public sealed record SignInFlow(string? UserCode, Uri? VerificationUri, DateTimeOffset ExpiresAt, string Status);
+
 /// <summary>
 /// The single active GitHub account: restoring it at startup, signing in with the device flow,
 /// signing out, and turning a rejected session into a visible reconnect state. Settings and cached
 /// data are keyed by host + user ID; tokens live only in the credential store.
+/// The sign-in flow belongs to this service, not to a window, so closing settings does not lose it.
 /// </summary>
 public sealed class AccountService : IDisposable
 {
     private readonly RepoWatchOptions _options;
     private readonly GitHubEndpoints _endpoints;
     private readonly HttpClient _http;
+    private readonly ICredentialStore _secureStore;
     private readonly SettingsService _settings;
     private readonly MonitorHost _monitors;
     private readonly IUiDispatcher _dispatcher;
@@ -41,6 +46,7 @@ public sealed class AccountService : IDisposable
     private readonly GitHubUserClient _users;
     private ICredentialStore _store;
     private AccountSession? _session;
+    private CancellationTokenSource? _flowCancel;
     private int _generation;
 
     public AccountService(
@@ -50,6 +56,7 @@ public sealed class AccountService : IDisposable
         _options = options;
         _endpoints = endpoints;
         _http = http;
+        _secureStore = store;
         _store = store;
         _settings = settings;
         _monitors = monitors;
@@ -69,9 +76,18 @@ public sealed class AccountService : IDisposable
     /// <summary>Why the account is offline or needs reconnecting, for display.</summary>
     public string? Detail { get; private set; }
 
-    public bool CredentialsArePersistent => _store.IsPersistent;
+    /// <summary>Set when tokens are in use but could not be saved securely (they last for this session only).</summary>
+    public string? StorageWarning { get; private set; }
+
+    public bool CredentialsArePersistent => _store.IsPersistent && StorageWarning is null;
 
     public string CredentialStorage => _store.Description;
+
+    /// <summary>The sign-in in progress, or null.</summary>
+    public SignInFlow? Flow { get; private set; }
+
+    /// <summary>Outcome of the last sign-in attempt that did not succeed (declined, expired, failed, cancelled).</summary>
+    public string? LastSignInMessage { get; private set; }
 
     /// <summary>The active session, for API clients. Null unless signed in or offline.</summary>
     public AccountSession? Session => _session;
@@ -117,9 +133,81 @@ public sealed class AccountService : IDisposable
             return;
         }
 
-        var session = StartSession(account, credential);
+        var session = await StartSessionAsync(account, credential).ConfigureAwait(false);
         await ConfirmIdentityAsync(session, fallbackIdentity, generation, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Runs a complete sign-in owned by this service: requests a code, publishes it in <see cref="Flow"/>,
+    /// calls <paramref name="onCode"/> (e.g. to open the browser) and waits for approval. Closing the
+    /// settings window does not cancel it; <see cref="CancelSignIn"/>, sign-out and quitting do.
+    /// </summary>
+    public async Task StartSignInAsync(Func<Uri, Task>? onCode = null)
+    {
+        if (Flow is not null || !IsSignInConfigured)
+        {
+            return;
+        }
+
+        using var cancel = new CancellationTokenSource();
+        _flowCancel = cancel;
+        LastSignInMessage = null;
+        SetFlow(new SignInFlow(null, null, default, "Requesting a sign-in code from GitHub…"));
+
+        string? message;
+        try
+        {
+            var authorization = await BeginSignInAsync(cancel.Token).ConfigureAwait(false);
+            SetFlow(new SignInFlow(authorization.UserCode, authorization.VerificationUri, authorization.ExpiresAt,
+                "Enter this code on GitHub, then approve Repo Watch."));
+            if (onCode is not null)
+            {
+                await onCode(authorization.VerificationUri).ConfigureAwait(false);
+            }
+
+            var progress = new InlineProgress(p => SetFlow(Flow! with
+            {
+                Status = p.Kind switch
+                {
+                    DeviceFlowProgressKind.SlowedDown => "GitHub asked Repo Watch to check less often. Still waiting for approval…",
+                    DeviceFlowProgressKind.RetryingAfterError => $"Couldn't reach GitHub ({p.Detail}). Retrying…",
+                    _ => "Waiting for you to approve Repo Watch on GitHub…",
+                },
+            }));
+            var result = await CompleteSignInAsync(authorization, progress, cancel.Token).ConfigureAwait(false);
+            message = result.Outcome switch
+            {
+                SignInOutcome.SignedIn => null,
+                SignInOutcome.Cancelled => "Sign-in cancelled.",
+                _ => result.Message,
+            };
+        }
+        catch (DeviceFlowException ex)
+        {
+            message = DescribeOAuthError(ex.Error);
+        }
+        catch (GitHubTransientException ex)
+        {
+            message = $"Couldn't start sign-in: {ex.Message}";
+        }
+        catch (OperationCanceledException)
+        {
+            message = "Sign-in cancelled.";
+        }
+        finally
+        {
+            _flowCancel = null;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            Flow = null;
+            LastSignInMessage = message;
+            Changed?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    public void CancelSignIn() => _flowCancel?.Cancel();
 
     /// <summary>Starts the device flow. Throws <see cref="DeviceFlowException"/> or <see cref="GitHubTransientException"/>.</summary>
     public Task<DeviceAuthorization> BeginSignInAsync(CancellationToken cancellationToken) =>
@@ -158,34 +246,37 @@ public sealed class AccountService : IDisposable
         }
 
         var identity = lookup.Identity!;
-        await PersistCredentialAsync(identity.Account, credential).ConfigureAwait(false);
-
-        // One active account: a different account replaces the previous session.
         var previous = _settings.App.ActiveAccount;
+        await CloseSessionAsync().ConfigureAwait(false);
+
+        // One active account: a different account's credentials are removed (from every store).
         if (previous is not null && previous != identity.Account)
         {
             await RemoveCredentialAsync(previous).ConfigureAwait(false);
         }
 
+        await PersistCredentialAsync(identity.Account, credential).ConfigureAwait(false);
         _settings.UpdateApp(s => s with { ActiveAccount = identity.Account });
         _settings.UpdateAccount(identity.Account, a => a with { LastKnownLogin = identity.Login });
         _settings.Flush();
 
-        StartSession(identity.Account, credential);
+        await StartSessionAsync(identity.Account, credential).ConfigureAwait(false);
         Apply(AccountState.SignedIn, identity, null);
         _logger.LogInformation("Signed in as account {Account}", identity.Account);
         return new SignInResult(SignInOutcome.SignedIn);
     }
 
     /// <summary>
-    /// Cancels activity for the account, removes its local credentials and ends the session.
-    /// Watchlist preferences are kept for a later sign-in. This does not revoke the authorization on GitHub.
+    /// Cancels activity for the account, waits for any token renewal in flight (so nothing re-creates
+    /// credentials), removes its local credentials and ends the session. Watchlist preferences are kept.
+    /// This does not revoke the authorization on GitHub.
     /// </summary>
     public async Task SignOutAsync()
     {
         var account = _settings.App.ActiveAccount ?? Identity?.Account;
         Interlocked.Increment(ref _generation);
-        CloseSession();
+        CancelSignIn();
+        await CloseSessionAsync().ConfigureAwait(false);
 
         if (account is not null)
         {
@@ -195,28 +286,35 @@ public sealed class AccountService : IDisposable
         // No private repository content is cached locally yet; the snapshot cache (Stage 07) must be cleared here.
         _settings.UpdateApp(s => s with { ActiveAccount = null });
         _settings.Flush();
+        StorageWarning = null;
         Apply(AccountState.SignedOut, null, null);
         _logger.LogInformation("Signed out");
     }
 
-    public void Dispose() => CloseSession();
-
-    private AccountSession StartSession(AccountKey account, StoredCredential credential)
+    public void Dispose()
     {
-        CloseSession();
+        CancelSignIn();
+        _session?.Dispose();
+    }
+
+    private async Task<AccountSession> StartSessionAsync(AccountKey account, StoredCredential credential)
+    {
+        await CloseSessionAsync().ConfigureAwait(false);
         var session = new AccountSession(account, credential, _store, CreateDeviceFlowClient(), _time, _loggers.CreateLogger<AccountSession>());
         session.StatusChanged += OnSessionStatusChanged;
+        session.PersistenceFailed += OnPersistenceFailed;
         _session = session;
         return session;
     }
 
-    private void CloseSession()
+    private async Task CloseSessionAsync()
     {
         var session = Interlocked.Exchange(ref _session, null);
         if (session is not null)
         {
             session.StatusChanged -= OnSessionStatusChanged;
-            session.Dispose();
+            session.PersistenceFailed -= OnPersistenceFailed;
+            await session.CloseAsync().ConfigureAwait(false);
         }
     }
 
@@ -227,7 +325,8 @@ public sealed class AccountService : IDisposable
             var token = await session.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
             if (token is null)
             {
-                return; // ReconnectRequired is applied by the status change handler
+                ApplyIfCurrent(session, generation, AccountState.ReconnectRequired, fallback, "Your GitHub session expired or was revoked. Sign in again to continue.");
+                return;
             }
 
             var lookup = await _users.GetAuthenticatedUserAsync(token, cancellationToken).ConfigureAwait(false);
@@ -237,7 +336,7 @@ public sealed class AccountService : IDisposable
                 lookup = token is null ? lookup : await _users.GetAuthenticatedUserAsync(token, cancellationToken).ConfigureAwait(false);
             }
 
-            if (generation != _generation || session.Status != SessionStatus.Active)
+            if (generation != _generation)
             {
                 return;
             }
@@ -249,11 +348,12 @@ public sealed class AccountService : IDisposable
                     Apply(AccountState.SignedIn, lookup.Identity, null);
                     break;
                 case UserLookupStatus.Success:
-                    await RemoveCredentialAsync(session.Account).ConfigureAwait(false);
-                    CloseSession();
+                    await session.RequireReconnectAsync("The stored sign-in belongs to a different GitHub account.").ConfigureAwait(false);
                     Apply(AccountState.ReconnectRequired, fallback, "The stored sign-in belongs to a different GitHub account. Sign in again.");
                     break;
                 case UserLookupStatus.Unauthorized:
+                    // Rejected even after renewal: end the session properly (tokens deleted, work cancelled).
+                    await session.RequireReconnectAsync("GitHub rejected the account after renewal.").ConfigureAwait(false);
                     Apply(AccountState.ReconnectRequired, fallback, "GitHub no longer accepts this sign-in. It may have been revoked.");
                     break;
                 default:
@@ -263,10 +363,16 @@ public sealed class AccountService : IDisposable
         }
         catch (TokenUnavailableException ex)
         {
-            Apply(AccountState.Offline, fallback, ex.Message);
+            ApplyIfCurrent(session, generation, AccountState.Offline, fallback, ex.Message);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested || session.Lifetime.IsCancellationRequested)
         {
+        }
+        catch (Exception ex)
+        {
+            // Never leave the account stuck in "Connecting".
+            _logger.LogError(ex, "Confirming the GitHub account failed");
+            ApplyIfCurrent(session, generation, AccountState.Offline, fallback, $"Couldn't confirm your GitHub sign-in: {ex.Message}");
         }
     }
 
@@ -278,6 +384,12 @@ public sealed class AccountService : IDisposable
                 "Your GitHub session expired or was revoked. Sign in again to continue.");
         }
     }
+
+    private void OnPersistenceFailed(object? sender, Exception e) => _dispatcher.Post(() =>
+    {
+        StorageWarning = $"Your renewed sign-in couldn't be saved to {_store.Description}, so you will need to sign in again after restarting.";
+        Changed?.Invoke(this, EventArgs.Empty);
+    });
 
     private async Task PersistCredentialAsync(AccountKey account, StoredCredential credential)
     {
@@ -294,15 +406,20 @@ public sealed class AccountService : IDisposable
         }
     }
 
+    // Removes from the secure store as well as any session-only fallback, so a fallback can never
+    // leave live tokens behind in Credential Manager.
     private async Task RemoveCredentialAsync(AccountKey account)
     {
-        try
+        foreach (var store in new[] { _secureStore, _store }.Distinct())
         {
-            await _store.DeleteAsync(account).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Removing stored credentials failed");
+            try
+            {
+                await store.DeleteAsync(account).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Removing stored credentials from {Store} failed", store.Description);
+            }
         }
     }
 
@@ -311,6 +428,20 @@ public sealed class AccountService : IDisposable
             ? new DeviceFlowClient(_http, _endpoints, _options.GitHub.ClientId!, _time)
             : throw new InvalidOperationException("GitHub sign-in is not configured (GitHub:ClientId).");
 
+    private void SetFlow(SignInFlow flow) => _dispatcher.Post(() =>
+    {
+        Flow = flow;
+        Changed?.Invoke(this, EventArgs.Empty);
+    });
+
+    private void ApplyIfCurrent(AccountSession session, int generation, AccountState state, GitHubIdentity identity, string detail)
+    {
+        if (generation == _generation && ReferenceEquals(session, _session))
+        {
+            Apply(state, identity, detail);
+        }
+    }
+
     private void Apply(AccountState state, GitHubIdentity? identity, string? detail)
     {
         _dispatcher.Post(() =>
@@ -318,9 +449,11 @@ public sealed class AccountService : IDisposable
             State = state;
             Identity = identity;
             Detail = detail;
+            // Until real monitoring exists (Stage 06), a signed-in account monitors nothing: say so.
             _monitors.SetBase(new StatusOnlyMonitor(state switch
             {
-                AccountState.SignedIn or AccountState.Restoring => ConnectionState.Polling,
+                AccountState.Restoring => ConnectionState.Connecting,
+                AccountState.SignedIn => ConnectionState.SignedInIdle,
                 AccountState.Offline => ConnectionState.Offline,
                 AccountState.ReconnectRequired => ConnectionState.ReconnectRequired,
                 _ => ConnectionState.NotSignedIn,
@@ -337,4 +470,10 @@ public sealed class AccountService : IDisposable
         "unsupported_grant_type" or "incorrect_device_code" => "GitHub rejected the sign-in request. Start again.",
         _ => $"GitHub rejected the sign-in ({error ?? "unknown error"}).",
     };
+
+    // Progress<T> posts to a captured context; this reports inline so ordering is preserved.
+    private sealed class InlineProgress(Action<DeviceFlowProgress> report) : IProgress<DeviceFlowProgress>
+    {
+        public void Report(DeviceFlowProgress value) => report(value);
+    }
 }

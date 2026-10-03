@@ -92,6 +92,8 @@ public static class StatusPresentation
     public static (string Label, StatusTone Tone) Connection(ConnectionState state) => state switch
     {
         ConnectionState.Demo => ("Demo data", StatusTone.Neutral),
+        ConnectionState.Connecting => ("Connecting…", StatusTone.Unknown),
+        ConnectionState.SignedInIdle => ("Signed in", StatusTone.Neutral),
         ConnectionState.Polling => ("Polling", StatusTone.Success),
         ConnectionState.Live => ("Live", StatusTone.Success),
         ConnectionState.Offline => ("Offline", StatusTone.Warning),

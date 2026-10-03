@@ -8,6 +8,10 @@ namespace RepoWatch.Core.Monitoring;
 public enum ConnectionState
 {
     NotSignedIn,
+    /// <summary>Checking the stored sign-in at startup; nothing is monitored yet.</summary>
+    Connecting,
+    /// <summary>Signed in, but nothing is being monitored (no repositories chosen, or monitoring not started).</summary>
+    SignedInIdle,
     /// <summary>Showing labeled fixture data, not GitHub.</summary>
     Demo,
     Polling,

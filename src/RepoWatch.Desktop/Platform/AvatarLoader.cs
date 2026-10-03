@@ -24,12 +24,19 @@ public sealed class AvatarLoader(HttpClient http, ILogger<AvatarLoader> logger)
                 return null;
             }
 
+            // Bounded read: a body without Content-Length (chunked) is never buffered past the cap.
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (buffer.Length > MaxBytes)
+            var chunk = new byte[16 * 1024];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
             {
-                return null;
+                if (buffer.Length + read > MaxBytes)
+                {
+                    return null;
+                }
+
+                buffer.Write(chunk, 0, read);
             }
 
             buffer.Position = 0;

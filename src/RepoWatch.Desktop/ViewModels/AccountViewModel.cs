@@ -7,13 +7,13 @@ using RepoWatch.Desktop.Platform;
 using RepoWatch.Desktop.Presentation;
 using RepoWatch.Desktop.Services;
 using RepoWatch.GitHub;
-using RepoWatch.GitHub.Auth;
 
 namespace RepoWatch.Desktop.ViewModels;
 
 /// <summary>
-/// Account section of the settings window: device-flow sign-in (code, Copy, Open GitHub, live status,
-/// expiry, Cancel), the signed-in identity, sign-out and reconnect. Never shows or copies tokens or the device code.
+/// Account section of the settings window. A view over <see cref="AccountService"/>: the sign-in flow
+/// is owned by the service, so closing the window does not cancel it and reopening shows it again.
+/// Never shows or copies tokens or the device code.
 /// </summary>
 public sealed partial class AccountViewModel : ObservableObject, IDisposable
 {
@@ -24,9 +24,7 @@ public sealed partial class AccountViewModel : ObservableObject, IDisposable
     private readonly GitHubEndpoints _endpoints;
     private readonly IUiDispatcher _dispatcher;
     private readonly TimeProvider _time;
-    private CancellationTokenSource? _signIn;
     private ITimer? _countdown;
-    private DateTimeOffset _expiresAt;
     private Uri? _avatarUrl;
 
     public AccountViewModel(AccountService accounts, IShell shell, IExternalBrowser browser, AvatarLoader avatars, GitHubEndpoints endpoints, IUiDispatcher dispatcher, TimeProvider time)
@@ -81,77 +79,26 @@ public sealed partial class AccountViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] public partial bool IsSessionOnly { get; private set; }
 
+    /// <summary>Stops observing. A sign-in in progress keeps running in <see cref="AccountService"/>.</summary>
     public void Dispose()
     {
         _accounts.Changed -= OnAccountChanged;
-        _signIn?.Cancel();
-        _countdown?.Dispose();
+        StopCountdown();
     }
 
+    /// <summary>Starts sign-in (opening the browser at the verification page) and completes when it ends.</summary>
     [RelayCommand]
     private async Task SignInAsync()
     {
-        if (!IsConfigured || IsSigningIn)
+        if (IsConfigured && _accounts.Flow is null)
         {
-            return;
-        }
-
-        _signIn?.Dispose();
-        _signIn = new CancellationTokenSource();
-        var cancel = _signIn.Token;
-        Message = null;
-        IsSigningIn = true;
-        ShowSignIn = false;
-        FlowStatus = "Requesting a sign-in code from GitHub…";
-        UserCode = null;
-
-        try
-        {
-            var authorization = await _accounts.BeginSignInAsync(cancel);
-            UserCode = authorization.UserCode;
-            VerificationUri = authorization.VerificationUri;
-            _expiresAt = authorization.ExpiresAt;
-            FlowStatus = "Enter this code on GitHub, then approve Repo Watch.";
-            StartCountdown();
-            await _browser.OpenAsync(authorization.VerificationUri);
-
-            var progress = new Progress<DeviceFlowProgress>(p => _dispatcher.Post(() => FlowStatus = p.Kind switch
-            {
-                DeviceFlowProgressKind.SlowedDown => "GitHub asked Repo Watch to check less often. Still waiting for approval…",
-                DeviceFlowProgressKind.RetryingAfterError => $"Couldn't reach GitHub ({p.Detail}). Retrying…",
-                _ => "Waiting for you to approve Repo Watch on GitHub…",
-            }));
-            var result = await _accounts.CompleteSignInAsync(authorization, progress, cancel);
-            Message = result.Outcome switch
-            {
-                SignInOutcome.SignedIn => null,
-                SignInOutcome.Cancelled => "Sign-in cancelled.",
-                _ => result.Message,
-            };
-        }
-        catch (DeviceFlowException ex)
-        {
-            Message = AccountService.DescribeOAuthError(ex.Error);
-        }
-        catch (GitHubTransientException ex)
-        {
-            Message = $"Couldn't start sign-in: {ex.Message}";
-        }
-        catch (OperationCanceledException)
-        {
-            Message = "Sign-in cancelled.";
-        }
-        finally
-        {
-            StopCountdown();
-            IsSigningIn = false;
-            UserCode = null;
-            Refresh();
+            Message = null;
+            await _accounts.StartSignInAsync(uri => _browser.OpenAsync(uri));
         }
     }
 
     [RelayCommand]
-    private void CancelSignIn() => _signIn?.Cancel();
+    private void CancelSignIn() => _accounts.CancelSignIn();
 
     [RelayCommand]
     private async Task CopyCodeAsync()
@@ -174,7 +121,6 @@ public sealed partial class AccountViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task SignOutAsync()
     {
-        _signIn?.Cancel();
         await _accounts.SignOutAsync();
         Message = "Signed out. Repo Watch's local credentials were removed; the authorization on GitHub is unchanged.";
     }
@@ -190,6 +136,26 @@ public sealed partial class AccountViewModel : ObservableObject, IDisposable
     private void Refresh()
     {
         var state = _accounts.State;
+        var flow = _accounts.Flow;
+
+        IsSigningIn = flow is not null;
+        UserCode = flow?.UserCode;
+        VerificationUri = flow?.VerificationUri;
+        FlowStatus = flow?.Status;
+        if (flow is { UserCode: not null })
+        {
+            StartCountdown();
+        }
+        else
+        {
+            StopCountdown();
+        }
+
+        if (flow is null && _accounts.LastSignInMessage is { } outcome)
+        {
+            Message = outcome;
+        }
+
         IsSignedIn = state is AccountState.SignedIn or AccountState.Offline;
         NeedsReconnect = state == AccountState.ReconnectRequired;
         ShowSignIn = IsConfigured && !IsSigningIn && state is AccountState.SignedOut or AccountState.ReconnectRequired;
@@ -207,9 +173,10 @@ public sealed partial class AccountViewModel : ObservableObject, IDisposable
         };
 
         IsSessionOnly = !_accounts.CredentialsArePersistent;
-        StorageText = _accounts.CredentialsArePersistent
-            ? $"Your sign-in is stored securely in {_accounts.CredentialStorage}."
-            : "Session only: secure credential storage isn't available, so you will need to sign in again after restarting.";
+        StorageText = _accounts.StorageWarning
+            ?? (_accounts.CredentialsArePersistent
+                ? $"Your sign-in is stored securely in {_accounts.CredentialStorage}."
+                : "Session only: secure credential storage isn't available, so you will need to sign in again after restarting.");
 
         if (identity?.AvatarUrl != _avatarUrl)
         {
@@ -237,7 +204,7 @@ public sealed partial class AccountViewModel : ObservableObject, IDisposable
     private void StartCountdown()
     {
         UpdateExpiry();
-        _countdown = _time.CreateTimer(_ => _dispatcher.Post(UpdateExpiry), null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+        _countdown ??= _time.CreateTimer(_ => _dispatcher.Post(UpdateExpiry), null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
     }
 
     private void StopCountdown()
@@ -249,7 +216,13 @@ public sealed partial class AccountViewModel : ObservableObject, IDisposable
 
     private void UpdateExpiry()
     {
-        var remaining = _expiresAt - _time.GetUtcNow();
+        if (_accounts.Flow is not { UserCode: not null } flow)
+        {
+            ExpiresText = null;
+            return;
+        }
+
+        var remaining = flow.ExpiresAt - _time.GetUtcNow();
         ExpiresText = remaining <= TimeSpan.Zero ? "The code has expired."
             : remaining < TimeSpan.FromMinutes(1) ? "The code expires in less than a minute."
             : $"The code expires in {(int)Math.Ceiling(remaining.TotalMinutes)} minutes.";

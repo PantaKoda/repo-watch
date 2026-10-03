@@ -23,7 +23,7 @@ public sealed class AccountLifecycleTests
         Assert.Equal(AccountKit.Octo, kit.Settings.App.ActiveAccount);
         Assert.Equal("ghu_a", kit.Credentials.Items[AccountKit.Octo].AccessToken);
         Assert.Equal("octo-test", kit.Settings.GetAccount(AccountKit.Octo).LastKnownLogin);
-        Assert.Equal(ConnectionState.Polling, kit.Monitors.Current.State);
+        Assert.Equal(ConnectionState.SignedInIdle, kit.Monitors.Current.State); // signed in, nothing monitored yet
 
         // Tokens never reach the settings database.
         var stored = kit.SettingsStore.LoadAppSettings();

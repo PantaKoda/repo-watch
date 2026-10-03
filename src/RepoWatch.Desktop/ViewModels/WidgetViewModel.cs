@@ -77,6 +77,9 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial bool ShowReconnectState { get; private set; }
 
+    [ObservableProperty]
+    public partial bool ShowConnectingState { get; private set; }
+
     public bool IsSignInConfigured { get; }
 
     public string SignedOutText => IsSignInConfigured
@@ -314,7 +317,8 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         HasRepositories = Repositories.Count > 0;
         ShowSignedOutState = _monitor.State == ConnectionState.NotSignedIn;
         ShowReconnectState = _monitor.State == ConnectionState.ReconnectRequired && !HasRepositories;
-        ShowEmptyWatchlist = !ShowSignedOutState && !ShowReconnectState && !HasRepositories;
+        ShowConnectingState = _monitor.State == ConnectionState.Connecting && !HasRepositories;
+        ShowEmptyWatchlist = !ShowSignedOutState && !ShowReconnectState && !ShowConnectingState && !HasRepositories;
 
         var failing = Repositories.Count(r => r.Attention == AttentionLevel.Failure);
         var warnings = Repositories.Count(r => r.Attention == AttentionLevel.Warning);

@@ -20,19 +20,19 @@ internal sealed record RecordedRequest(HttpMethod Method, Uri Uri, IReadOnlyDict
 /// </summary>
 internal sealed class StubHandler(TimeProvider time) : HttpMessageHandler
 {
-    private readonly ConcurrentQueue<Func<RecordedRequest, HttpResponseMessage>> _responses = new();
+    private readonly ConcurrentQueue<Func<RecordedRequest, Task<HttpResponseMessage>>> _responses = new();
 
     public List<RecordedRequest> Requests { get; } = [];
 
     public StubHandler Json(string json, HttpStatusCode status = HttpStatusCode.OK)
     {
-        _responses.Enqueue(_ => new HttpResponseMessage(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") });
+        _responses.Enqueue(_ => Task.FromResult(JsonResponse(json, status)));
         return this;
     }
 
     public StubHandler Status(HttpStatusCode status)
     {
-        _responses.Enqueue(_ => new HttpResponseMessage(status));
+        _responses.Enqueue(_ => Task.FromResult(new HttpResponseMessage(status)));
         return this;
     }
 
@@ -41,6 +41,24 @@ internal sealed class StubHandler(TimeProvider time) : HttpMessageHandler
         _responses.Enqueue(_ => throw exception);
         return this;
     }
+
+    /// <summary>
+    /// Holds the response until <paramref name="release"/> completes, simulating GitHub having
+    /// processed the request while the response is still in flight. Ignores the caller's cancellation.
+    /// </summary>
+    public StubHandler Deferred(Task release, string json, TaskCompletionSource? received = null)
+    {
+        _responses.Enqueue(async _ =>
+        {
+            received?.TrySetResult();
+            await release;
+            return JsonResponse(json, HttpStatusCode.OK);
+        });
+        return this;
+    }
+
+    private static HttpResponseMessage JsonResponse(string json, HttpStatusCode status) =>
+        new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -62,7 +80,7 @@ internal sealed class StubHandler(TimeProvider time) : HttpMessageHandler
         }
 
         return _responses.TryDequeue(out var respond)
-            ? respond(recorded)
+            ? await respond(recorded)
             : throw new InvalidOperationException($"Unexpected request {request.Method} {request.RequestUri}");
     }
 }
@@ -72,6 +90,8 @@ internal sealed class MemoryCredentialStore : ICredentialStore
     public ConcurrentDictionary<AccountKey, StoredCredential> Items { get; } = new();
 
     public List<string> Operations { get; } = [];
+
+    public bool FailWrites { get; set; }
 
     public bool IsPersistent => true;
 
@@ -85,6 +105,11 @@ internal sealed class MemoryCredentialStore : ICredentialStore
         lock (Operations)
         {
             Operations.Add("write");
+        }
+
+        if (FailWrites)
+        {
+            throw new System.ComponentModel.Win32Exception(5, "Access is denied.");
         }
 
         Items[account] = credential;

@@ -152,6 +152,18 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 
 Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `/login/device/code`. A poll with the real client ID returned `authorization_pending`, confirming device flow is enabled.
 
+**Review fixes (PR #3)**
+- **Renewal belongs to the session, not a caller.** The single-use refresh runs on the session lifetime; callers stop waiting with `WaitAsync`. A caller that cancels mid-refresh can no longer lose the rotated tokens.
+- If saving rotated tokens fails, they are still adopted in memory (the old refresh token is already dead) and the settings show a storage warning. The exception no longer escapes and leaves the account stuck in "Restoring".
+- **No write after sign-out.** The session state is checked before writing, and `CloseAsync` waits for an in-flight renewal; sign-out awaits it before deleting the credential.
+- There is no semaphore or CTS to dispose under in-flight work, so `ObjectDisposedException` can no longer occur.
+- Credential removal always also targets the original secure store, so a session-only fallback can't leave the previous account's tokens in Credential Manager.
+- A 401 after a successful renewal now goes through `RequireReconnectAsync`: tokens are deleted and the session cancelled, rather than a reconnect message over an active session.
+- **Accurate connection states:** `Connecting` while restoring and `Signed in` (`SignedInIdle`) when nothing is monitored. "Polling" is shown only once real monitoring exists (Stage 06). The widget shows a *Connecting to GitHub…* panel.
+- **The sign-in flow is owned by `AccountService`.** Closing settings (Esc) no longer cancels it, and reopening shows it. Sign-out and quitting still cancel it.
+- The avatar download is bounded even without a Content-Length.
+- Regression tests: 4 renewal-race tests (caller cancellation, store failure, close during renewal, dispose during renewal) and 5 account tests. 197 tests passing. The renewal changes have not been re-run live; that needs another phone approval.
+
 **Verified only with fixtures:** denial on GitHub's approval page, natural device-code expiry, revocation through GitHub's authorization settings, and the full app UI flow. The UI is covered by headless tests, but the live check used the services directly. These can be checked with the checklist in `docs/github-app-setup.md`.
 
 **Implemented**

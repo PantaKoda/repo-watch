@@ -132,7 +132,7 @@ public sealed class AccountSessionTests
     {
         var (session, handler, _, _) = Create(TimeSpan.FromHours(2));
 
-        session.Close();
+        await session.CloseAsync();
 
         Assert.Null(await session.GetAccessTokenAsync(TestContext.Current.CancellationToken));
         Assert.True(session.Lifetime.IsCancellationRequested);

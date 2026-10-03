@@ -140,7 +140,7 @@ public sealed class AppShell(
             _settingsWindow = new SettingsWindow { DataContext = viewModel, Icon = _widget?.Icon };
             _settingsWindow.Closed += (_, _) =>
             {
-                viewModel.Dispose(); // also cancels a sign-in in progress
+                viewModel.Dispose(); // a sign-in in progress keeps running in AccountService
                 _settingsWindow = null;
                 _settingsViewModel = null;
             };
@@ -155,10 +155,11 @@ public sealed class AppShell(
         _settingsWindow.Activate();
     }
 
+    /// <summary>Opens settings; starts a sign-in unless one is already in progress (which settings then shows).</summary>
     public void BeginSignIn()
     {
         OpenSettings();
-        if (_settingsViewModel?.Account.SignInCommand is { } signIn && signIn.CanExecute(null))
+        if (accounts.Flow is null && _settingsViewModel?.Account.SignInCommand is { } signIn && signIn.CanExecute(null))
         {
             signIn.Execute(null);
         }

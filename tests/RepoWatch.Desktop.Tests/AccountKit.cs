@@ -128,6 +128,8 @@ internal sealed class AccountKit
         return await Drive(Accounts.CompleteSignInAsync(code, null, CancellationToken.None));
     }
 
+    public async Task Drive(Task task) => await Drive(task.ContinueWith(_ => true, TaskScheduler.Default));
+
     public async Task<T> Drive<T>(Task<T> task)
     {
         for (var i = 0; i < 5000 && !task.IsCompleted; i++)
