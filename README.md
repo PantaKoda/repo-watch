@@ -59,7 +59,8 @@ Tests use xunit v3 on Microsoft.Testing.Platform (opted in via `global.json`), s
 | Running the desktop app | A desktop session; Windows is the delivery target |
 | Tray, window materials, Credential Manager, startup registration (later stages) | Windows |
 | Sign-in and live GitHub smoke tests (Stage 04+) | A registered GitHub App client ID and a GitHub account |
-| Live mode (Stage 10) | A deployed relay with the GitHub App's webhook secret |
+| Relay tests (in-memory relay, end to end) | Any OS with the .NET 10 SDK |
+| Live mode with real GitHub webhooks | A deployed relay (HTTPS) and the GitHub App's webhook configured; see [docs/relay.md](docs/relay.md) |
 
 ## Configuration
 
@@ -80,7 +81,9 @@ Configuration holds only **public** deployment values. Secrets never belong here
 | `Polling:PullRequestSeconds` | 90 | Target PR refresh (5–3600). |
 | `Polling:IssueSeconds` | 120 | Target issue refresh (5–3600). |
 | `Polling:QuietSeconds` | 180 | Target refresh for idle repositories (5–3600). |
-| `Relay:BaseUrl` | empty | Optional live-update relay. https, or `http://localhost` for development. |
+| `Cache:RetentionDays` | 30 | How long cached repository data and notification history are kept (1–365). |
+| `Cache:MaxCachedResponses` | 2000 | Most cached REST responses per account (100–100000). |
+| `Relay:BaseUrl` | empty | Optional live-update relay ([docs/relay.md](docs/relay.md)). https, or `http://localhost` for development. Empty: polling only. |
 
 Unknown keys, wrongly typed values, malformed JSON and invalid values stop startup with a window listing each problem, the setting to change and the files that were read. Problems are also logged.
 
@@ -104,6 +107,7 @@ Unknown keys, wrongly typed values, malformed JSON and invalid values stop start
 src/RepoWatch.Core      Domain models, policies, configuration contracts (no UI/OS dependencies)
 src/RepoWatch.GitHub    GitHub auth/API clients, synchronization, relay client
 src/RepoWatch.Desktop   Avalonia app, storage, settings, platform adapters
+src/RepoWatch.Relay     Optional webhook relay (ASP.NET Core): signed deliveries, sessions, server-sent events
 tests/                  Focused tests
 docs/                   Architecture and progress
 ```

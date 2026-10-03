@@ -3,10 +3,12 @@
     <Project Path="src/RepoWatch.Core/RepoWatch.Core.csproj" />
     <Project Path="src/RepoWatch.Desktop/RepoWatch.Desktop.csproj" />
     <Project Path="src/RepoWatch.GitHub/RepoWatch.GitHub.csproj" />
+    <Project Path="src/RepoWatch.Relay/RepoWatch.Relay.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RepoWatch.Core.Tests/RepoWatch.Core.Tests.csproj" />
     <Project Path="tests/RepoWatch.Desktop.Tests/RepoWatch.Desktop.Tests.csproj" />
     <Project Path="tests/RepoWatch.GitHub.Tests/RepoWatch.GitHub.Tests.csproj" />
+    <Project Path="tests/RepoWatch.Relay.Tests/RepoWatch.Relay.Tests.csproj" />
   </Folder>
 </Solution>

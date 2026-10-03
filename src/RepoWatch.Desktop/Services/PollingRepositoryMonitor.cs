@@ -79,7 +79,9 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     private List<long> _order = [];
     private RepositoryOrdering _ordering;
     private RepositoryKey? _focus;
-    private double _slowdown = 1;
+    /// <summary>Repositories the relay stream currently covers: only these poll at the slower live rate.</summary>
+    private HashSet<long> _live = [];
+    private readonly List<IDisposable> _companions = [];
     private DateTimeOffset _lastPrune;
     private DateTimeOffset? _pausedUntil;
     private bool _refreshing;
@@ -103,7 +105,6 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         _budget = budget;
         _random = random ?? Random.Shared.NextDouble;
         _stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
-        _slowdown = CurrentSlowdown();
         ApplyWatchlistCore(settings);
         RestoreFromCache(settings);
         if (_conditions is not null)
@@ -265,6 +266,18 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         {
             _conditions.Changed -= OnConditionsChanged;
             _conditions.Resumed -= OnResumed;
+        }
+
+        List<IDisposable> companions;
+        lock (_gate)
+        {
+            companions = [.. _companions];
+            _companions.Clear();
+        }
+
+        foreach (var companion in companions)
+        {
+            companion.Dispose();
         }
 
         _stop.Cancel();
@@ -480,7 +493,7 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         lock (_gate)
         {
             entry.InFlight = false;
-            var slowdown = CurrentSlowdown();
+            var slowdown = CurrentSlowdown(entry.Key.RepositoryId);
             var active = RepositoryRefresh.IsActive(refreshed);
             var focused = entry.Key == _focus;
             var errors = new List<ResourceError>();
@@ -539,8 +552,77 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         return error is not null && error.OccurredAt >= started ? error : null;
     }
 
-    private double CurrentSlowdown() =>
-        PollingPolicy.Slowdown(_conditions?.IsWidgetVisible ?? true, _conditions?.IsOnBattery ?? false, _budget?.IsLow ?? false);
+    private double CurrentSlowdown(long repositoryId) =>
+        PollingPolicy.Slowdown(_conditions?.IsWidgetVisible ?? true, _conditions?.IsOnBattery ?? false, _budget?.IsLow ?? false, _live.Contains(repositoryId));
+
+    /// <summary>Something that lives as long as this monitor (the relay link); disposed with it.</summary>
+    public void Attach(IDisposable companion)
+    {
+        lock (_gate)
+        {
+            _companions.Add(companion);
+        }
+    }
+
+    /// <summary>
+    /// The relay says these parts of a repository changed: refresh them now (coalesced with anything
+    /// already due). Unknown repositories are ignored, so a relay can't make the app fetch anything unwatched.
+    /// </summary>
+    public void Invalidate(long repositoryId, RefreshParts parts)
+    {
+        lock (_gate)
+        {
+            if (!_entries.TryGetValue(repositoryId, out var entry))
+            {
+                return;
+            }
+
+            foreach (var part in Parts.Where(p => parts.HasFlag(p)))
+            {
+                entry.Due[part] = DateTimeOffset.MinValue;
+                if (entry.InFlight)
+                {
+                    entry.Requeued |= part;
+                }
+            }
+        }
+
+        Signal();
+    }
+
+    /// <summary>Refresh everything soon (relay reconnect, replay gap): events may have been missed.</summary>
+    public void ReconcileAll()
+    {
+        lock (_gate)
+        {
+            foreach (var entry in _entries.Values)
+            {
+                entry.MarkAllDue();
+            }
+        }
+
+        Signal();
+    }
+
+    /// <summary>
+    /// The repositories the connected relay stream covers (its session's allowed ones); empty when not
+    /// connected. Only these poll at the slower live rate; any others keep the normal pace.
+    /// </summary>
+    public void SetLive(IReadOnlyCollection<long> repositories)
+    {
+        ArgumentNullException.ThrowIfNull(repositories);
+        lock (_gate)
+        {
+            if (_live.SetEquals(repositories))
+            {
+                return;
+            }
+
+            _live = [.. repositories];
+        }
+
+        OnConditionsChanged(this, EventArgs.Empty); // recompute slowdown (pulls due times in when leaving live) and state
+    }
 
     private void Prune(IReadOnlyCollection<WatchedRepository> watched)
     {
@@ -568,8 +650,10 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     {
         lock (_gate)
         {
+            // "Live" needs both: the relay stream is connected and the last refreshes reached GitHub.
             return IsPausedByUser ? ConnectionState.Paused
                 : _entries.Count > 0 && _entries.Values.All(e => e.LastOffline) ? ConnectionState.Offline
+                : _live.Count > 0 && _entries.Keys.All(_live.Contains) ? ConnectionState.Live // every watched repository is covered
                 : ConnectionState.Polling;
         }
     }
@@ -612,24 +696,19 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
                 }
             }
 
-            // Widget shown again or back on mains power: due times stretched while slowed down are pulled
-            // in to the regular interval, so the user isn't looking at data up to 18 minutes old.
-            var slowdown = CurrentSlowdown();
-            if (slowdown < _slowdown)
+            // Widget shown again, back on mains power, or live coverage lost: due times stretched while slowed
+            // down are pulled in to the current interval (never pushed out), so nothing is left minutes behind.
+            foreach (var entry in _entries.Values)
             {
-                foreach (var entry in _entries.Values)
+                var slowdown = CurrentSlowdown(entry.Key.RepositoryId);
+                var active = RepositoryRefresh.IsActive(entry.Snapshot);
+                var focused = entry.Key == _focus;
+                foreach (var part in Parts.Where(p => entry.Failures[p] == 0))
                 {
-                    var active = RepositoryRefresh.IsActive(entry.Snapshot);
-                    var focused = entry.Key == _focus;
-                    foreach (var part in Parts.Where(p => entry.Failures[p] == 0))
-                    {
-                        var regular = entry.LastRefreshed[part] + PollingPolicy.Scale(PollingPolicy.Interval(part, active, focused, _intervals), slowdown);
-                        entry.Due[part] = Min(entry.Due[part], regular);
-                    }
+                    var regular = entry.LastRefreshed[part] + PollingPolicy.Scale(PollingPolicy.Interval(part, active, focused, _intervals), slowdown);
+                    entry.Due[part] = Min(entry.Due[part], regular);
                 }
             }
-
-            _slowdown = slowdown;
         }
 
         UpdateState();

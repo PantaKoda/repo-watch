@@ -13,7 +13,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 07 | Durable caching and efficient synchronization | completed |
 | 08 | Modern visuals and real transparency | blocked (only the DPI check at 125%/150% remains; see Stage 08) |
 | 09 | Desktop behavior and notifications | completed |
-| 10 | Near-real-time delivery (relay) | pending |
+| 10 | Near-real-time delivery (relay) | completed |
 | 11 | Package and validate the Windows release | pending |
 | 12 | Later macOS/Linux releases | pending |
 
@@ -636,3 +636,100 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
 
 **Next concrete task**
 - Stage 10: the relay. That means an ASP.NET Core webhook receiver with signature verification and durable deliveries, plus authenticated SSE, with the desktop client falling back to polling.
+
+## Stage 10 — Near-real-time delivery (relay): completed
+
+**Implemented**
+- **`src/RepoWatch.Relay`** (ASP.NET Core, minimal APIs; [docs/relay.md](relay.md)):
+  - **`POST /webhooks/github`:**
+    - HMAC-SHA256 verification of `X-Hub-Signature-256` over the raw bytes, with a constant-time compare.
+    - The delivery is stored in SQLite **before** the 202 answer.
+    - The unique `X-GitHub-Delivery` makes redeliveries answer 200 and process once.
+    - Unsubscribed events (e.g. `ping`) are accepted and ignored.
+  - **`DeliveryProcessor`:** background processing in order, with exponential-backoff retries up to `MaxDeliveryAttempts`. Malformed payloads fail at once. Retention pruning.
+  - **`EventMapper`:** reads only IDs and the action.
+    - workflow_run/job → Actions.
+    - check_run/suite and status → Actions and pull requests.
+    - pull_request and review → pull requests.
+    - issues → issues.
+    - repository → metadata (deleted → access ends).
+    - installation deleted/suspend, installation_repositories removed, github_app_authorization revoked → revocation.
+  - **`POST /sessions`:** the user's GitHub token in the Authorization header only. The relay asks GitHub for the user and for the repositories reachable through the user's installations, then grants only the requested repositories that both the user and the app can access. Random session tokens are stored hashed and last 15 minutes. At most 10 sessions per user.
+  - **`GET /events`** (SSE):
+    - Session-authenticated, with `Last-Event-ID` replay from a bounded buffer.
+    - `reset` on a gap, on an ID from another relay run, or on outbox overflow.
+    - `revoked` per repository or for the whole session; `expired` at the end of the session.
+    - Keep-alives.
+    - Sequence IDs start from the start time, so IDs from an earlier run are recognized as gaps.
+  - **Config validation:** the relay refuses to start without a webhook secret (at least 16 characters). `appsettings.json` has no secret.
+  - **Deployment files:** a `Dockerfile` (non-root, port 8080, data volume) and `.dockerignore`. Nothing was deployed.
+- **Desktop:**
+  - `RelayClient` (session; SSE reader with `SseParser`) in `RepoWatch.GitHub`.
+  - `RelayLink`, attached to the polling monitor when `Relay:BaseUrl` is set:
+    - **On connect:** shows Live and reconciles everything.
+    - **`invalidate`:** refreshes just that repository's parts. Unknown repositories are ignored.
+    - **`revoked`:** refreshes the repository (GitHub decides what access remains); a session-wide revoke or `expired` gets a new session.
+    - **`reset`:** reconciles everything.
+    - **Session renewal:** a minute before expiry. The link reconnects when the watchlist changes, and backs off up to 2 minutes on failure.
+  - **Polling fallback:** polling continues all along. While live it only reconciles (×4 slower). The badge shows **Live** only while the stream is connected and refreshes reach GitHub.
+  - The relay `HttpClient` has no request timeout (long-lived stream).
+- The Events API is never used.
+
+**Checks run**
+- `dotnet test --solution RepoWatch.slnx`: 391 passed (Release build clean); 395 after the review.
+- **Relay tests** (16, in-memory server with a fake GitHub API):
+  - signatures over exact bytes (unsigned, forged, reformatted body);
+  - stored before the 202; a duplicate is processed once;
+  - a failed processing attempt is retried;
+  - sessions only include repositories GitHub confirms, and alice never receives bob's repository;
+  - tokens only in the header: a query-string token gets 401, and no token appears in URLs sent to GitHub;
+  - replay of missed events in sequence order;
+  - `reset` after a buffer gap and for an unknown ID;
+  - installation_repositories removed → per-repository `revoked`, and later events for that repository aren't delivered;
+  - github_app_authorization revoked → the session ends and can't be reused;
+  - uninstalling ends the session;
+  - session expiry (fake clock) sends `expired` and returns 401 afterwards;
+  - payload content is ignored.
+- **End-to-end tests** (real `PollingRepositoryMonitor` and `RelayLink` against the in-memory relay):
+  - a signed webhook refreshes exactly that repository's part, and the badge shows Live;
+  - a refused relay keeps polling;
+  - events for another user's repository never arrive;
+  - an access removal triggers a metadata refresh;
+  - when the relay vanishes (the stream ends, then connections are refused), the badge falls back to Polling.
+- **Measured latency** from a signed webhook to the targeted refresh request (in-process relay; real HTTP pipeline, no network): 21.9, 22.0, 18.9, 21.4 and 21.5 ms over 5 runs.
+- `RelayClient` tests: the SSE parser (ids, multi-line data, comments), token only in the header, refusal and unreachable relay reported.
+- **Real relay process** (Kestrel on 127.0.0.1:5088):
+  - without a secret it exits with code 1 and a clear message;
+  - `/healthz` answers 200;
+  - an unsigned webhook gets 401, a signed one 202, and a redelivery 200;
+  - `/events` without a session gets 401.
+
+**Review of PR #10 (all findings addressed)**
+- **Half-open streams:** the client fails a stream after 60 seconds without any line (three missed keep-alives), so after sleep, a network switch or a NAT timeout the widget leaves Live within a minute instead of about 14 minutes. `RelayLink` also restarts the stream when waking from sleep and when the network returns.
+- **Per-repository live coverage:**
+  - Only the session's allowed repositories poll at the slower live rate.
+  - **Live** shows only when every watched repository is covered; partial coverage shows **Polling**.
+  - The relay now fails a session (502) when a GitHub installation listing fails, instead of silently covering less, and answers 403 when nothing is allowed. The link then waits for a watchlist change.
+- **Coalescing restart signal:**
+  - A bounded channel holding at most one pending signal replaces the semaphore.
+  - The stream watcher is always released when a stream ends, so no waiter is left on a dead stream.
+  - The subscribed set is recorded before pending signals are cleared. The new test caught a burst causing two sessions before this ordering fix.
+- **`Relay:AppId`** is now required. Only installations of Repo Watch's own app count, so a token issued to another app opens no session.
+- **Collaborator, team and organization removals:** documented in docs/relay.md, with at most a 15-minute window. The events that would report them need organization *Members* permission, which Repo Watch doesn't request.
+- **No full refresh on every connect:** only a first connect or a `reset` reconciles everything. A renewal resumes from `Last-Event-ID`. Rate-limit notes are in docs/relay.md.
+- **Startup with a mistyped setting:** the real relay process showed a crash with a stack trace for an empty or non-numeric `Relay:AppId`. It now reports "Configuration error: …" and exits with code 1.
+- **New tests:**
+  - a stream that goes silent leaves Live;
+  - rejected repositories get no events and keep the normal pace;
+  - partial coverage shows Polling;
+  - one new session per watchlist burst after a dropped stream;
+  - a session fails on a GitHub error, is refused when nothing is allowed, and is refused for another app's token.
+- `dotnet test`: 395 passed (two full runs); the relay and end-to-end suite passed three runs in a row.
+**Remaining limitations**
+- **Intermittent test failure:** `SqliteSettingsStoreTests.Concurrent_first_run_initialization_does_not_fail` (8 threads initializing a new database at once, 40 rounds) failed once in 7 full-suite runs and could not be reproduced: 0 failures in 12 isolated runs, 6 parallel stress runs and 8 more full runs. The original output wasn't kept; the assertion now names each exception for the next occurrence. Since Stage 09, the app's single-instance guard prevents concurrent first-run initialization in practice.
+- **Not deployed:** real GitHub webhook delivery and real end-to-end latency were not measured. That needs a deployed HTTPS relay and the GitHub App's webhook configured, both maintainer actions that weren't authorized.
+- **One instance:** sessions and the replay buffer are in memory; after a restart clients reconcile. Multiple instances would need shared state.
+- **No desktop live smoke check against a running relay with a real sign-in:** the end-to-end tests use a fake GitHub for both the relay and the data source.
+
+**Next concrete task**
+- Stage 11: a reproducible Windows release build (self-contained publish), About/version with a "Check for updates" link, README setup/use/troubleshooting and a manual validation checklist, and running the release build.

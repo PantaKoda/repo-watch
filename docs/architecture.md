@@ -137,3 +137,17 @@ No client secret or private key is ever embedded in the desktop app. Server-only
   - Delivery goes through `INotificationSink`: `WindowsToastSink` in the Windows build, unsupported elsewhere.
 - **Startup:** `IStartupRegistration` (Windows Run key). `SingleInstance` (mutex plus named pipe). `GlobalShortcut` (RegisterHotKey on the widget window). `DesktopIntegration` reports each one's availability to Settings.
 - **Diagnostics:** `DiagnosticsService` writes a zip of the summary and the logs, all passed through `Redactor`.
+
+## Live updates (Stage 10)
+
+```
+GitHub ──signed webhook──► RepoWatch.Relay: /webhooks/github ─► DeliveryStore (SQLite, before 202) ─► DeliveryProcessor ─► EventMapper ─► RelayHub
+                                              /sessions (user token → GitHub: user, installations, repositories → allowed IDs)          │
+Desktop: RelayLink ─► RelayClient ─► /events (session token, Last-Event-ID) ◄──────────── invalidate / revoked / reset / expired ──────┘
+            └─► PollingRepositoryMonitor.Invalidate(repo, parts) / ReconcileAll() / SetLive(true|false)
+```
+
+- The relay only says *what changed*. The monitor refreshes those parts from GitHub, so GitHub stays the source of truth (also for access).
+- `RelayLink` lives as long as the monitor (`Attach`). On connect it reconciles everything. It renews the session before it expires and reconnects when the watchlist changes. Failures back off up to 2 minutes, and the monitor polls normally meanwhile.
+- **Live** means the stream is connected and refreshes reach GitHub. While live, polling only reconciles (slowdown ×4).
+- Shared wire contract: `RepoWatch.Core.Relay` (`RelayProtocol`, session and invalidation records).

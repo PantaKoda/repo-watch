@@ -71,10 +71,11 @@ public static class PollingPolicy
 
     /// <summary>
     /// How much slower to poll: hidden widget ×3, battery power ×2, low request budget ×2 (at most ×8).
-    /// Visible, plugged-in polling with a healthy budget is ×1.
+    /// With the relay live, webhooks announce changes and polling only reconciles: ×4 on top.
+    /// Visible, plugged-in polling with a healthy budget and no relay is ×1.
     /// </summary>
-    public static double Slowdown(bool widgetVisible, bool onBattery, bool budgetLow) =>
-        Math.Min(8, (widgetVisible ? 1 : 3) * (onBattery ? 2 : 1) * (budgetLow ? 2 : 1));
+    public static double Slowdown(bool widgetVisible, bool onBattery, bool budgetLow, bool live = false) =>
+        Math.Min(8, (widgetVisible ? 1 : 3) * (onBattery ? 2 : 1) * (budgetLow ? 2 : 1)) * (live ? 4 : 1);
 
     public static TimeSpan Scale(TimeSpan interval, double factor) =>
         Min(TimeSpan.FromTicks((long)(interval.Ticks * factor)), Longest);

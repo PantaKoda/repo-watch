@@ -241,6 +241,24 @@ public sealed class SchedulingTests
         Assert.True(DateTimeOffset.UtcNow - shown < TimeSpan.FromMilliseconds(900), "refreshed on the regular interval, not the hidden one");
     }
 
+    [Fact]
+    public async Task Only_repositories_the_relay_covers_poll_at_the_slower_live_rate()
+    {
+        var (monitor, source, _) = Create(PollingMonitorTests.Every(TimeSpan.FromMilliseconds(150)), 1, 2);
+        using var _ = monitor;
+        monitor.SetLive([1]); // the relay session allowed 1 but not 2
+
+        await Task.Delay(1500, TestContext.Current.CancellationToken);
+
+        var covered = source.Calls.Count(c => c == "repo 1");
+        var uncovered = source.Calls.Count(c => c == "repo 2");
+        Assert.True(uncovered >= covered + 3, $"covered {covered}, uncovered {uncovered}");
+        Assert.Equal(ConnectionState.Polling, monitor.State); // not every repository is covered: no "Live"
+
+        monitor.SetLive([1, 2]);
+        await WaitUntil(() => monitor.State == ConnectionState.Live);
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         for (var i = 0; i < 500 && !condition(); i++)
