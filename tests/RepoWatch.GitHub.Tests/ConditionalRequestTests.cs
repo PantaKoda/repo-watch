@@ -106,7 +106,6 @@ public sealed class ConditionalRequestTests
 
         await client.GetIssuesAsync("octo", "hello", TestContext.Current.CancellationToken);
         Assert.True(budget.IsLow); // graphql: 6% left
-        Assert.Equal(reset.ToUnixTimeSeconds(), budget.LowUntil!.Value.ToUnixTimeSeconds());
 
         time.Advance(TimeSpan.FromMinutes(31));
         Assert.False(budget.IsLow); // the budget was reset

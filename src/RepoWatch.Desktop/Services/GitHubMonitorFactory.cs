@@ -24,9 +24,12 @@ public sealed class GitHubMonitorFactory(AccountService accounts, HttpClient htt
         }
 
         // One budget and one ETag cache per account: the scheduler slows down on the budget GitHub reports.
+        // The cache handle belongs to this sign-in: after sign-out clears the account, it writes nothing more.
         var budget = new RateBudget(time);
-        var client = new RepositoryDataClient(new GitHubApiClient(http, endpoints, session, time, cache.ForAccount(account), budget));
+        var accountCache = cache.ForAccount(account);
+        var client = new RepositoryDataClient(new GitHubApiClient(http, endpoints, session, time, accountCache, budget));
         return new PollingRepositoryMonitor(account, settings, new RepositoryDataSource(client), identity.Login, time,
-            loggers.CreateLogger<PollingRepositoryMonitor>(), session.Lifetime, PollingIntervals.From(options.Polling), conditions, cache, budget);
+            loggers.CreateLogger<PollingRepositoryMonitor>(), session.Lifetime, PollingIntervals.From(options.Polling), conditions, accountCache, budget,
+            cacheOptions: options.Cache);
     }
 }

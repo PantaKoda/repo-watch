@@ -43,20 +43,6 @@ public sealed class RateBudget(TimeProvider time)
         }
     }
 
-    /// <summary>When the lowest budget resets, if any budget is low.</summary>
-    public DateTimeOffset? LowUntil
-    {
-        get
-        {
-            var now = time.GetUtcNow();
-            lock (_gate)
-            {
-                return _resources.Values.Where(r => r.ResetAt > now && r.Limit > 0 && r.Remaining < r.Limit * LowShare)
-                    .Select(r => (DateTimeOffset?)r.ResetAt).Max();
-            }
-        }
-    }
-
     public void Observe(HttpResponseHeaders headers)
     {
         ArgumentNullException.ThrowIfNull(headers);

@@ -35,6 +35,16 @@ public static partial class RepoWatchOptionsValidator
         ValidateInterval(errors, "Polling:IssueSeconds", options.Polling.IssueSeconds);
         ValidateInterval(errors, "Polling:QuietSeconds", options.Polling.QuietSeconds);
 
+        if (options.Cache.RetentionDays is < 1 or > 365)
+        {
+            errors.Add(new("Cache:RetentionDays", $"{options.Cache.RetentionDays} is outside the allowed range.", "Use a value between 1 and 365 days."));
+        }
+
+        if (options.Cache.MaxCachedResponses is < 100 or > 100_000)
+        {
+            errors.Add(new("Cache:MaxCachedResponses", $"{options.Cache.MaxCachedResponses} is outside the allowed range.", "Use a value between 100 and 100000."));
+        }
+
         // Plain HTTP is accepted only for a relay on this machine during development.
         ValidateHttpsUrl(errors, "Relay:BaseUrl", options.Relay.BaseUrl, required: false, allowLoopbackHttp: true);
 

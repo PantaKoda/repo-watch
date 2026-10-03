@@ -158,7 +158,7 @@ public sealed class SchedulingTests
             var cache = new RepositoryCache(database, TimeProvider.System, NullLogger<RepositoryCache>.Instance);
             var key = new RepositoryKey(Account, 1);
             var earlier = DateTimeOffset.UtcNow.AddMinutes(-5);
-            cache.Save(new RepositorySnapshot(key)
+            cache.ForAccount(Account).Save(new RepositorySnapshot(key)
             {
                 Metadata = Resource<RepositoryMetadata>.NotLoaded.Succeeded(FakeDataSource.Info(1).Metadata, earlier),
                 Issues = Resource<Core.Issues.IssuesState>.NotLoaded.Succeeded(new Core.Issues.IssuesState { OpenCount = ItemCount.Exact(42) }, earlier),
@@ -168,7 +168,7 @@ public sealed class SchedulingTests
             source.Issues = _ => SectionResult<Core.Issues.IssuesState>.Ok(new Core.Issues.IssuesState { OpenCount = ItemCount.Exact(43) });
             var settings = new AccountSettings { Watchlist = [new WatchedRepository { RepositoryId = 1, Owner = "octo", Name = "repo1" }] };
             using (var monitor = new PollingRepositoryMonitor(Account, settings, source, "octo", TimeProvider.System, NullLogger.Instance, CancellationToken.None,
-                PollingMonitorTests.Every(TimeSpan.FromHours(1)), cache: cache))
+                PollingMonitorTests.Every(TimeSpan.FromHours(1)), cache: cache.ForAccount(Account)))
             {
                 // Before GitHub answers, the last data is already there, labeled as cached (not a false empty state).
                 var restored = monitor.Repositories.Single().Snapshot.Issues;
@@ -177,7 +177,7 @@ public sealed class SchedulingTests
 
                 source.ActionsGate.SetResult();
                 await WaitUntil(() => monitor.Repositories.Single().Snapshot.Issues.Value?.OpenCount == ItemCount.Exact(43));
-                await WaitUntil(() => cache.Load(Account).TryGetValue(1, out var saved) && saved.Issues.Value?.OpenCount == ItemCount.Exact(43));
+                await WaitUntil(() => cache.ForAccount(Account).Load().TryGetValue(1, out var saved) && saved.Issues.Value?.OpenCount == ItemCount.Exact(43));
             }
         }
         finally
@@ -185,6 +185,60 @@ public sealed class SchedulingTests
             SqliteConnection.ClearAllPools();
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task A_persistently_failing_section_backs_off_alone_without_delaying_healthy_ones()
+    {
+        var running = new WorkflowRun
+        {
+            Id = 1, WorkflowId = 1, WorkflowName = "CI", RunNumber = 1, RunAttempt = 1, HeadSha = "abc", HeadBranch = "main", Event = "push",
+            Outcome = Core.Status.CheckOutcome.Running, HtmlUrl = new Uri("https://github.com/octo/repo1/actions/runs/1"),
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        var source = new FakeDataSource
+        {
+            Actions = _ => SectionResult<ActionsState>.Ok(new ActionsState { RecentRuns = [running] }),
+            Issues = _ => SectionResult<Core.Issues.IssuesState>.Fail(new ResourceError(ResourceErrorKind.ServerError, "boom", DateTimeOffset.UtcNow)),
+        };
+        var intervals = PollingMonitorTests.Every(TimeSpan.FromHours(1)) with
+        {
+            Active = TimeSpan.FromMilliseconds(40),
+            Issues = TimeSpan.FromMilliseconds(40),
+            Failed = TimeSpan.FromMilliseconds(60),
+            MaxBackoff = TimeSpan.FromSeconds(30),
+        };
+        var settings = new AccountSettings { Watchlist = [new WatchedRepository { RepositoryId = 1, Owner = "octo", Name = "repo1" }] };
+        using var monitor = new PollingRepositoryMonitor(Account, settings, source, "octo", TimeProvider.System, NullLogger.Instance, CancellationToken.None,
+            intervals, random: () => 0.5);
+
+        await Task.Delay(1500, TestContext.Current.CancellationToken);
+
+        // Actions kept its 40 ms pace (about 35 passes) while issues backed off 60, 120, 240, 480, 960 ms.
+        var actions = source.Calls.Count(c => c.StartsWith("actions", StringComparison.Ordinal));
+        var issues = source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal));
+        Assert.True(actions >= 12, $"actions ran {actions} times");
+        Assert.InRange(issues, 2, 6);
+        Assert.Equal(ConnectionState.Polling, monitor.State); // a server error in one section is not "offline"
+    }
+
+    [Fact]
+    public async Task Showing_the_widget_again_pulls_slowed_refreshes_forward()
+    {
+        var source = new FakeDataSource();
+        var conditions = new PollingConditions(TestServices.Settings(), TimeProvider.System, () => false, watchSystem: false);
+        conditions.SetWidgetVisible(false);
+        var intervals = PollingMonitorTests.Every(TimeSpan.FromMilliseconds(400)); // ×3 while hidden: 1.2 s
+        var settings = new AccountSettings { Watchlist = [new WatchedRepository { RepositoryId = 1, Owner = "octo", Name = "repo1" }] };
+        using var monitor = new PollingRepositoryMonitor(Account, settings, source, "octo", TimeProvider.System, NullLogger.Instance, CancellationToken.None,
+            intervals, conditions);
+        await WaitUntil(() => source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal)) == 1);
+        var shown = DateTimeOffset.UtcNow;
+
+        conditions.SetWidgetVisible(true);
+
+        await WaitUntil(() => source.Calls.Count(c => c.StartsWith("issues", StringComparison.Ordinal)) == 2);
+        Assert.True(DateTimeOffset.UtcNow - shown < TimeSpan.FromMilliseconds(900), "refreshed on the regular interval, not the hidden one");
     }
 
     private static async Task WaitUntil(Func<bool> condition)

@@ -385,7 +385,7 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
   - `http_cache` holds ETag plus body.
   - At start, cached snapshots appear at once labeled "Cached", so there is no false empty state. They are saved after every refresh.
   - Access loss deletes the repository's snapshot.
-  - Retention: 30 days, and only watched repositories.
+  - Retention: configurable (`Cache:RetentionDays`, default 30), only watched repositories, at most `Cache:MaxCachedResponses` responses per account.
   - Sign-out removes the account's snapshots and ETag bodies (`AccountService`). Storage errors are logged and the app continues without the cache.
 - **Wake and network recovery** (`PollingConditions`):
   - A 30 s timer detects a sleep gap; `NetworkChange.NetworkAvailabilityChanged` detects the network returning.
@@ -422,6 +422,26 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
   - only Actions repeat on the active interval;
   - plus the Stage 06 cases: offline, throttling, out-of-order results and partial failures.
 - **Real app:** the Debug build started with a fresh data folder in demo mode; the database migrated to version 2 with no warnings or errors in the log.
+
+**Review of PR #7 (all findings fixed)**
+- **Backoff is per part.** Each section keeps its own failure count, so a failing section backs off alone and healthy parts keep their pace. Only errors from the current pass count; a metadata error left over from an earlier pass no longer turns a successful pass into a failure or "Offline".
+  - The new test also exposed a second issue: the 10 s batch window pulled backing-off parts into every pass. Parts in backoff are no longer batched early.
+- **The ETag cache is bounded.**
+  - The in-memory front is an LRU of 200 responses.
+  - Pruning runs at start and hourly. It caps responses per account (`Cache:MaxCachedResponses`, default 2000) and drops responses of unwatched repositories.
+  - Removing a repository forgets its snapshot and cached responses at once.
+  - Retention is configurable (`Cache:RetentionDays`, default 30; validated).
+- **Showing the widget catches up.** Becoming visible again, or returning to mains power, pulls stretched due times in to the regular interval.
+- **No writes after sign-out.** Cache writes go through a per-sign-in `AccountCache` handle. `ClearAccount` invalidates earlier handles under the same lock as the writes, so a refresh finishing during sign-out writes nothing back.
+- **`RateBudget.LowUntil`** (unused, with a misleading summary) was removed.
+- New tests:
+  - a failing section next to active Actions;
+  - catch-up after showing the widget;
+  - a stale handle after clear;
+  - the bounded memory front;
+  - forgetting a removed repository;
+  - pruning caps and unwatched responses.
+- `dotnet test`: 331 passed (two full runs).
 
 **Remaining limitations**
 - **Not run live:** ETag 304s against github.com and restoring the cache after a real restart haven't been run live. That needs a device-flow sign-in. Request counts and idle CPU/network under live polling are not measured yet; Stage 09 asks for them.

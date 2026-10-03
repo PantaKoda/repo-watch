@@ -80,7 +80,7 @@ MonitorCoordinator ─► IRepositoryMonitorFactory (GitHubMonitorFactory) ─�
 - **Scheduling** (`PollingPolicy`, `PollingConditions`): per-part due times (Actions 20 s active/180 s quiet, PRs 90 s, issues 120 s, metadata 180 s). There is one serial loop per account; focus and active work go first.
   - Slowdown: hidden ×3, battery ×2, low `RateBudget` ×2. Failures use exponential backoff with jitter. A rate limit pauses until its reset.
   - Pause monitoring stops all requests. Wake and network return refresh at once.
-- **Caching** (`RepositoryCache`, SQLite migration 2, keyed by account): last good snapshots (restored as "Cached" at start) and REST ETag bodies for conditional requests (`IConditionalCache` in `GitHubApiClient`). Cleared on sign-out; 30-day retention. Never holds tokens.
+- **Caching** (`RepositoryCache`, SQLite migration 2, keyed by account): last good snapshots (restored as "Cached" at start) and REST ETag bodies for conditional requests (`IConditionalCache` in `GitHubApiClient`). Writes go through a per-sign-in `AccountCache`, which refuses writes once sign-out clears the account. There is a bounded in-memory LRU, hourly pruning, and configurable retention (`Cache` options). Never holds tokens.
 
 ## Domain model (Core)
 

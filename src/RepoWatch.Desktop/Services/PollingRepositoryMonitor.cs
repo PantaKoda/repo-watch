@@ -67,7 +67,8 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     private readonly PollingIntervals _intervals;
     private readonly ILogger _logger;
     private readonly PollingConditions? _conditions;
-    private readonly Storage.RepositoryCache? _cache;
+    private readonly Storage.AccountCache? _cache;
+    private readonly Core.Configuration.CacheOptions _cacheOptions;
     private readonly RateBudget? _budget;
     private readonly Func<double> _random;
     private readonly CancellationTokenSource _stop;
@@ -78,13 +79,16 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
     private List<long> _order = [];
     private RepositoryOrdering _ordering;
     private RepositoryKey? _focus;
+    private double _slowdown = 1;
+    private DateTimeOffset _lastPrune;
     private DateTimeOffset? _pausedUntil;
     private bool _refreshing;
     private bool _disposed;
 
     public PollingRepositoryMonitor(AccountKey account, AccountSettings settings, IRepositoryDataSource source, string login,
         TimeProvider time, ILogger logger, CancellationToken lifetime, PollingIntervals? intervals = null,
-        PollingConditions? conditions = null, Storage.RepositoryCache? cache = null, RateBudget? budget = null, Func<double>? random = null)
+        PollingConditions? conditions = null, Storage.AccountCache? cache = null, RateBudget? budget = null, Func<double>? random = null,
+        Core.Configuration.CacheOptions? cacheOptions = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         Account = account;
@@ -95,9 +99,11 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         _intervals = intervals ?? new PollingIntervals();
         _conditions = conditions;
         _cache = cache;
+        _cacheOptions = cacheOptions ?? new Core.Configuration.CacheOptions();
         _budget = budget;
         _random = random ?? Random.Shared.NextDouble;
         _stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
+        _slowdown = CurrentSlowdown();
         ApplyWatchlistCore(settings);
         RestoreFromCache(settings);
         if (_conditions is not null)
@@ -199,7 +205,7 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
             foreach (var entry in _entries.Values.Where(e => repository is null || e.Key == repository))
             {
                 entry.MarkAllDue();
-                entry.Failures = 0;
+                entry.ResetFailures();
                 entry.Waiters ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 waits.Add(entry.Waiters.Task);
             }
@@ -259,9 +265,11 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         // Removals normally rebuild the monitor; drop them here too so they are never refreshed.
         foreach (var removed in _entries.Keys.Except(ids).ToList())
         {
-            _entries[removed].Waiters?.TrySetResult();
+            var gone = _entries[removed];
+            gone.Waiters?.TrySetResult();
             _entries.Remove(removed);
-            _cache?.Delete(new RepositoryKey(Account, removed));
+            var metadata = gone.Snapshot.Metadata.Value;
+            _cache?.Forget(removed, metadata?.Owner ?? gone.Watch.Owner, metadata?.Name ?? gone.Watch.Name);
         }
 
         _order = ids;
@@ -274,8 +282,8 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
             return;
         }
 
-        _cache.Prune(Account, settings.Watchlist.Select(w => w.RepositoryId).ToList(), TimeSpan.FromDays(30));
-        var cached = _cache.Load(Account);
+        Prune(settings.Watchlist);
+        var cached = _cache.Load();
         lock (_gate)
         {
             foreach (var (id, snapshot) in cached)
@@ -320,7 +328,7 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
                             .FirstOrDefault();
                         if (next is not null)
                         {
-                            parts = next.DueParts(now + BatchWindow);
+                            parts = next.DueParts(now, BatchWindow);
                             next.Begin();
                         }
 
@@ -339,6 +347,16 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
 
                 SetRefreshing(true);
                 await RefreshEntryAsync(next, parts, cancellationToken).ConfigureAwait(false);
+                if (_cache is not null && _time.GetUtcNow() - _lastPrune > TimeSpan.FromHours(1))
+                {
+                    List<WatchedRepository> watched;
+                    lock (_gate)
+                    {
+                        watched = _order.Select(id => _entries[id].Watch).ToList();
+                    }
+
+                    Prune(watched); // commit-specific responses keep appearing: keep the cache bounded during long sessions
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -375,6 +393,7 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         WatchedRepository watch;
         RepositorySnapshot snapshot;
         TaskCompletionSource? waiters;
+        var started = _time.GetUtcNow();
         lock (_gate)
         {
             watch = entry.Watch;
@@ -399,12 +418,12 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
                     $"Repo Watch hit an unexpected problem ({ex.GetType().Name}); it will try again.", _time.GetUtcNow()));
             }
 
-            if (Publish(entry, watch, refreshed))
+            if (Publish(entry, watch, refreshed) && !cancellationToken.IsCancellationRequested)
             {
-                _cache?.Save(refreshed);
+                _cache?.Save(refreshed); // the cache also refuses writes once the account was cleared (sign-out)
             }
 
-            Schedule(entry, parts, refreshed);
+            Schedule(entry, parts, refreshed, started);
             UpdateState();
         }
         finally
@@ -413,35 +432,57 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         }
     }
 
-    private void Schedule(Entry entry, RefreshParts parts, RepositorySnapshot refreshed)
+    /// <summary>
+    /// Sets each refreshed part's next due time from its own outcome: its regular interval (scaled by the
+    /// current slowdown) after success, or its own exponential backoff after a transient failure. One
+    /// failing section therefore backs off without resetting or delaying the healthy ones.
+    /// </summary>
+    private void Schedule(Entry entry, RefreshParts parts, RepositorySnapshot refreshed, DateTimeOffset started)
     {
         var now = _time.GetUtcNow();
-        var error = ErrorOf(refreshed, parts);
+
+        // Metadata counts only if it was actually requested in this pass (it also is when nothing was known).
+        if (refreshed.Metadata.LastAttemptAt is { } attempted && attempted >= started)
+        {
+            parts |= RefreshParts.Metadata;
+        }
+
         lock (_gate)
         {
             entry.InFlight = false;
-            var transient = error is { Kind: not (ResourceErrorKind.NotFound or ResourceErrorKind.Forbidden or ResourceErrorKind.SsoRequired) };
-            entry.Failures = transient ? entry.Failures + 1 : 0;
-            entry.LastOffline = error?.Kind is ResourceErrorKind.Network or ResourceErrorKind.Timeout;
-
-            var slowdown = PollingPolicy.Slowdown(_conditions?.IsWidgetVisible ?? true, _conditions?.IsOnBattery ?? false, _budget?.IsLow ?? false);
+            var slowdown = CurrentSlowdown();
             var active = RepositoryRefresh.IsActive(refreshed);
             var focused = entry.Key == _focus;
+            var errors = new List<ResourceError>();
             foreach (var part in Parts.Where(p => parts.HasFlag(p)))
             {
+                var error = ErrorOf(refreshed, part, started);
+                if (error is not null)
+                {
+                    errors.Add(error);
+                }
+
+                var transient = error is { Kind: not (ResourceErrorKind.NotFound or ResourceErrorKind.Forbidden or ResourceErrorKind.SsoRequired) };
+                entry.Failures[part] = transient ? entry.Failures[part] + 1 : 0;
+                if (error is null)
+                {
+                    entry.LastRefreshed[part] = now;
+                }
+
                 if (entry.Requeued.HasFlag(part))
                 {
                     continue; // requested again (or options changed) while this refresh ran: stays due now
                 }
 
                 entry.Due[part] = now + (transient
-                    ? PollingPolicy.Backoff(entry.Failures, _intervals, _random())
+                    ? PollingPolicy.Backoff(entry.Failures[part], _intervals, _random())
                     : PollingPolicy.Scale(PollingPolicy.Interval(part, active, focused, _intervals), slowdown));
             }
 
             entry.Requeued = RefreshParts.None;
+            entry.LastOffline = errors.Count > 0 && errors.All(e => e.Kind is ResourceErrorKind.Network or ResourceErrorKind.Timeout);
 
-            if (error is { Kind: ResourceErrorKind.RateLimited } limited)
+            if (errors.FirstOrDefault(e => e.Kind == ResourceErrorKind.RateLimited) is { } limited)
             {
                 var until = limited.RetryAt is { } retry && retry > now ? retry : now + _intervals.Failed;
                 _pausedUntil = until - now > _intervals.MaxRateLimitWait ? now + _intervals.MaxRateLimitWait : until;
@@ -455,31 +496,27 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         }
     }
 
-    /// <summary>The error from the parts just refreshed that should drive the next time: rate limits, then connectivity.</summary>
-    private static ResourceError? ErrorOf(RepositorySnapshot snapshot, RefreshParts parts)
+    /// <summary>The error a part got in this pass; an older error left over from an earlier pass doesn't count.</summary>
+    private static ResourceError? ErrorOf(RepositorySnapshot snapshot, RefreshParts part, DateTimeOffset started)
     {
-        var errors = new List<ResourceError?> { snapshot.Metadata.LastError };
-        if (parts.HasFlag(RefreshParts.Actions))
+        var error = part switch
         {
-            errors.Add(snapshot.Actions.LastError);
-        }
-
-        if (parts.HasFlag(RefreshParts.PullRequests))
-        {
-            errors.Add(snapshot.PullRequests.LastError);
-        }
-
-        if (parts.HasFlag(RefreshParts.Issues))
-        {
-            errors.Add(snapshot.Issues.LastError);
-        }
-
-        var known = errors.OfType<ResourceError>().ToList();
-        return known.FirstOrDefault(e => e.Kind == ResourceErrorKind.RateLimited)
-            ?? known.FirstOrDefault(e => e.Kind is ResourceErrorKind.Network or ResourceErrorKind.Timeout)
-            ?? known.FirstOrDefault();
+            RefreshParts.Metadata => snapshot.Metadata.LastError,
+            RefreshParts.Actions => snapshot.Actions.LastError,
+            RefreshParts.PullRequests => snapshot.PullRequests.LastError,
+            _ => snapshot.Issues.LastError,
+        };
+        return error is not null && error.OccurredAt >= started ? error : null;
     }
 
+    private double CurrentSlowdown() =>
+        PollingPolicy.Slowdown(_conditions?.IsWidgetVisible ?? true, _conditions?.IsOnBattery ?? false, _budget?.IsLow ?? false);
+
+    private void Prune(IReadOnlyCollection<WatchedRepository> watched)
+    {
+        _lastPrune = _time.GetUtcNow();
+        _cache?.Prune(watched, TimeSpan.FromDays(_cacheOptions.RetentionDays), _cacheOptions.MaxCachedResponses);
+    }
     /// <summary>Applies a result unless the repository was removed, its options changed meanwhile, or the monitor was disposed.</summary>
     private bool Publish(Entry entry, WatchedRepository watch, RepositorySnapshot snapshot)
     {
@@ -534,9 +571,9 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
 
     private void OnConditionsChanged(object? sender, EventArgs e)
     {
-        if (IsPausedByUser)
+        lock (_gate)
         {
-            lock (_gate)
+            if (IsPausedByUser)
             {
                 foreach (var entry in _entries.Values)
                 {
@@ -544,6 +581,25 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
                     entry.Waiters = null;
                 }
             }
+
+            // Widget shown again or back on mains power: due times stretched while slowed down are pulled
+            // in to the regular interval, so the user isn't looking at data up to 18 minutes old.
+            var slowdown = CurrentSlowdown();
+            if (slowdown < _slowdown)
+            {
+                foreach (var entry in _entries.Values)
+                {
+                    var active = RepositoryRefresh.IsActive(entry.Snapshot);
+                    var focused = entry.Key == _focus;
+                    foreach (var part in Parts.Where(p => entry.Failures[p] == 0))
+                    {
+                        var regular = entry.LastRefreshed[part] + PollingPolicy.Scale(PollingPolicy.Interval(part, active, focused, _intervals), slowdown);
+                        entry.Due[part] = Min(entry.Due[part], regular);
+                    }
+                }
+            }
+
+            _slowdown = slowdown;
         }
 
         UpdateState();
@@ -558,13 +614,12 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
             foreach (var entry in _entries.Values)
             {
                 entry.MarkAllDue();
-                entry.Failures = 0;
+                entry.ResetFailures();
             }
         }
 
         Signal();
     }
-
     private static TimeSpan Clamp(TimeSpan wait) =>
         wait < TimeSpan.Zero ? TimeSpan.Zero : wait > TimeSpan.FromHours(1) ? TimeSpan.FromHours(1) : wait;
 
@@ -588,19 +643,35 @@ public sealed class PollingRepositoryMonitor : IWatchlistAwareMonitor, IDisposab
         /// <summary>Parts requested again while a refresh was in flight.</summary>
         public RefreshParts Requeued { get; set; }
 
-        public int Failures { get; set; }
+        /// <summary>Consecutive transient failures per part; each part backs off on its own.</summary>
+        public Dictionary<RefreshParts, int> Failures { get; } = Parts.ToDictionary(p => p, _ => 0);
+
+        /// <summary>Last successful refresh per part, for catching up after a slowdown ends.</summary>
+        public Dictionary<RefreshParts, DateTimeOffset> LastRefreshed { get; } = Parts.ToDictionary(p => p, _ => DateTimeOffset.MinValue);
 
         public TaskCompletionSource? Waiters { get; set; }
 
         public bool LastOffline { get; set; }
 
-        public RefreshParts DueParts(DateTimeOffset before) =>
-            Parts.Where(p => Due[p] <= before).Aggregate(RefreshParts.None, (all, p) => all | p);
+        /// <summary>
+        /// Parts due now, plus healthy parts due within the batch window (saving a pass). A part that is
+        /// backing off is never pulled forward, or its backoff would collapse to the other parts' pace.
+        /// </summary>
+        public RefreshParts DueParts(DateTimeOffset now, TimeSpan window) =>
+            Parts.Where(p => Due[p] <= now || (Failures[p] == 0 && Due[p] <= now + window)).Aggregate(RefreshParts.None, (all, p) => all | p);
 
         public void Begin()
         {
             InFlight = true;
             Requeued = RefreshParts.None;
+        }
+
+        public void ResetFailures()
+        {
+            foreach (var part in Parts)
+            {
+                Failures[part] = 0;
+            }
         }
 
         public void MarkAllDue()
