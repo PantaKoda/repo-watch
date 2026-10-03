@@ -386,15 +386,33 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void ReportLinkResult(LinkOpenResult result)
+    /// <summary>Opens a repository's GitHub page, or says why it can't (e.g. access was lost).</summary>
+    [RelayCommand]
+    private async Task OpenOnGitHubAsync(RepositoryRowViewModel? row)
     {
-        var message = result switch
+        if (row is null)
         {
-            LinkOpenResult.Refused => "That link isn't on GitHub, so it wasn't opened.",
-            LinkOpenResult.Failed => "Couldn't open your web browser.",
-            _ => null,
-        };
+            return;
+        }
 
+        if (!row.HasUrl)
+        {
+            ShowNotice("This repository's GitHub page isn't available right now.");
+            return;
+        }
+
+        await row.OpenOnGitHubCommand.ExecuteAsync(null);
+    }
+
+    private void ReportLinkResult(LinkOpenResult result) => ShowNotice(result switch
+    {
+        LinkOpenResult.Refused => "That link isn't on GitHub, so it wasn't opened.",
+        LinkOpenResult.Failed => "Couldn't open your web browser.",
+        _ => null,
+    });
+
+    private void ShowNotice(string? message)
+    {
         _dispatcher.Post(() => Notice = message);
         if (message is not null)
         {

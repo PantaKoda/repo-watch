@@ -291,8 +291,12 @@
                     <TextBlock Classes="secondary" Text="{Binding ActivityText}" IsVisible="{Binding HasActivity}" HorizontalAlignment="Right"
                                ToolTip.Tip="Last activity: push, workflow run, pull request or issue update" />
                   </StackPanel>
-                  <!-- Discreet: faint until the row is hovered or selected. Ctrl+Enter does the same from the keyboard. -->
+                  <!--
+                    Discreet: dim until the row is hovered or selected. Not focusable: the keyboard path is
+                    Ctrl+Enter on the selected row, so keys always act on the row that is selected.
+                  -->
                   <Button Grid.Column="3" Classes="icon rowlink" Command="{Binding OpenOnGitHubCommand}" IsVisible="{Binding HasUrl}"
+                          Focusable="False"
                           VerticalAlignment="Top" Margin="4,-2,-4,0"
                           ToolTip.Tip="Open on GitHub (Ctrl+Enter)"
                           AutomationProperties.Name="{Binding Name, StringFormat='Open {0} on GitHub'}">

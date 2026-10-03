@@ -83,22 +83,29 @@ public partial class WidgetWindow : Window
 
     private void OnRepositoryTapped(object? sender, TappedEventArgs e)
     {
-        // A button inside the row (open on GitHub) does its own thing; only the row itself opens details.
-        if (e.Source is Visual source && source.FindAncestorOfType<Button>(includeSelf: true) is null
-            && source.FindAncestorOfType<ListBoxItem>() is { DataContext: RepositoryRowViewModel row })
+        if (e.Source is not Visual source || source.FindAncestorOfType<ListBoxItem>() is not { DataContext: RepositoryRowViewModel row })
         {
-            OpenDetails(row);
+            return;
         }
+
+        if (source.FindAncestorOfType<Button>(includeSelf: true) is not null)
+        {
+            // The row's own button (open on GitHub) did its job; select that row so the keyboard acts on it next.
+            RepositoryList.SelectedItem = row;
+            return;
+        }
+
+        OpenDetails(row);
     }
 
     private void OnRepositoryKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.Control && RepositoryList.SelectedItem is RepositoryRowViewModel selected)
+        if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control) && RepositoryList.SelectedItem is RepositoryRowViewModel selected)
         {
-            selected.OpenOnGitHubCommand.Execute(null); // Ctrl+Enter: the repository in the browser
+            ViewModel?.OpenOnGitHubCommand.Execute(selected); // Ctrl+Enter: the repository in the browser
             e.Handled = true;
         }
-        else if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None && RepositoryList.SelectedItem is RepositoryRowViewModel row)
+        else if (e.Key is Key.Enter or Key.Space && RepositoryList.SelectedItem is RepositoryRowViewModel row)
         {
             OpenDetails(row);
             e.Handled = true;
