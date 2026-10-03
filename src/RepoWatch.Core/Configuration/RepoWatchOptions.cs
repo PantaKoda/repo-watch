@@ -72,21 +72,25 @@ public sealed class RelayOptions
 }
 
 /// <summary>
-/// Where "Check for updates" points. The app only opens this page in the browser: it never downloads or runs
-/// an update itself (that needs signed, authenticated update metadata, which is not designed yet).
+/// Where updates come from: the public GitHub releases of one repository. Repo Watch reads them without
+/// signing in, shows what changed, and installs a release only when the user asks (see docs/updates.md).
 /// </summary>
 public sealed class UpdatesOptions
 {
-    public const string DefaultReleasesUrl = "https://github.com/PantaKoda/repo-watch/releases";
+    public const string DefaultRepository = "PantaKoda/repo-watch";
 
-    /// <summary>HTTPS page on the GitHub web host listing releases. Empty hides the action.</summary>
-    public string? ReleasesUrl { get; set; } = DefaultReleasesUrl;
+    /// <summary>"owner/name" of the public repository whose GitHub releases are Repo Watch's updates. Empty turns updates off.</summary>
+    public string? Repository { get; set; } = DefaultRepository;
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(ReleasesUrl);
+    /// <summary>Hours between automatic checks. 0 checks only when asked (Settings › Check for updates).</summary>
+    public int CheckIntervalHours { get; set; } = 24;
 
-    public bool IsDefault => string.Equals(ReleasesUrl, DefaultReleasesUrl, StringComparison.Ordinal);
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Repository);
 
-    /// <summary>The page to open, or null when unset or not on the GitHub web host (only those links are opened).</summary>
-    public Uri? ResolveFor(Uri gitHubWebBase) =>
-        IsConfigured && Uri.TryCreate(ReleasesUrl, UriKind.Absolute, out var url) && Platform.ExternalLinkPolicy.IsAllowed(url, gitHubWebBase) ? url : null;
+    /// <summary>The repository's releases page on the GitHub web host.</summary>
+    public Uri? ReleasesPage(Uri gitHubWebBase)
+    {
+        ArgumentNullException.ThrowIfNull(gitHubWebBase);
+        return IsConfigured ? new Uri(gitHubWebBase, $"{Repository!.Trim()}/releases") : null;
+    }
 }

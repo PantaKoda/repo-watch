@@ -32,6 +32,14 @@ Run this against the **published zip** (`scripts/publish-windows.ps1`), extracte
 - [ ] Settings → About shows the version and commit. *Check for updates* opens the releases page. *Export diagnostics* writes an archive without tokens, codes or repository names.
 - [ ] Appearance at 100%, 125% and 150% display scale: text stays crisp and readable in light and dark, solid and frosted.
 
+## Updates
+
+- [ ] *(maintainer)* Pushing tag `vX.Y.Z` runs the Release workflow and creates a release with the zip, its `.sha256` and the CHANGELOG notes.
+- [ ] Settings → *Check for updates* on the newest version says there is no newer release.
+- [ ] With an older release installed, the widget shows **UPDATE** (at most 30 s after start); the window lists every newer release's notes.
+- [ ] *Install update* downloads, restarts into the new version (About shows it, the widget says "Updated to …"), keeps the sign-in, and leaves `<folder>.previous`.
+- [ ] A copy run from a build folder (not a release zip) explains that it can't update itself.
+
 ## Restart and sign-out
 
 - [ ] Quit and start again: still signed in, the same repositories and order, and cached data shown (labeled) until the refresh completes.

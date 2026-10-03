@@ -18,9 +18,11 @@ namespace RepoWatch.Desktop;
 
 internal static class CompositionRoot
 {
-    public static ServiceProvider Build(AppPaths paths, ConfigurationLoadResult configuration, ILoggerFactory loggerFactory, SingleInstance? instance = null)
+    public static ServiceProvider Build(AppPaths paths, ConfigurationLoadResult configuration, ILoggerFactory loggerFactory, SingleInstance? instance = null,
+        Updates.InstallInfo? install = null)
     {
         var services = new ServiceCollection();
+        services.AddSingleton(install ?? Updates.InstallInfo.Detect([]));
         if (instance is not null)
         {
             services.AddSingleton(instance);
@@ -71,6 +73,12 @@ internal static class CompositionRoot
         services.AddSingleton<DesktopIntegration>();
         services.AddSingleton<MonitorCoordinator>();
         services.AddSingleton<AvatarLoader>();
+
+        // Updates from the configured repository's public GitHub releases (read without signing in).
+        services.AddSingleton<RepoWatch.GitHub.Updates.IReleaseSource>(sp => new RepoWatch.GitHub.Updates.ReleaseClient(
+            sp.GetRequiredService<HttpClient>(), sp.GetRequiredService<GitHubEndpoints>(), configuration.Options.Updates.Repository ?? ""));
+        services.AddSingleton<Updates.IProcessLauncher, Updates.ProcessLauncher>();
+        services.AddSingleton<Updates.UpdateService>();
 
         // Monitoring and platform adapters.
         services.AddSingleton<MonitorHost>();

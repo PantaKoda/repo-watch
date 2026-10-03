@@ -900,3 +900,53 @@ Requested by the maintainer after using 0.1.0:
 **Next concrete task**
 - Further UI changes as requested. Rebuild the installed app after merge.
 
+## After release — GitHub releases and in-app updates (feature branch `app-updates`, version 0.2.0)
+
+Requested by the maintainer:
+1. a proper GitHub release (Windows);
+2. an update indicator on the main screen that opens a window with all changes and an Install button;
+3. *Check for updates* that really checks and says when nothing is newer.
+
+The maintainer chose to make `PantaKoda/repo-watch` **public**, so releases are read anonymously and the GitHub App needs no new permission. This expands Stage 11's "defer automatic downloading/execution" on the maintainer's request. Installing stays user-initiated, checksum-verified and reversible; code signing is still future work (docs/updates.md).
+
+**Implemented**
+- **Releases:**
+  - `CHANGELOG.md`;
+  - `scripts/release-notes.ps1`, which extracts a version's section and fails when it is missing;
+  - `.github/workflows/release.yml`: on a `vX.Y.Z` tag it checks the tag matches `Version`, runs the publish script with tests, and creates the release with the zip, `.sha256` and notes;
+  - `Version` set to 0.2.0;
+  - the publish script writes `release.json` (version, commit, runtime) into the zip.
+- **Checking:**
+  - `ReleaseClient` (GitHub project) reads `repos/{Updates:Repository}/releases` without a token and maps version tags, ignoring others;
+  - `UpdatePolicy` (Core) keeps published, stable releases newer than the running version, newest first;
+  - `UpdateService` checks 30 s after start and then every `Updates:CheckIntervalHours` (default 24; 0 = only when asked).
+- **Indicator and window:** an accent **UPDATE** pill in the widget header opens the new update window. It shows:
+  - every newer release's notes as plain text (Markdown is stripped, never rendered);
+  - *Install update*, *View on GitHub*, *Check again* and *Later*;
+  - download progress and status, and the reason when installing isn't possible.
+- **Settings › Check for updates:** "You have the latest version (X). There is no newer release.", "Version X is available." (and opens the window), or why the check failed.
+- **Install:**
+  1. Downloads only from the repository's release download URLs (HTTPS, size-capped).
+  2. Checks the SHA-256 against the release's `.sha256`.
+  3. Unpacks into `%LOCALAPPDATA%\RepoWatch\updates` and checks the staged copy's `release.json` version.
+  4. Starts the staged copy with `--apply-update` and quits.
+  5. `UpdateApplier` waits for the old process, moves the install folder to `<folder>.previous`, copies the new version in and starts it with `--updated-from`. On failure it restores the previous folder and starts that instead.
+  6. The new version shows "Updated to X (from Y)" and removes the staging folder.
+  - Only folders carrying `release.json` update themselves; builds from source explain why not.
+- **Configuration:** `Updates:ReleasesUrl` is replaced by `Updates:Repository` (validated owner/name) and `Updates:CheckIntervalHours`. The shipped `appsettings.json` sets both.
+- **Docs:** `docs/updates.md` (publishing, how updates work, rollback, security notes), README, architecture and validation checklist.
+
+**Checks run**
+- `dotnet test`: 470 passed. New tests:
+  - version parsing and order, the newer-release list, checksum file parsing;
+  - `ReleaseClient`: anonymous request, mapping, failure messages, download URL allowlist, size cap;
+  - `UpdateService` end to end with real zips on disk: stage and hand-over arguments, checksum mismatch, wrong version inside the zip, source builds;
+  - Settings messages; the widget indicator; the update window's plain-text notes;
+  - `UpdateApplier` with real folders: swap with the previous version kept, no change when the old app doesn't quit, restore after a failed copy;
+  - headless update window: Install enabled, or the reason shown.
+- **Real hand-over with real processes:** a 0.2.0 release zip was extracted as the install folder and again as the staged copy. With the installed app running, the staged copy started with `--apply-update` waited until the old app quit, moved the folder to `RepoWatch.previous`, copied itself in (marker file present), and started the new app from the install folder. That app logged "Updated from 0.1.9 to 0.2.0"; `update.log` recorded the swap.
+- **Not yet live:** reading releases from github.com and downloading a real release asset. The repository must be public and the first release published (tag `v0.2.0`), both maintainer actions after merge.
+
+**Next concrete task**
+- After merge: the maintainer makes the repository public and pushes tag `v0.2.0`. Verify the Release workflow, then confirm a 0.2.0 copy finds the release (the installed pre-0.2.0 copy has no updater, so it is replaced by hand once).
+

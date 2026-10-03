@@ -1,0 +1,49 @@
+name: Release
+
+# Publishing a release is a maintainer action: push a tag "vX.Y.Z" matching <Version> in Directory.Build.props,
+# with a "## [X.Y.Z]" section in CHANGELOG.md. This builds the portable Windows zip with the same script
+# maintainers use, runs the tests, and creates the GitHub release that Repo Watch's in-app updates read.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Check the tag matches the version
+        shell: pwsh
+        run: |
+          $version = (dotnet msbuild src/RepoWatch.Desktop/RepoWatch.Desktop.csproj -getProperty:Version -p:TargetFramework=net10.0-windows10.0.19041.0).Trim()
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} doesn't match Version $version in Directory.Build.props." }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Release notes from CHANGELOG.md
+        shell: pwsh
+        run: pwsh scripts/release-notes.ps1 -Version $env:VERSION > release-notes.md
+
+      - name: Build, test and package
+        shell: pwsh
+        run: pwsh scripts/publish-windows.ps1
+
+      - name: Create the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "artifacts/release/RepoWatch-$env:VERSION-win-x64.zip" `
+            "artifacts/release/RepoWatch-$env:VERSION-win-x64.zip.sha256" `
+            --title "Repo Watch $env:VERSION" --notes-file release-notes.md --verify-tag

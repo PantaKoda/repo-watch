@@ -203,40 +203,6 @@ public sealed class ShellFeedbackTests
     }
 
     [Theory]
-    [InlineData(LinkOpenResult.Opened, "Opened the releases page")]
-    [InlineData(LinkOpenResult.Failed, "Couldn't open a browser")]
-    public async Task Check_for_updates_only_opens_the_configured_releases_page(LinkOpenResult result, string expected)
-    {
-        var browser = new RecordingBrowser { Result = result };
-        var options = new RepoWatchOptions { Updates = { ReleasesUrl = "https://github.com/owner/repo/releases" } };
-        using var viewModel = SettingsViewModels.Create(TestServices.Settings(), new MonitorHost(TimeProvider.System), new FakeShell(), options, browser: browser);
-
-        Assert.True(viewModel.CanCheckForUpdates);
-        await viewModel.CheckForUpdatesCommand.ExecuteAsync(null);
-
-        Assert.Equal("https://github.com/owner/repo/releases", Assert.Single(browser.Opened).ToString());
-        Assert.StartsWith(expected, viewModel.ActionMessage, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Check_for_updates_is_hidden_without_a_releases_page()
-    {
-        var options = new RepoWatchOptions { Updates = { ReleasesUrl = "" } };
-        using var viewModel = SettingsViewModels.Create(TestServices.Settings(), new MonitorHost(TimeProvider.System), new FakeShell(), options, browser: new RecordingBrowser());
-
-        Assert.False(viewModel.CanCheckForUpdates);
-    }
-
-    [Fact]
-    public void Check_for_updates_is_hidden_when_the_default_page_is_not_on_the_configured_GitHub_host()
-    {
-        var options = new RepoWatchOptions { GitHub = { WebBaseUrl = "https://github.example.com" } };
-        using var viewModel = SettingsViewModels.Create(TestServices.Settings(), new MonitorHost(TimeProvider.System), new FakeShell(), options, browser: new RecordingBrowser());
-
-        Assert.False(viewModel.CanCheckForUpdates);
-    }
-
-    [Theory]
     [InlineData(59.7, "59m ago")]
     [InlineData(60.1, "1h ago")]
     [InlineData(0.5, "just now")]

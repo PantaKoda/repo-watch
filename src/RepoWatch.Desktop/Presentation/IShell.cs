@@ -25,6 +25,9 @@ public interface IShell
     /// <summary>Opens the data folder in the file manager. Never throws; returns false if it could not be opened.</summary>
     Task<bool> OpenDataFolderAsync();
 
+    /// <summary>Opens the update window: what changed since this version, and Install update.</summary>
+    void OpenUpdate();
+
     void Quit();
 }
 

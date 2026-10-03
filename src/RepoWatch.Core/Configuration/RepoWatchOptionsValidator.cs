@@ -48,16 +48,16 @@ public static partial class RepoWatchOptionsValidator
         // Plain HTTP is accepted only for a relay on this machine during development.
         ValidateHttpsUrl(errors, "Relay:BaseUrl", options.Relay.BaseUrl, required: false, allowLoopbackHttp: true);
 
-        // The browser adapter opens only GitHub web links, so a configured releases page must live there too.
-        // The built-in default is exempt: with another GitHub:WebBaseUrl it is hidden, not a startup error.
-        var errorCount = errors.Count;
-        ValidateHttpsUrl(errors, "Updates:ReleasesUrl", options.Updates.ReleasesUrl, required: false, allowLoopbackHttp: false);
-        if (errors.Count == errorCount && options.Updates.IsConfigured && !options.Updates.IsDefault
-            && Uri.TryCreate(options.GitHub.WebBaseUrl, UriKind.Absolute, out var web)
-            && !Platform.ExternalLinkPolicy.IsAllowed(new Uri(options.Updates.ReleasesUrl!), web))
+        if (options.Updates.IsConfigured && !RepositoryPattern().IsMatch(options.Updates.Repository!.Trim()))
         {
-            errors.Add(new("Updates:ReleasesUrl", $"'{options.Updates.ReleasesUrl}' is not on {web.Host}.",
-                "Point it at the repository's releases page on GitHub, e.g. https://github.com/owner/repo/releases, or leave it empty to hide Check for updates."));
+            errors.Add(new("Updates:Repository", $"'{options.Updates.Repository}' is not an owner/name repository.",
+                "Use the repository whose GitHub releases are Repo Watch's updates, e.g. PantaKoda/repo-watch, or leave it empty to turn updates off."));
+        }
+
+        if (options.Updates.CheckIntervalHours is < 0 or > 168)
+        {
+            errors.Add(new("Updates:CheckIntervalHours", $"{options.Updates.CheckIntervalHours} is outside the allowed range.",
+                "Use 0 (check only when asked) up to 168 hours."));
         }
 
         return errors;
@@ -111,4 +111,7 @@ public static partial class RepoWatchOptionsValidator
 
     [GeneratedRegex(@"^[a-z0-9]+(?:-[a-z0-9]+)*$")]
     private static partial Regex SlugPattern();
+
+    [GeneratedRegex(@"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$")]
+    private static partial Regex RepositoryPattern();
 }

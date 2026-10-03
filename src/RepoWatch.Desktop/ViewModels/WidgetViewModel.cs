@@ -10,6 +10,7 @@ using RepoWatch.Core.Settings;
 using RepoWatch.Core.State;
 using RepoWatch.Desktop.Presentation;
 using RepoWatch.Desktop.Services;
+using RepoWatch.Desktop.Updates;
 
 namespace RepoWatch.Desktop.ViewModels;
 
@@ -34,6 +35,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     private readonly TimeProvider _time;
     private readonly IUiDispatcher _dispatcher;
     private readonly WatchlistService? _watchlist;
+    private readonly UpdateService? _updates;
     private IRepositoryMonitor _monitor;
     private bool _syncing;
 
@@ -48,9 +50,10 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     private static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(8);
 
     public WidgetViewModel(MonitorHost monitors, SettingsService settings, IShell shell, IExternalBrowser browser, TimeProvider time, IUiDispatcher dispatcher, RepoWatchOptions options,
-        WatchlistService? watchlist = null)
+        WatchlistService? watchlist = null, UpdateService? updates = null)
     {
         _watchlist = watchlist;
+        _updates = updates;
         IsSignInConfigured = options.GitHub.IsSignInConfigured;
         _monitors = monitors;
         _settings = settings;
@@ -66,6 +69,35 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
         ApplySettings();
         Sync();
+
+        if (_updates is not null)
+        {
+            _updates.Changed += OnUpdatesChanged;
+            RefreshUpdate();
+            if (_updates.Install.UpdatedFrom is { } from)
+            {
+                ShowNotice($"Updated to {_updates.Current} (from {from}).");
+            }
+        }
+    }
+
+    /// <summary>A newer release exists: the header shows a small Update button.</summary>
+    [ObservableProperty]
+    public partial bool UpdateAvailable { get; private set; }
+
+    [ObservableProperty]
+    public partial string UpdateTooltip { get; private set; } = "";
+
+    [RelayCommand]
+    private void OpenUpdate() => _shell.OpenUpdate();
+
+    private void OnUpdatesChanged(object? sender, EventArgs e) => _dispatcher.Post(RefreshUpdate);
+
+    private void RefreshUpdate()
+    {
+        var latest = _updates?.Latest;
+        UpdateAvailable = latest is not null;
+        UpdateTooltip = latest is null ? "" : $"Repo Watch {latest.Version} is available (you have {_updates!.Current}). Click to see what changed and install it.";
     }
 
     public ObservableCollection<RepositoryRowViewModel> Repositories { get; } = [];
@@ -236,6 +268,10 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         _monitor.Changed -= OnMonitorChanged;
         _monitors.CurrentChanged -= OnCurrentMonitorChanged;
         _settings.AppChanged -= OnSettingsChanged;
+        if (_updates is not null)
+        {
+            _updates.Changed -= OnUpdatesChanged;
+        }
     }
 
     [RelayCommand]

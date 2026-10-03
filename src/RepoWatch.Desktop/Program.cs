@@ -11,6 +11,12 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // The staged copy of an update replaces the installed folder and starts it; nothing else runs.
+        if (Updates.UpdateApplier.TryRun(args, out var applied))
+        {
+            return applied;
+        }
+
         var paths = AppPaths.Resolve();
 
         // One instance per user and data folder: a second launch shows the running widget and exits.
@@ -31,7 +37,13 @@ internal static class Program
             logger.LogError("Configuration error: {Error}", error);
         }
 
-        using var services = CompositionRoot.Build(paths, configuration, loggerFactory, instance);
+        var install = Updates.InstallInfo.Detect(args);
+        if (install.UpdatedFrom is { } from)
+        {
+            logger.LogInformation("Updated from {From} to {Version}", from, install.Version);
+        }
+
+        using var services = CompositionRoot.Build(paths, configuration, loggerFactory, instance, install);
         try
         {
             return BuildAvaloniaApp(() => new App(services)).StartWithClassicDesktopLifetime(args);
