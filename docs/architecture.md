@@ -31,12 +31,30 @@ Platform adapters (credentials, browser launch, tray, notifications, startup reg
 
 UI code observes view-model state and issues commands. Polling loops, HTTP and persistence live in services, never in views.
 
+## Domain model (Core)
+
+- **Keys:** `AccountKey` (host + user ID) and `RepositoryKey` (account + repository ID). Logins, owners and names are display metadata and may change.
+- **Outcomes:** `CheckOutcome` per run/job/check/status; `CheckRollup` per commit. A passing rollup is not a statement about mergeability, connectivity or outstanding work.
+- **Current-commit selection:** `WorkflowRunSelection` (latest attempt per run, newest run per workflow+event, current SHA only) and `CommitChecks` (latest check per app+name, latest status per context).
+- **Resource state:** each section of a `RepositorySnapshot` is a `Resource<T>` with its own value, freshness and error. A failure in one section never modifies another. Access loss withholds cached content in every section.
+
+## Persistence (Desktop)
+
+`LocalDatabase` (`repowatch.db` in the data folder) applies ordered SQL migrations tracked by `PRAGMA user_version` and refuses a database from a newer version. Settings are stored as versioned JSON documents per scope (`app`, `account:<host>/<userId>`), encoded by `SettingsCodec`:
+
+1. Read `schemaVersion`. If it is newer than supported, return defaults and never overwrite the stored document.
+2. Apply JSON migrations `v → v+1` up to the current version.
+3. Deserialize, then normalize invalid values.
+4. Unreadable documents are copied to `settings_backup` before defaults can replace them.
+
+Adding a field with a default needs no migration. Renaming, moving or reinterpreting a field needs a migration and a version bump.
+
 ## Configuration vs. user settings vs. secrets
 
 | Kind | Example | Stored in |
 | --- | --- | --- |
 | Deployment configuration (public) | GitHub App client ID, API base URL, polling targets | `appsettings.json`, user override file, environment |
-| User settings (Stage 02+) | Watchlist, order, appearance, notifications, window placement | Local SQLite, schema-versioned, isolated by host + account |
+| User settings | Watchlist, order, appearance, notifications, window placement | Local SQLite (`settings` table), schema-versioned JSON, isolated by host + account |
 | Secrets (Stage 04+) | Access/refresh tokens | OS credential store only (Windows Credential Manager first); session-only fallback if unavailable |
 
 No client secret or private key is ever embedded in the desktop app. Server-only GitHub App credentials belong to the relay's secret configuration.

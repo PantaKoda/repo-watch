@@ -1,0 +1,137 @@
+using RepoWatch.Core.Identity;
+
+namespace RepoWatch.Core.Settings;
+
+/// <summary>Machine-wide user preferences, shared by all accounts. Contains no secrets.</summary>
+public sealed record AppSettings
+{
+    public AppearanceSettings Appearance { get; init; } = new();
+
+    public WindowSettings Window { get; init; } = new();
+
+    public StartupSettings Startup { get; init; } = new();
+
+    public NotificationSettings Notifications { get; init; } = new();
+
+    /// <summary>The account the widget shows. Identity only; credentials live in the OS store.</summary>
+    public AccountKey? ActiveAccount { get; init; }
+
+    public bool MonitoringPaused { get; init; }
+}
+
+public enum ThemePreference
+{
+    System,
+    Light,
+    Dark,
+}
+
+public enum WindowMaterial
+{
+    /// <summary>Frosted where supported and readable; otherwise solid.</summary>
+    Auto,
+    Solid,
+    Transparent,
+    Frosted,
+    /// <summary>Windows 11 system backdrop; not a see-through effect.</summary>
+    Mica,
+}
+
+public enum Density
+{
+    Comfortable,
+    Compact,
+}
+
+public sealed record AppearanceSettings
+{
+    public const double MinBackgroundOpacity = 0.2;
+    public const double MaxBackgroundOpacity = 1.0;
+
+    public ThemePreference Theme { get; init; } = ThemePreference.System;
+
+    public WindowMaterial Material { get; init; } = WindowMaterial.Auto;
+
+    /// <summary>Opacity of the background/material layer only; text and controls stay opaque.</summary>
+    public double BackgroundOpacity { get; init; } = 0.85;
+
+    public Density Density { get; init; } = Density.Comfortable;
+
+    /// <summary>Optional accent as #RRGGBB; null uses the system accent.</summary>
+    public string? AccentColor { get; init; }
+}
+
+public sealed record WindowSettings
+{
+    public bool AlwaysOnTop { get; init; }
+
+    public bool PositionLocked { get; init; }
+
+    public bool Expanded { get; init; }
+
+    /// <summary>Remembered placements, one per display configuration.</summary>
+    public IReadOnlyList<WindowPlacement> Placements { get; init; } = [];
+}
+
+/// <summary>Window bounds in device-independent pixels for a given display configuration.</summary>
+public sealed record WindowPlacement
+{
+    /// <summary>Identifies the monitor layout, e.g. a hash of screen bounds and scaling.</summary>
+    public required string DisplayKey { get; init; }
+
+    public required double X { get; init; }
+
+    public required double Y { get; init; }
+
+    public required double Width { get; init; }
+
+    public required double Height { get; init; }
+}
+
+public sealed record StartupSettings
+{
+    /// <summary>Opt-in; off by default.</summary>
+    public bool StartAtLogin { get; init; }
+
+    public bool StartMinimized { get; init; }
+}
+
+public sealed record NotificationSettings
+{
+    public bool Enabled { get; init; } = true;
+
+    public bool CiFailure { get; init; } = true;
+
+    public bool CiRecovery { get; init; } = true;
+
+    public bool ReviewRequested { get; init; } = true;
+
+    public bool PullRequestMerged { get; init; } = true;
+
+    /// <summary>Omit titles and other repository content from notification text.</summary>
+    public bool HidePrivateDetails { get; init; }
+
+    public QuietHours QuietHours { get; init; } = new();
+}
+
+public sealed record QuietHours
+{
+    public bool Enabled { get; init; }
+
+    public TimeOnly Start { get; init; } = new(22, 0);
+
+    public TimeOnly End { get; init; } = new(7, 0);
+
+    /// <summary>True if <paramref name="localTime"/> falls in the window, which may span midnight.</summary>
+    public bool Contains(TimeOnly localTime)
+    {
+        if (!Enabled || Start == End)
+        {
+            return false;
+        }
+
+        return Start < End
+            ? localTime >= Start && localTime < End
+            : localTime >= Start || localTime < End;
+    }
+}

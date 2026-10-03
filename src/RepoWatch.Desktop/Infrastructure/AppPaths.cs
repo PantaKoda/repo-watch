@@ -3,6 +3,8 @@ namespace RepoWatch.Desktop.Infrastructure;
 /// <summary>Per-user locations for configuration overrides, logs and (later) the local database.</summary>
 public sealed record AppPaths(string DataDirectory, string DefaultsFile, string UserConfigFile, string LogDirectory)
 {
+    public string DatabaseFile => Path.Combine(DataDirectory, "repowatch.db");
+
     public const string DataDirectoryVariable = "REPOWATCH_DATA_DIR";
 
     /// <summary>
