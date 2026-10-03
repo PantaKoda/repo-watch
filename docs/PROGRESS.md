@@ -14,7 +14,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 08 | Modern visuals and real transparency | blocked (only the DPI check at 125%/150% remains; see Stage 08) |
 | 09 | Desktop behavior and notifications | completed |
 | 10 | Near-real-time delivery (relay) | completed |
-| 11 | Package and validate the Windows release | in_progress |
+| 11 | Package and validate the Windows release | completed |
 | 12 | Later macOS/Linux releases | pending |
 
 ## Stage 01 — Project and development baseline: completed
@@ -734,7 +734,7 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
 **Next concrete task**
 - Stage 11: a reproducible Windows release build (self-contained publish), About/version with a "Check for updates" link, README setup/use/troubleshooting and a manual validation checklist, and running the release build.
 
-## Stage 11 — Package and validate the Windows release: in_progress
+## Stage 11 — Package and validate the Windows release: completed
 
 **Implemented**
 - **Release build:** `scripts/publish-windows.ps1`.
@@ -783,11 +783,38 @@ The user asked for a UI uplift ahead of order: optional transparency with a slid
     - About shows `Repo Watch 0.1.0 (d74acc7)` with *Check for updates*.
 - One unidentified test failure in a working-tree run (1 failed of 404); 11 later full runs passed. It is most likely the known intermittent `Concurrent_first_run_initialization_does_not_fail` (Stage 10 limitations); the output wasn't captured.
 
+**Fresh-user live run on the release build (3 Oct 2026, Windows 11, zip from d74acc7, empty data folder, driven through UI Automation; device code approved by the maintainer on GitHub)**
+1. First start: the widget, the tray and the onboarding window. *Sign in with GitHub* showed a device code; after approval it signed in as `github.com/147987379`.
+2. Grant access: the existing installation was detected ("already has access through: PantaKoda, All repositories"), so the step could be skipped.
+3. Choose repositories: all 97 repositories loaded over several pages, 60+ private. Nothing was preselected ("0 of 97"). Search and checkboxes selected `repo-watch` and `24go` ("2 of 97").
+4. Appearance: background set to 70% (the light theme's 75 % readability floor applied).
+5. *Open widget*: `Polling`, both repositories with live data. Cross-checked against the REST API:
+   - both private (`repo-watch` was made private during this session, and the widget showed the current value);
+   - no runs or checks on `main`, so "No checks";
+   - 0 open PRs and 0 open issues.
+   These repositories had no failed run to show; failed runs were verified live in Stage 06.
+6. Restart: no onboarding, still signed in (from Credential Manager), the same two repositories and the saved appearance.
+7. Settings → About → *Check for updates* opened the releases page ("You have Repo Watch 0.1.0 (d74acc7)…").
+8. *Sign out*:
+   - the widget and settings returned to "Not signed in";
+   - the Credential Manager entry was removed;
+   - `repository_snapshots` and `http_cache` were empty;
+   - the account's watchlist (2 repositories) was kept for the next sign-in;
+   - no token-like values were in the database.
+   Test data and the extracted release were deleted afterwards. No `Run` value remained.
+
+No code was edited and no tokens were copied by hand at any point.
+
 **Remaining limitations**
-- **Fresh-user live run on the release build is not done:** sign in → grant → choose → appearance → restart → updates → sign out. A device code was issued but not approved before it expired. Stage 11 stays `in_progress` until it is run.
-- Not code-signed (SmartScreen warns); no GitHub release published; the GitHub App is installable only on its owner's account. All three are maintainer actions.
-- No debug symbols in releases (stack traces without line numbers).
-- x64 only; ARM64 emulation not verified. Stage 08 DPI check still open.
+- **Not code-signed:** SmartScreen warns.
+- **No GitHub release published.**
+- **The GitHub App is installable only on its owner's account.**
+- **`PantaKoda/repo-watch` is private:** the default *Check for updates* page is visible only to its owner until the repository is public or `Updates:ReleasesUrl` points elsewhere.
+- These four are maintainer decisions.
+- **No debug symbols in releases** (stack traces without line numbers).
+- **x64 only;** ARM64 emulation not verified.
+- **Stage 08 DPI check is still open.**
+- **Not verified live:** notifications from real GitHub events and the relay with real webhooks (fixtures only).
 
 **Next concrete task**
-- Run the fresh-user flow on the release zip with a device-code approval. Record it and mark Stage 11 `completed`.
+- Stage 08: the display-scale check at 125 %/150 % (maintainer). Then UI changes as requested. Stage 12 (macOS/Linux) is a later release.
