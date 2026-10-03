@@ -2,7 +2,7 @@
 
 A Windows-first desktop widget for monitoring GitHub Actions, pull requests and issues, built with C#, .NET and Avalonia. The shared core and UI are kept portable for later macOS/Linux releases.
 
-> **Status: early development (Stage 01 of 12).** The project builds, loads and validates configuration, and opens a baseline window. GitHub sign-in, repository monitoring and the widget UI are **not implemented yet**. See [docs/PROGRESS.md](docs/PROGRESS.md) for current state.
+> **Status: early development (Stage 02 of 12 complete).** The project builds, loads and validates configuration, opens a baseline window, and has the domain model and versioned settings storage. GitHub sign-in, repository monitoring and the widget UI are **not implemented yet**. See [docs/PROGRESS.md](docs/PROGRESS.md) for current state.
 
 ## Platform baseline
 
@@ -78,6 +78,7 @@ Unknown keys, wrongly typed values, malformed JSON and invalid values stop start
 | Path (default) | Contents |
 | --- | --- |
 | `%LOCALAPPDATA%\RepoWatch\repowatch.config.json` | Optional configuration override |
+| `%LOCALAPPDATA%\RepoWatch\repowatch.db` | SQLite database: settings now, cached snapshots later. Never contains tokens. |
 | `%LOCALAPPDATA%\RepoWatch\logs\` | Daily rolling logs, newest 7 files kept. Tokens and private content must never be logged. |
 
 ## Repository layout
