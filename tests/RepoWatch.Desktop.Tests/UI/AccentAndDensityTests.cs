@@ -21,8 +21,14 @@ public sealed class AccentAndDensityTests
     private static readonly string ScreenshotDirectory = Path.Combine(
         AppContext.BaseDirectory, "..", "..", "..", "..", "..", "artifacts", "screenshots", "stage08");
 
-    private static readonly Color DarkSurface = Color.Parse("#0B1322");
-    private static readonly Color LightSurface = Color.Parse("#F5F9FD");
+    /// <summary>The colors the widget actually paints behind text: both stops of the theme's surface gradient.</summary>
+    private static IReadOnlyList<Color> SurfaceStops(ThemeVariant variant)
+    {
+        Assert.True(Application.Current!.TryGetResource("SpaceSurfaceBrush", variant, out var brush));
+        var stops = ((LinearGradientBrush)brush!).GradientStops.Select(s => s.Color).ToList();
+        Assert.NotEmpty(stops);
+        return stops;
+    }
 
     /// <summary>WCAG 2 contrast ratio.</summary>
     private static double Contrast(Color a, Color b)
@@ -42,28 +48,39 @@ public sealed class AccentAndDensityTests
         return (Math.Max(l1, l2) + 0.05) / (Math.Min(l1, l2) + 0.05);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void Every_accent_has_readable_contrast_on_both_themes()
     {
         foreach (var preset in AccentPalette.Presets)
         {
             var (dark, light) = AccentPalette.Colors(preset.Hex);
 
-            // The accent colors the brand text and focus: at least 4.5:1, the WCAG level for normal text.
-            Assert.True(Contrast(dark, DarkSurface) >= 4.5, $"{preset.Name} on dark: {Contrast(dark, DarkSurface):0.0}");
-            Assert.True(Contrast(light, LightSurface) >= 4.5, $"{preset.Name} on light: {Contrast(light, LightSurface):0.0}");
+            // The accent colors the brand text and focus: at least 4.5:1, the WCAG level for normal text,
+            // everywhere on the gradient the widget paints.
+            foreach (var stop in SurfaceStops(ThemeVariant.Dark))
+            {
+                Assert.True(Contrast(dark, stop) >= 4.5, $"{preset.Name} on dark {stop}: {Contrast(dark, stop):0.00}");
+            }
+
+            foreach (var stop in SurfaceStops(ThemeVariant.Light))
+            {
+                Assert.True(Contrast(light, stop) >= 4.5, $"{preset.Name} on light {stop}: {Contrast(light, stop):0.00}");
+            }
         }
     }
 
     [AvaloniaFact]
-    public void Secondary_text_is_readable_on_the_solid_surfaces()
+    public void Secondary_text_is_readable_across_the_painted_surface_gradient()
     {
         var application = Application.Current!;
-        foreach (var (variant, surface) in new[] { (ThemeVariant.Dark, DarkSurface), (ThemeVariant.Light, LightSurface) })
+        foreach (var variant in new[] { ThemeVariant.Dark, ThemeVariant.Light })
         {
             Assert.True(application.TryGetResource("HudDimBrush", variant, out var dim));
-            var ratio = Contrast(((ISolidColorBrush)dim!).Color, surface);
-            Assert.True(ratio >= 4.5, $"secondary text on {variant}: {ratio:0.0}");
+            foreach (var stop in SurfaceStops(variant))
+            {
+                var ratio = Contrast(((ISolidColorBrush)dim!).Color, stop);
+                Assert.True(ratio >= 4.5, $"secondary text on {variant} {stop}: {ratio:0.00}");
+            }
         }
     }
 
@@ -73,6 +90,8 @@ public sealed class AccentAndDensityTests
         Assert.Equal(AccentPalette.Presets[0], AccentPalette.Find(null));
         Assert.Equal(AccentPalette.Presets[0], AccentPalette.Find("#123456"));
         Assert.Equal(AccentPalette.Colors(null), AccentPalette.Colors("not a color"));
+        // Only presets are honored: a hand-edited value would have no contrast guarantee and no entry in Settings.
+        Assert.Equal(AccentPalette.Colors(null), AccentPalette.Colors("#3366FF"));
         Assert.Equal("Nebula violet", AccentPalette.Find("#9d7cff").Name);
     }
 
@@ -95,6 +114,66 @@ public sealed class AccentAndDensityTests
         finally
         {
             AccentPalette.Apply(application, null);
+        }
+    }
+
+    [AvaloniaFact]
+    public void The_default_accent_reproduces_App_axaml()
+    {
+        var application = Application.Current!;
+        AccentPalette.Apply(application, null);
+
+        var xaml = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "RepoWatch.Desktop", "App.axaml"));
+        System.Xml.Linq.XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        foreach (var variant in new[] { ThemeVariant.Dark, ThemeVariant.Light })
+        {
+            var dictionary = xaml.Descendants().Single(e => e.Name.LocalName == "ResourceDictionary" && (string?)e.Attribute(x + "Key") == variant.Key.ToString());
+            foreach (var key in new[] { "HudAccentBrush", "HudFrameBrush", "RowHoverBrush", "PanelBrush", "WidgetBorderBrush" })
+            {
+                var declared = Color.Parse((string)dictionary.Elements().Single(e => (string?)e.Attribute(x + "Key") == key).Attribute("Color")!);
+                Assert.True(application.TryGetResource(key, variant, out var applied));
+                Assert.Equal(declared, ((ISolidColorBrush)applied!).Color);
+            }
+
+            var glow = BoxShadows.Parse(dictionary.Elements().Single(e => (string?)e.Attribute(x + "Key") == "HudGlowShadow").Value);
+            Assert.True(application.TryGetResource("HudGlowShadow", variant, out var appliedGlow));
+            Assert.Equal(glow, (BoxShadows)appliedGlow!);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Changing_the_accent_updates_open_windows()
+    {
+        var application = Application.Current!;
+        application.RequestedThemeVariant = ThemeVariant.Dark;
+        using var monitors = new MonitorHost(TimeProvider.System);
+        monitors.EnterDemo();
+        var widget = new WidgetWindow
+        {
+            DataContext = new WidgetViewModel(monitors, TestServices.Settings(), new FakeShell(), new RecordingBrowser(), TimeProvider.System,
+                new ImmediateDispatcher(), new Core.Configuration.RepoWatchOptions()),
+            Width = 400, Height = 520,
+        };
+        widget.Show();
+        Dispatcher.UIThread.RunJobs();
+        var brand = widget.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Classes.Contains("brand"));
+        var before = ((ISolidColorBrush)brand.Foreground!).Color;
+        application.TryGetResource("SystemAccentColor", ThemeVariant.Dark, out var fluentBefore);
+
+        try
+        {
+            AccentPalette.Apply(application, "#E15BFF");
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotEqual(before, ((ISolidColorBrush)brand.Foreground!).Color);
+            Assert.Equal(Color.Parse("#E15BFF"), ((ISolidColorBrush)brand.Foreground!).Color);
+            Assert.True(application.TryGetResource("SystemAccentColor", ThemeVariant.Dark, out var fluentAfter));
+            Assert.NotEqual(fluentBefore, fluentAfter); // Fluent controls (sliders, check boxes) follow too
+        }
+        finally
+        {
+            AccentPalette.Apply(application, null);
+            widget.Close();
         }
     }
 
@@ -136,9 +215,14 @@ public sealed class AccentAndDensityTests
             var compactRow = widget.GetVisualDescendants().OfType<ListBoxItem>().First().Bounds.Height;
 
             Assert.True(compactRow < comfortableRow, $"compact {compactRow} vs comfortable {comfortableRow}");
-            // Names are still shown in full or trimmed with an ellipsis, never clipped mid-glyph off screen.
-            Assert.All(widget.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible && t.Classes.Contains("title")),
-                t => Assert.True(t.Bounds.Right <= widget.Bounds.Width));
+            // Names end inside the window (trimmed with an ellipsis if needed), measured in window coordinates.
+            var titles = widget.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible && t.Classes.Contains("title")).ToList();
+            Assert.NotEmpty(titles);
+            Assert.All(titles, t =>
+            {
+                var end = t.TranslatePoint(new Point(t.Bounds.Width, 0), widget);
+                Assert.True(end is { } p && p.X <= widget.ClientSize.Width, $"{t.Text} ends at {end?.X} of {widget.ClientSize.Width}");
+            });
 
             Directory.CreateDirectory(ScreenshotDirectory);
             using var frame = widget.CaptureRenderedFrame();

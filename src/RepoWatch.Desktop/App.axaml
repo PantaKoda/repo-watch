@@ -24,17 +24,17 @@
             <GradientStop Color="#E3ECF6" Offset="1" />
           </LinearGradientBrush>
           <SolidColorBrush x:Key="HudAccentBrush" Color="#006F8E" />
-          <SolidColorBrush x:Key="HudFrameBrush" Color="#660081A8" />
-          <SolidColorBrush x:Key="HudDimBrush" Color="#5E6C84" />
+          <SolidColorBrush x:Key="HudFrameBrush" Color="#66006F8E" />
+          <SolidColorBrush x:Key="HudDimBrush" Color="#56637A" />
           <SolidColorBrush x:Key="StarBrush" Color="#30203A55" />
-          <SolidColorBrush x:Key="RowHoverBrush" Color="#140081A8" />
-          <SolidColorBrush x:Key="PanelBrush" Color="#0A0081A8" />
-          <BoxShadows x:Key="HudGlowShadow">0 0 6 0 #330081A8</BoxShadows>
+          <SolidColorBrush x:Key="RowHoverBrush" Color="#14006F8E" />
+          <SolidColorBrush x:Key="PanelBrush" Color="#0A006F8E" />
+          <BoxShadows x:Key="HudGlowShadow">0 0 6 0 #33006F8E</BoxShadows>
           <DropShadowEffect x:Key="TextHaloEffect" BlurRadius="2.5" OffsetX="0" OffsetY="0" Color="#FFFFFFFF" Opacity="1" />
           <SolidColorBrush x:Key="LegibleSecondaryBrush" Color="#2A3448" />
 
           <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="#F5F9FD" />
-          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#550081A8" />
+          <SolidColorBrush x:Key="WidgetBorderBrush" Color="#55006F8E" />
           <SolidColorBrush x:Key="DemoBannerBrush" Color="#26FFB547" />
           <SolidColorBrush x:Key="DemoBannerForegroundBrush" Color="#6B4200" />
         </ResourceDictionary>

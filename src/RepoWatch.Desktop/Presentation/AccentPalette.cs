@@ -19,7 +19,10 @@ public sealed record AccentPreset(string Name, string? Hex)
 /// </summary>
 public static class AccentPalette
 {
-    /// <summary>The default "station cyan" plus a few alternatives chosen to stay distinct from the status colors.</summary>
+    /// <summary>
+    /// The default "station cyan" (the same hue as the running status: the HUD itself reads as "active")
+    /// plus alternatives whose hues differ from every status color.
+    /// </summary>
     public static IReadOnlyList<AccentPreset> Presets { get; } =
     [
         new("Station cyan", null),
@@ -38,6 +41,8 @@ public static class AccentPalette
     /// <summary>The (dark-theme, light-theme) accent for a stored #RRGGBB value, or the defaults.</summary>
     public static (Color Dark, Color Light) Colors(string? hex)
     {
+        // Only presets are honored: a hand-edited value would have no contrast guarantee and couldn't be shown in Settings.
+        hex = Find(hex).Hex;
         if (hex is null || !Color.TryParse(hex, out var accent))
         {
             return (DefaultDark, DefaultLight);
@@ -50,14 +55,15 @@ public static class AccentPalette
     {
         ArgumentNullException.ThrowIfNull(application);
         var (dark, light) = Colors(hex);
-        Apply(application.Resources, ThemeVariant.Dark, dark, frame: 0x80, hover: 0x1A, panel: 0x0D, glow: 0x55);
-        Apply(application.Resources, ThemeVariant.Light, light, frame: 0x66, hover: 0x14, panel: 0x0A, glow: 0x33);
+        // Alphas match App.axaml, so the default accent reproduces the XAML exactly (it stays the source of truth).
+        Apply(application.Resources, ThemeVariant.Dark, dark, frame: 0x80, hover: 0x1A, panel: 0x0D, glow: 0x55, border: 0x4D);
+        Apply(application.Resources, ThemeVariant.Light, light, frame: 0x66, hover: 0x14, panel: 0x0A, glow: 0x33, border: 0x55);
 
         if (application.Styles.OfType<FluentTheme>().FirstOrDefault() is { } fluent)
         {
             if (fluent.Palettes.TryGetValue(ThemeVariant.Dark, out var darkPalette))
             {
-                darkPalette.Accent = hex is null ? DefaultFluentDark : dark;
+                darkPalette.Accent = Find(hex).Hex is null ? DefaultFluentDark : dark;
             }
 
             if (fluent.Palettes.TryGetValue(ThemeVariant.Light, out var lightPalette))
@@ -73,7 +79,7 @@ public static class AccentPalette
         (byte)Math.Round(color.G * (1 - amount)),
         (byte)Math.Round(color.B * (1 - amount)));
 
-    private static void Apply(IResourceDictionary resources, ThemeVariant variant, Color accent, byte frame, byte hover, byte panel, byte glow)
+    private static void Apply(IResourceDictionary resources, ThemeVariant variant, Color accent, byte frame, byte hover, byte panel, byte glow, byte border)
     {
         if (!resources.ThemeDictionaries.TryGetValue(variant, out var provider) || provider is not IResourceDictionary theme)
         {
@@ -84,7 +90,7 @@ public static class AccentPalette
         theme["HudFrameBrush"] = new SolidColorBrush(WithAlpha(accent, frame));
         theme["RowHoverBrush"] = new SolidColorBrush(WithAlpha(accent, hover));
         theme["PanelBrush"] = new SolidColorBrush(WithAlpha(accent, panel));
-        theme["WidgetBorderBrush"] = new SolidColorBrush(WithAlpha(accent, frame));
+        theme["WidgetBorderBrush"] = new SolidColorBrush(WithAlpha(accent, border));
         theme["HudGlowShadow"] = BoxShadows.Parse(string.Create(CultureInfo.InvariantCulture, $"0 0 6 0 #{glow:X2}{accent.R:X2}{accent.G:X2}{accent.B:X2}"));
     }
 
