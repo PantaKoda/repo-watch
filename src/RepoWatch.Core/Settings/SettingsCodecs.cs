@@ -53,6 +53,15 @@ public static partial class SettingsCodecs
                     .ToList(),
             },
             Startup = settings.Startup ?? new StartupSettings(),
+            Refresh = settings.Refresh is { } refresh
+                ? refresh with
+                {
+                    RunningWorkflowsSeconds = RefreshIntervals.Clamp(refresh.RunningWorkflowsSeconds),
+                    PullRequestsSeconds = RefreshIntervals.Clamp(refresh.PullRequestsSeconds),
+                    IssuesSeconds = RefreshIntervals.Clamp(refresh.IssuesSeconds),
+                    QuietSeconds = RefreshIntervals.Clamp(refresh.QuietSeconds),
+                }
+                : new RefreshIntervals(),
             Notifications = notifications with { QuietHours = notifications.QuietHours ?? new QuietHours() },
         };
     }

@@ -34,6 +34,7 @@ public sealed class SettingsCodecTests
         },
         ActiveAccount = new AccountKey("github.com", 1001),
         MonitoringPaused = true,
+        Refresh = new() { PullRequestsSeconds = 45, QuietSeconds = 600 },
     };
 
     private static AccountSettings PopulatedAccount() => new()
@@ -60,6 +61,20 @@ public sealed class SettingsCodecTests
         Assert.Equal(original.ActiveAccount, loaded.Value.ActiveAccount);
         Assert.Equal(new TimeOnly(21, 30), loaded.Value.Notifications.QuietHours.Start);
         Assert.Equal(WindowMaterial.Frosted, loaded.Value.Appearance.Material);
+        Assert.Equal(45, loaded.Value.Refresh.PullRequestsSeconds);
+        Assert.Null(loaded.Value.Refresh.IssuesSeconds); // unset means "use the default"
+    }
+
+    [Fact]
+    public void Refresh_intervals_outside_the_allowed_range_are_brought_within_it()
+    {
+        const string json = """{ "schemaVersion": 1, "refresh": { "runningWorkflowsSeconds": 1, "issuesSeconds": 99999 } }""";
+
+        var refresh = SettingsCodecs.App.Deserialize(json).Value.Refresh;
+
+        Assert.Equal(RefreshIntervals.MinSeconds, refresh.RunningWorkflowsSeconds);
+        Assert.Equal(RefreshIntervals.MaxSeconds, refresh.IssuesSeconds);
+        Assert.Null(refresh.PullRequestsSeconds);
     }
 
     [Fact]

@@ -976,3 +976,54 @@ These fixes ship in 0.2.0, which is the code users run to install their *next* u
 **Next concrete task**
 - After PR #15 is reviewed and merged, in a new PR: polling intervals in Settings, in seconds, with the current defaults and a plain description of what each one affects.
 
+## Release 0.2.0 published (4 Oct 2026)
+
+- The maintainer made `PantaKoda/repo-watch` public. Tag `v0.2.0` on `fdfe02f` ran the Release workflow successfully: tag/version check, CHANGELOG notes, build and all tests, and the release with `RepoWatch-0.2.0-win-x64.zip` (57 MB) and its `.sha256`.
+- **Verified:** the downloaded zip matches its published SHA-256, and a local build of the same commit produced the identical hash (`a48e1bd9…`, .NET SDK 10.0.401, PowerShell 7.6.6). `release.json` says 0.2.0 / `fdfe02f`.
+- The maintainer's installed copy was replaced by hand with the official zip (0.1.0 had no updater). Settings and sign-in were kept.
+- **Live check against github.com:** *Check for updates* answered "You have the latest version (0.2.0). There is no newer release." and the log recorded "current 0.2.0, latest none newer". No UPDATE pill appeared.
+- **Not yet exercised live:** the UPDATE pill, the update window and *Install update* against a real newer release. They will be at the next release.
+
+## After release — refresh intervals in Settings (feature branch `refresh-interval-settings`)
+
+Requested by the maintainer after deciding against a shared relay: let users choose the polling intervals, in seconds, with the defaults kept and each one's effect explained.
+
+**Implemented**
+- **New setting:** `AppSettings.Refresh` (`RefreshIntervals`) has the user's seconds for running workflows, pull requests and repository details, issues, and quiet workflows.
+  - An unset value uses the configured default (`Polling:*`).
+  - Values are kept within 10–3600 s, including in hand-edited files.
+  - A value equal to its default is stored as "default", so a later change of defaults still applies.
+- **Settings › Refresh intervals:**
+  - four seconds fields, each with what it affects and its default;
+  - a note on the limits, the hidden-widget and battery slowdowns, refresh on focus and F5;
+  - *Reset to defaults*.
+- **Live effect:** `PollingIntervals.With` applies the user's values. `PollingConditions` raises `Changed` when they change, and the running monitor switches intervals at once: shorter ones pull due refreshes in, longer ones apply from each part's next refresh.
+- **Workflows:** actions moved to their current majors (checkout v7, setup-dotnet v6, upload-artifact v7), clearing GitHub's Node.js 20 deprecation warning seen on the 0.2.0 run.
+
+**Checks run**
+- `dotnet test`: 485 passed. New tests:
+  - settings round trip and clamping;
+  - `With` replacing only the values set, with repository details following PRs;
+  - a running monitor using new intervals from Settings at once, and back to defaults;
+  - the Settings view model saving seconds, the floor, "equal to default", and reset.
+- Real window: the Settings section renders with the defaults, descriptions, limits note and a disabled *Reset to defaults*.
+
+**Review of PR #16 (approved; all points addressed)**
+- **Saving while typing:** the boxes update their value per keystroke, so typing 300 saved 30 on the way (pulling every PR refresh in), and emptying a box reset it to the default mid-edit. Now:
+  - edits are saved 1 s after the last change, and when the window closes;
+  - an empty box means "not decided yet" and keeps the saved value;
+  - a box being edited isn't refilled.
+  - Verified in the real window by typing through UI Automation and reading the settings database: "3" and "30" were never saved, "300" was saved after the pause, an emptied box stayed empty with 300 kept, and "45" was then saved.
+- **One floor:** `RefreshIntervals.MinSeconds`/`MaxSeconds` now are the configuration validator's 5/3600, so every configured default can be chosen again. The Settings text says 5–3600.
+- **Hint:** a warning appears when running workflows are set slower than quiet ones. *Reset to defaults* is enabled only when a shown value differs from its default.
+- **Tests:**
+  - with a fake clock, a shorter PR interval from Settings brings the next PR refresh in, which the default 90 s does not;
+  - only the final typed value is saved;
+  - an emptied box keeps the saved value;
+  - closing right after typing saves;
+  - the hint appears and clears.
+  - `dotnet test`: 490 passed, twice.
+
+**Next concrete task**
+- Further UI changes as requested. The next release will exercise the in-app update path against a real newer release.
+

@@ -175,6 +175,6 @@ internal static class SettingsViewModels
         var account = new AccountViewModel(accounts, shell, new RecordingBrowser(), new AvatarLoader(http, NullLogger<AvatarLoader>.Instance),
             endpoints, new ImmediateDispatcher(), TimeProvider.System);
         var paths = new AppPaths(Path.GetTempPath(), "d.json", "u.json", "logs");
-        return new SettingsViewModel(settings, monitors, shell, new ImmediateDispatcher(), account, new WatchlistService(settings, accounts), paths, new VisualStateService(), integration, updates);
+        return new SettingsViewModel(settings, monitors, shell, new ImmediateDispatcher(), account, new WatchlistService(settings, accounts), paths, new VisualStateService(), integration, updates, options);
     }
 }
