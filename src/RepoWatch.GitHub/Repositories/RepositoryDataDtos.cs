@@ -28,6 +28,8 @@ internal sealed record RepositoryInfoDto
     [JsonPropertyName("default_branch")] public string? DefaultBranch { get; init; }
 
     [JsonPropertyName("html_url")] public string? HtmlUrl { get; init; }
+
+    [JsonPropertyName("pushed_at")] public DateTimeOffset? PushedAt { get; init; }
 }
 
 internal sealed record RunsPageDto([property: JsonPropertyName("workflow_runs")] List<RunDto?>? WorkflowRuns);

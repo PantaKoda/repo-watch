@@ -95,6 +95,9 @@ public sealed record WindowSettings : SettingsRecord
 
     public bool Expanded { get; init; }
 
+    /// <summary>Hide repositories with nothing to look at (see <c>AttentionPolicy.IsIdle</c>) from the widget list.</summary>
+    public bool HideIdleRepositories { get; init; }
+
     /// <summary>System-wide shortcut that shows or hides the widget, where the platform allows one.</summary>
     public bool ShowHideShortcut { get; init; } = true;
 

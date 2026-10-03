@@ -32,6 +32,7 @@ public partial class WidgetWindow : Window
 
         RepositoryList.AddHandler(TappedEvent, OnRepositoryTapped);
         RepositoryList.AddHandler(KeyDownEvent, OnRepositoryKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
         DataContextChanged += (_, _) =>
         {
             if (ViewModel is { } vm)
@@ -93,6 +94,23 @@ public partial class WidgetWindow : Window
         if (e.Key is Key.Enter or Key.Space && RepositoryList.SelectedItem is RepositoryRowViewModel row)
         {
             OpenDetails(row);
+            e.Handled = true;
+        }
+    }
+
+    // Ctrl+F jumps to the name filter; Down from the filter moves into the list.
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.Control && ViewModel is { ShowToolbar: true })
+        {
+            SearchBox.Focus(NavigationMethod.Tab);
+            SearchBox.SelectAll();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Down && SearchBox.IsKeyboardFocusWithin && RepositoryList.ItemCount > 0)
+        {
+            RepositoryList.SelectedIndex = Math.Max(0, RepositoryList.SelectedIndex);
+            (RepositoryList.ContainerFromIndex(RepositoryList.SelectedIndex) ?? RepositoryList).Focus(NavigationMethod.Tab);
             e.Handled = true;
         }
     }

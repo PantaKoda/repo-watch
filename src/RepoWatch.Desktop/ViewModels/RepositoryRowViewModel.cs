@@ -42,6 +42,28 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
     [ObservableProperty]
     public partial bool HasBadges { get; private set; }
 
+    /// <summary>"Private" or "Public" for the row's tag; null until the repository's metadata is known.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasVisibility))]
+    public partial string? Visibility { get; private set; }
+
+    public bool HasVisibility => Visibility is not null;
+
+    [ObservableProperty]
+    public partial bool IsPrivate { get; private set; }
+
+    /// <summary>When something last happened (push, run, pull request or issue update), e.g. "3h ago".</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasActivity))]
+    public partial string? ActivityText { get; private set; }
+
+    public bool HasActivity => ActivityText is not null;
+
+    public DateTimeOffset? LastActivity { get; private set; }
+
+    /// <summary>Nothing to look at: see <see cref="AttentionPolicy.IsIdle"/>.</summary>
+    public bool IsIdle { get; private set; }
+
     [ObservableProperty]
     public partial AttentionLevel Attention { get; private set; }
 
@@ -83,12 +105,9 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         var metadata = snapshot.Metadata.Value;
 
         Name = repository.DisplayName;
+        Visibility = metadata is null ? null : metadata.IsPrivate ? "Private" : "Public";
+        IsPrivate = metadata?.IsPrivate == true;
         var badges = new List<string>();
-        if (metadata?.IsPrivate == true)
-        {
-            badges.Add("private");
-        }
-
         if (metadata?.IsArchived == true)
         {
             badges.Add("archived");
@@ -99,6 +118,9 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         Url = metadata?.HtmlUrl;
 
         Attention = AttentionPolicy.Evaluate(snapshot);
+        IsIdle = AttentionPolicy.IsIdle(snapshot);
+        LastActivity = AttentionPolicy.LastActivity(snapshot);
+        ActivityText = LastActivity is { } at ? TimeText.Ago(at, now) : null;
         var rollup = snapshot.Actions.Value?.DefaultBranch?.Rollup;
         Tone = Attention == AttentionLevel.Quiet && rollup is not null ? StatusPresentation.Tone(rollup.State) : StatusPresentation.Tone(Attention);
         BranchStatus = snapshot.Actions switch
@@ -129,7 +151,8 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
             : null;
         HasFreshnessWarning = FreshnessWarning is not null;
 
-        Summary = string.Join(". ", new[] { Name, Badges, BranchStatus, PullRequestCount, IssueCount, FreshnessWarning }.Where(s => !string.IsNullOrEmpty(s)));
+        var activity = ActivityText is null ? null : $"Last activity {ActivityText}";
+        Summary = string.Join(". ", new[] { Name, Visibility?.ToLowerInvariant(), Badges, BranchStatus, PullRequestCount, IssueCount, activity, FreshnessWarning }.Where(s => !string.IsNullOrEmpty(s)));
     }
 
     [RelayCommand]

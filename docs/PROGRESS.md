@@ -11,7 +11,7 @@ Status values: `pending`, `in_progress`, `completed`, `blocked`. At most one sta
 | 05 | Repository access and watchlist picker | completed |
 | 06 | Fetch and normalize real GitHub data | completed |
 | 07 | Durable caching and efficient synchronization | completed |
-| 08 | Modern visuals and real transparency | blocked (only the DPI check at 125%/150% remains; see Stage 08) |
+| 08 | Modern visuals and real transparency | completed |
 | 09 | Desktop behavior and notifications | completed |
 | 10 | Near-real-time delivery (relay) | completed |
 | 11 | Package and validate the Windows release | completed |
@@ -450,7 +450,9 @@ Also observed live: an unknown client ID gets 404 `{"error":"Not Found"}` from `
 
 **Next concrete task**
 - Stage 08 remainder (done below).
-## Stage 08 — Modern visuals and real transparency: blocked
+## Stage 08 — Modern visuals and real transparency: completed
+
+**DPI check (3 Oct 2026):** the maintainer set Windows display scale to 125% and 150% and reported that the widget scales fine. That closes the last open acceptance item below.
 
 Everything is implemented and checked except one acceptance item: **verifying DPI scaling at 125%/150%**. That requires changing the Windows display scale, a system setting this agent doesn't change. The user can do it in Settings → System → Display → Scale, and the screenshots can then be repeated.
 
@@ -818,3 +820,44 @@ No code was edited and no tokens were copied by hand at any point.
 
 **Next concrete task**
 - Stage 08: the display-scale check at 125 %/150 % (maintainer). Then UI changes as requested. Stage 12 (macOS/Linux) is a later release.
+
+## After release — widget list usability (feature branch `widget-ux-filters`)
+
+Requested by the maintainer after using 0.1.0:
+
+**Implemented**
+- **Sort by recent activity:** a third ordering, *Recent activity*, next to *Needs attention* and *My order*, in the widget and in Settings.
+  - Last activity is the newest of GitHub's `pushed_at` (any branch, now read from `GET /repositories/{id}`), the latest workflow run, pull request and issue updates.
+  - Unknown activity sorts last; ties keep the manual order.
+  - Each row shows it (e.g. "3h ago").
+- **Filter bar** above the list:
+  - a name filter (Ctrl+F; Esc clears it; Down moves into the list);
+  - a sort menu, saved per account; in demo mode it applies for the session only;
+  - *Hide idle repositories*, remembered in the app settings (`Window.HideIdleRepositories`).
+  - **Idle** means: no failure or problem, nothing queued or running, no open pull requests in the watched scope and no open issues. A section that is turned off counts as idle; a repository whose data hasn't loaded is never hidden.
+  - The footer says "N of M shown".
+  - When the filters hide everything, the list says why and offers *Show all repositories*.
+  - Filters change only what is shown, never what is monitored.
+- **Visibility tag:** a small *Private* or *Public* pill on each row (accent outline for private). It isn't shown before metadata loads.
+- **Calmer header:** the moving line under the header now shows only for a refresh you start (Refresh/F5) and for the first load. Before, it ran during every background poll, which with several repositories was almost always. The Refresh button is no longer disabled during background polls. Rows with a workflow actually running keep their own line.
+- **Narrow widths:** the connection pill trims instead of sliding under the header buttons. This predated the branch and is visible at 320 px.
+- Placeholder text in the filter is dimmed by color at full opacity, keeping the "text is never faded" rule. A UI test caught the theme's 50% placeholder opacity.
+
+**Checks run**
+- `dotnet test`: 422 passed. New tests:
+  - activity ordering and last-activity selection;
+  - idle rules (open PR, open issue, running, failing, not loaded, sections turned off);
+  - `pushed_at` parsing;
+  - widget name filter and Esc;
+  - hide idle with persistence and the all-hidden state;
+  - sort saved per account and session-only in demo;
+  - Private/Public tags;
+  - header activity for background polls vs. manual refresh vs. first load.
+- Real window in demo mode at 400 px and 320 px, driven through UI Automation:
+  - the filter bar, tags and activity times render;
+  - hiding idle removes `dotfiles` ("4 of 5 shown");
+  - *Recent activity* orders api-service (1m), web-app (7m), legacy-tool (3h), dotfiles (12d), then the inaccessible repository.
+
+**Limitations**
+- Activity uses data Repo Watch already loads; there is no extra request per repository. Repositories cached before this version show no push time until their metadata refreshes.
+

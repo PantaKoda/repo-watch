@@ -131,19 +131,22 @@
       <!-- Header: drag to move -->
       <Border DockPanel.Dock="Top" Padding="14,8,6,4" Background="Transparent" PointerPressed="OnHeaderPointerPressed">
         <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <!-- The connection pill gets the remaining width and trims, so narrow widgets never overlap the buttons. -->
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center">
             <TextBlock Classes="brand" Text="◆ REPO WATCH" VerticalAlignment="Center" />
-            <Border CornerRadius="10" Padding="8,2" BorderThickness="1" BorderBrush="{DynamicResource HudFrameBrush}"
-                    Background="{DynamicResource PanelBrush}" ToolTip.Tip="Connection state" VerticalAlignment="Center">
-              <StackPanel Orientation="Horizontal" Spacing="6">
+            <Border Grid.Column="1" CornerRadius="10" Padding="8,2" BorderThickness="1" BorderBrush="{DynamicResource HudFrameBrush}"
+                    Background="{DynamicResource PanelBrush}" ToolTip.Tip="{Binding ConnectionLabel}" VerticalAlignment="Center"
+                    HorizontalAlignment="Left" Margin="0,0,6,0">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
                 <c:StatusDot Tone="{Binding ConnectionTone}" Width="7" Height="7" VerticalAlignment="Center" />
-                <TextBlock Classes="hud" Text="{Binding ConnectionLabel}" FontSize="10" LetterSpacing="1.5" VerticalAlignment="Center" />
-              </StackPanel>
+                <TextBlock Grid.Column="1" Classes="hud" Text="{Binding ConnectionLabel}" FontSize="10" LetterSpacing="1.5"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </Grid>
             </Border>
-          </StackPanel>
+          </Grid>
           <StackPanel Grid.Column="1" Orientation="Horizontal">
             <!-- Refresh and expand only appear when there is something to refresh or expand. -->
-            <Button Classes="icon" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}"
+            <Button Classes="icon" Command="{Binding RefreshCommand}"
                     IsVisible="{Binding HasRepositories}"
                     ToolTip.Tip="Refresh (F5)" AutomationProperties.Name="Refresh">
               <PathIcon Data="{StaticResource IconRefresh}" />
@@ -167,11 +170,29 @@
         </Grid>
       </Border>
 
-      <!-- Refreshing: a scan line sweeps under the header (static when motion is reduced) -->
+      <!--
+        A scan line sweeps under the header only while you wait: a refresh you started, or the first
+        load. Routine background polling stays silent (static when motion is reduced).
+      -->
       <Panel DockPanel.Dock="Top" Height="2" Margin="14,0,14,4">
         <Border Height="1" Background="{DynamicResource HudFrameBrush}" Opacity="0.5" VerticalAlignment="Center" />
-        <ProgressBar Classes="scan" IsVisible="{Binding IsRefreshing}" />
+        <ProgressBar Classes="scan" IsVisible="{Binding ShowActivity}" />
       </Panel>
+
+      <!-- Filter bar: name filter, sort, and hide idle repositories. Affects only what is shown. -->
+      <Grid DockPanel.Dock="Top" Classes="filterbar" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="12,0,12,6"
+            IsVisible="{Binding ShowToolbar}">
+        <TextBox Name="SearchBox" Text="{Binding SearchText}" PlaceholderText="Filter by name (Ctrl+F)"
+                 AutomationProperties.Name="Filter repositories by name" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding SelectedSort}"
+                  IsVisible="{Binding CanChangeSort}" MinWidth="118"
+                  ToolTip.Tip="Sort repositories" AutomationProperties.Name="Sort repositories" />
+        <ToggleButton Grid.Column="2" IsChecked="{Binding HideIdle}"
+                      ToolTip.Tip="Show only repositories that need a look: hides those with no open pull requests or issues, nothing running and no problems"
+                      AutomationProperties.Name="Hide idle repositories">
+          <PathIcon Data="{StaticResource IconFilter}" Width="14" Height="14" />
+        </ToggleButton>
+      </Grid>
 
       <!-- Demo banner: always visible in demo mode -->
       <Border DockPanel.Dock="Top" IsVisible="{Binding IsDemo}" Background="{DynamicResource DemoBannerBrush}" Padding="12,4,6,4"
@@ -233,6 +254,12 @@
           <Button Content="Add repositories" Command="{Binding AddRepositoriesCommand}" Classes="accent" />
         </StackPanel>
 
+        <!-- Watched repositories, but the filters hide all of them -->
+        <StackPanel IsVisible="{Binding ShowNoMatches}" Margin="16" Spacing="10" VerticalAlignment="Center">
+          <TextBlock TextWrapping="Wrap" Text="{Binding NoMatchesText}" />
+          <Button Content="Show all repositories" Command="{Binding ClearFiltersCommand}" HorizontalAlignment="Left" />
+        </StackPanel>
+
         <!-- Repository list (compact and expanded) -->
         <ListBox Name="RepositoryList" Classes="hud" IsVisible="{Binding ShowList}"
                  ItemsSource="{Binding Repositories}" SelectedItem="{Binding SelectedRepository}"
@@ -245,7 +272,13 @@
                   <c:StatusDot Tone="{Binding Tone}" Width="9" Height="9" Margin="2,5,12,0" VerticalAlignment="Top" />
                   <StackPanel Grid.Column="1" Spacing="1">
                     <TextBlock Classes="title" Text="{Binding Name}" />
-                    <TextBlock Classes="secondary" Text="{Binding BranchStatus}" />
+                    <DockPanel>
+                      <Border DockPanel.Dock="Left" Classes="tag" Classes.private="{Binding IsPrivate}" Margin="0,0,6,0"
+                              IsVisible="{Binding HasVisibility}" ToolTip.Tip="Repository visibility on GitHub">
+                        <TextBlock Text="{Binding Visibility}" />
+                      </Border>
+                      <TextBlock Classes="secondary" Text="{Binding BranchStatus}" />
+                    </DockPanel>
                     <TextBlock Classes="secondary" Text="{Binding Badges}" IsVisible="{Binding HasBadges}" />
                     <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding HasFreshnessWarning}">
                       <c:StatusDot Tone="Warning" Width="6" Height="6" VerticalAlignment="Center" />
@@ -255,6 +288,8 @@
                   <StackPanel Grid.Column="2" Margin="8,0,0,0" Spacing="1">
                     <TextBlock Classes="secondary" Text="{Binding PullRequestCount}" HorizontalAlignment="Right" />
                     <TextBlock Classes="secondary" Text="{Binding IssueCount}" HorizontalAlignment="Right" />
+                    <TextBlock Classes="secondary" Text="{Binding ActivityText}" IsVisible="{Binding HasActivity}" HorizontalAlignment="Right"
+                               ToolTip.Tip="Last activity: push, workflow run, pull request or issue update" />
                   </StackPanel>
                 </Grid>
                 <!-- Active work: a scan line runs along the row -->

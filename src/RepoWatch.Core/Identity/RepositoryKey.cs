@@ -51,5 +51,8 @@ public sealed record RepositoryMetadata
     /// <summary>Whether GitHub has issues turned on for the repository.</summary>
     public bool HasIssues { get; init; } = true;
 
+    /// <summary>Last push to any branch, as GitHub reports it. Null when unknown (e.g. older cached data).</summary>
+    public DateTimeOffset? PushedAt { get; init; }
+
     public string FullName => $"{Owner}/{Name}";
 }

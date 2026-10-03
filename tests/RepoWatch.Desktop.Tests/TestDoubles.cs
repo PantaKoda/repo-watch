@@ -97,7 +97,12 @@ internal sealed class FakeMonitor : IRepositoryMonitor
 
     public IReadOnlyList<MonitoredRepository> Repositories { get; private set; } = [];
 
-    public bool IsRefreshing => false;
+    public bool IsRefreshing { get; set; }
+
+    public RepositoryOrdering Ordering { get; set; } = RepositoryOrdering.AttentionFirst;
+
+    /// <summary>When set, refreshes complete only when the test completes this.</summary>
+    public TaskCompletionSource? HoldRefresh { get; set; }
 
     public int RefreshRequests { get; private set; }
 
@@ -112,7 +117,7 @@ internal sealed class FakeMonitor : IRepositoryMonitor
     public Task RefreshAsync(RepositoryKey? repository = null, CancellationToken cancellationToken = default)
     {
         RefreshRequests++;
-        return Task.CompletedTask;
+        return HoldRefresh?.Task ?? Task.CompletedTask;
     }
 }
 
