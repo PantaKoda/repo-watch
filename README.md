@@ -2,7 +2,7 @@
 
 A Windows-first desktop widget for monitoring GitHub Actions, pull requests and issues, built with C#, .NET and Avalonia. The shared core and UI are kept portable for later macOS/Linux releases.
 
-> **Status: early development (Stage 02 of 12 complete).** The project builds, loads and validates configuration, opens a baseline window, and has the domain model and versioned settings storage. GitHub sign-in, repository monitoring and the widget UI are **not implemented yet**. See [docs/PROGRESS.md](docs/PROGRESS.md) for current state.
+> **Status: early development (Stage 03 of 12 complete).** The widget, tray icon, settings window and window placement work, with labeled demo data. GitHub sign-in and live data are **not implemented yet** (Stages 04–06). GitHub sign-in, repository monitoring and the widget UI are **not implemented yet**. See [docs/PROGRESS.md](docs/PROGRESS.md) for current state.
 
 ## Platform baseline
 
@@ -32,11 +32,24 @@ dotnet build RepoWatch.slnx
 dotnet run --project src/RepoWatch.Desktop
 ```
 
+To explore the widget with labeled sample data (no GitHub access needed):
+
+```bash
+dotnet run --project src/RepoWatch.Desktop -- --demo
+```
+
 ```bash
 dotnet test --solution RepoWatch.slnx
 ```
 
-Tests use xunit v3 on Microsoft.Testing.Platform (opted in via `global.json`), so `dotnet test` takes `--solution` / `--project` options rather than a positional path.
+Tests use xunit v3 on Microsoft.Testing.Platform (opted in via `global.json`), so `dotnet test` takes `--solution` / `--project` options rather than a positional path. Headless UI tests write screenshots to `artifacts/screenshots/` (not committed).
+
+## Using the widget
+
+- **Move:** drag the header (unless *Lock position* is on). **Resize:** drag the bottom-right grip. The position and size are remembered per monitor setup. If the widget would open off-screen, it is moved back onto the primary display.
+- **Tray:** on Windows the widget lives in the notification area. Click the tray icon to show or hide it; its menu has *Show widget*, *Settings…* and *Quit*. Closing or hiding the widget keeps Repo Watch running. Where no tray is available, the widget stays in the taskbar and closing it exits.
+- **Keyboard:** <kbd>Tab</kbd> to the list, arrow keys to move, <kbd>Enter</kbd> to open details, <kbd>Esc</kbd> to go back or collapse, <kbd>F5</kbd> to refresh, <kbd>Ctrl</kbd>+<kbd>,</kbd> for settings.
+- **Demo mode:** started with `--demo` or *Explore demo data*. A banner stays visible while sample data is shown, and links open GitHub documentation because the sample repositories don't exist.
 
 ### Which checks need what
 

@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+        x:Class="RepoWatch.Desktop.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Repo Watch settings"
+        Width="480" Height="600" MinWidth="340" MinHeight="300"
+        WindowStartupLocation="CenterScreen">
+  <ScrollViewer>
+    <StackPanel Margin="20,8,20,20" Spacing="6">
+      <Border IsVisible="{Binding HasStorageProblem}" Background="{DynamicResource DemoBannerBrush}" CornerRadius="4" Padding="10,6" Margin="0,8,0,0">
+        <TextBlock Text="{Binding StorageProblem}" TextWrapping="Wrap" Foreground="{DynamicResource DemoBannerForegroundBrush}" />
+      </Border>
+
+      <TextBlock Classes="heading" Text="Account" />
+      <TextBlock Text="{Binding SignInAvailability}" TextWrapping="Wrap" />
+
+      <TextBlock Classes="heading" Text="Repositories" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="Choosing which repositories to watch requires signing in. Until then you can explore the widget with labeled sample data." />
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Explore demo data" Command="{Binding EnterDemoCommand}" IsVisible="{Binding !IsDemo}" />
+        <Button Content="Exit demo" Command="{Binding ExitDemoCommand}" IsVisible="{Binding IsDemo}" />
+      </StackPanel>
+
+      <TextBlock Classes="heading" Text="Widget" />
+      <CheckBox Content="Keep the widget above other windows" IsChecked="{Binding AlwaysOnTop}" />
+      <CheckBox Content="Lock the widget's position" IsChecked="{Binding PositionLocked}" />
+      <TextBlock Text="{Binding TrayDescription}" TextWrapping="Wrap" Classes="secondary" />
+      <Button Content="Show widget" Command="{Binding ShowWidgetCommand}" />
+
+      <TextBlock Classes="heading" Text="Appearance" />
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Text="Theme" VerticalAlignment="Center" />
+        <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" MinWidth="140"
+                  AutomationProperties.Name="Theme" />
+      </StackPanel>
+
+      <TextBlock Classes="heading" Text="About" />
+      <TextBlock Text="{Binding Version, StringFormat='Repo Watch {0}'}" />
+      <SelectableTextBlock Text="{Binding DataDirectory, StringFormat='Data folder: {0}'}" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />
+        <Button Content="Quit Repo Watch" Command="{Binding QuitCommand}" />
+      </StackPanel>
+      <TextBlock Text="{Binding ActionMessage}" IsVisible="{Binding HasActionMessage}" TextWrapping="Wrap" Classes="secondary" />
+    </StackPanel>
+  </ScrollViewer>
+</Window>

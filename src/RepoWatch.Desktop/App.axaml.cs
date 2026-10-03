@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using RepoWatch.Desktop.Infrastructure;
+using RepoWatch.Desktop.Shell;
 using RepoWatch.Desktop.ViewModels;
 using RepoWatch.Desktop.Views;
 
@@ -12,7 +13,7 @@ public partial class App : Application
 {
     private readonly IServiceProvider? _services;
 
-    // Used by the designer/previewer, which has no composition root.
+    // Used by the designer/previewer and headless tests, which have no composition root.
     public App()
     {
     }
@@ -29,9 +30,14 @@ public partial class App : Application
         if (_services is not null && ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var configuration = _services.GetRequiredService<ConfigurationLoadResult>();
-            desktop.MainWindow = configuration.IsValid
-                ? new MainWindow { DataContext = _services.GetRequiredService<MainWindowViewModel>() }
-                : new ConfigurationErrorWindow { DataContext = _services.GetRequiredService<ConfigurationErrorViewModel>() };
+            if (configuration.IsValid)
+            {
+                _services.GetRequiredService<AppShell>().Start(desktop, this);
+            }
+            else
+            {
+                desktop.MainWindow = new ConfigurationErrorWindow { DataContext = _services.GetRequiredService<ConfigurationErrorViewModel>() };
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

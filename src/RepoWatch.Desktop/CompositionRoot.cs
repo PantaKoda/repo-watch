@@ -1,7 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using RepoWatch.Core.Platform;
 using RepoWatch.Core.Settings;
 using RepoWatch.Desktop.Infrastructure;
+using RepoWatch.Desktop.Platform;
+using RepoWatch.Desktop.Platform.Tray;
+using RepoWatch.Desktop.Platform.Windowing;
+using RepoWatch.Desktop.Presentation;
+using RepoWatch.Desktop.Services;
+using RepoWatch.Desktop.Shell;
 using RepoWatch.Desktop.Storage;
 using RepoWatch.Desktop.ViewModels;
 using RepoWatch.GitHub;
@@ -19,8 +26,9 @@ internal static class CompositionRoot
         services.AddSingleton(loggerFactory);
         services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
         services.AddSingleton(sp => new GitHubEndpoints(configuration.Options.GitHub));
-
         services.AddSingleton(TimeProvider.System);
+
+        // Storage: the database is opened and migrated on first use.
         services.AddSingleton(_ =>
         {
             var database = new LocalDatabase(paths.DatabaseFile);
@@ -28,8 +36,18 @@ internal static class CompositionRoot
             return database;
         });
         services.AddSingleton<ISettingsStore, SqliteSettingsStore>();
+        services.AddSingleton(sp => new SettingsService(
+            () => sp.GetRequiredService<ISettingsStore>(),
+            sp.GetRequiredService<ILogger<SettingsService>>()));
 
-        services.AddTransient<MainWindowViewModel>();
+        // Monitoring and platform adapters.
+        services.AddSingleton<MonitorHost>();
+        services.AddSingleton<IExternalBrowser, BrowserLauncher>();
+        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        services.AddSingleton<TrayService>();
+        services.AddSingleton<WindowPlacementService>();
+        services.AddSingleton<AppShell>();
+
         services.AddTransient<ConfigurationErrorViewModel>();
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
