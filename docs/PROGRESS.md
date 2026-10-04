@@ -1094,3 +1094,12 @@ Requested by the maintainer: a proper one-click uninstall that asks whether to k
   - the shortcut was removed;
   - no script remained.
 
+## GitHub App made public (4 Oct 2026)
+
+- The maintainer switched the GitHub App *Repo Watch PantaKoda* to **public** (installable on any account).
+- **Verified through GitHub's public API:** `GET /apps/repo-watch-pantakoda` now answers 200 (it answered 404 while private). Permissions are read-only (actions, checks, issues, metadata, pull_requests, statuses) and there are no webhook events.
+- **Effect:** any GitHub user can now sign in with the released app and install it on their own account or organizations, choosing which repositories it may read. Before this, only the owner could authorize or install it, per GitHub's docs on private apps.
+- **Docs:**
+  - README "Use it with your own repositories": what users grant, read-only scope, data staying local, organization approval and SSO, how to revoke, using one's own app.
+  - The troubleshooting row, the validation checklist and the GitHub App setup guide are updated accordingly.
+

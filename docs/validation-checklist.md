@@ -14,7 +14,7 @@ Run this against the **published zip** (`scripts/publish-windows.ps1`), extracte
 - [ ] Starting `RepoWatch.exe` shows the widget, the tray icon and the onboarding window, with no configuration error.
 - [ ] **Sign in:** the device code appears with *Copy code* and *Open GitHub*. The browser opens github.com/login/device. Approving signs in and shows the username and avatar. The app never asks for a password or a token.
 - [ ] Cancel, deny on GitHub, and letting the code expire each show a clear state with *Try again*.
-- [ ] **Grant access:** *Grant access on GitHub* opens the app's installation page. *(maintainer)* For users other than the owner, the app must be installable on **Any account**.
+- [ ] **Grant access:** *Grant access on GitHub* opens the app's installation page. The app is public (any account can install it); check with a second GitHub account when possible.
 - [ ] **Choose repositories:** personal, organization and private repositories that GitHub granted are listed (all pages), with search, owner filter, *Show selected* and a selected count. Nothing is selected automatically.
 - [ ] **Appearance:** theme, material and background changes apply to the widget at once.
 - [ ] **Open widget:** the chosen repositories appear with Actions, pull requests and issues, each with its own freshness. Spot-check against GitHub: a failed run, an open pull request and the open issue count.

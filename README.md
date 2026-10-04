@@ -12,6 +12,17 @@ A Windows-first desktop widget for monitoring GitHub Actions, pull requests and 
 
 The zip is **portable and self-contained**: the .NET runtime is included, nothing is installed and no administrator rights are needed. Later versions can be installed from inside the app (see *Updates* below). The executable is **not code-signed** yet, so Windows SmartScreen may say "Windows protected your PC"; choose *More info → Run anyway* only when the SHA-256 matches. Settings, the watchlist and the sign-in live outside the folder (see [Local data](#local-data)), so updating keeps them. To remove Repo Watch, see [Uninstall](#uninstall).
 
+## Use it with your own repositories
+
+Anyone can use Repo Watch with their own GitHub account and repositories, personal or organization, public or private. The released app signs in through the public GitHub App [**Repo Watch PantaKoda**](https://github.com/apps/repo-watch-pantakoda). You don't need to register anything or create a token.
+
+- **You choose what it can read.** When you grant access, GitHub asks which account or organization, and *all* or *only selected* repositories. You can change that at any time on GitHub (*Manage access* in Repo Watch takes you there). Granting access only makes repositories available: you still pick which ones the widget watches.
+- **Read-only.** The app asks GitHub for read access to Metadata, Actions, Checks, Commit statuses, Issues and Pull requests, and nothing else. It can't change code, merge, comment or re-run anything; those actions open GitHub in your browser.
+- **Your data stays on your PC.** Repo Watch talks to GitHub directly with your own sign-in. There is no Repo Watch server and the app has no webhooks, so the maintainer receives nothing about you or your repositories. Each user's requests count against their own GitHub rate limit.
+- **Organizations:** if an organization requires approval for GitHub Apps, an owner has to approve the installation before its repositories appear; Repo Watch shows this as pending. Organizations with SAML single sign-on may also ask you to authorize the app for SSO.
+- **Stop using it:** revoke the authorization in GitHub → Settings → Applications → *Authorized GitHub Apps*, and uninstall the app under *Installed GitHub Apps* (or the organization's settings). Repo Watch's uninstall can open that page for you.
+- **Prefer your own GitHub App?** Register one as described in [docs/github-app-setup.md](docs/github-app-setup.md) and put its client ID and slug in `%LOCALAPPDATA%\RepoWatch\repowatch.config.json`. No code changes are needed.
+
 ## First run
 
 The onboarding window walks through **Sign in → Grant repository access → Choose repositories → Appearance → Open widget**:
@@ -43,7 +54,7 @@ The onboarding window walks through **Sign in → Grant repository access → Ch
 | --- | --- |
 | The widget is gone | Click the tray icon (look in the hidden-icons overflow), press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>, or start `RepoWatch.exe` again: a second start shows the running instance. |
 | Sign-in fails at once ("Device flow is not enabled", invalid client) | The configured GitHub App is missing device flow, or `GitHub:ClientId` is wrong. See [docs/github-app-setup.md](docs/github-app-setup.md). |
-| *Grant access on GitHub* shows a 404, or you can't install the app | The GitHub App can be installed only on its owner's account until the maintainer sets *Where can this GitHub App be installed?* to **Any account**. |
+| *Grant access on GitHub* doesn't list an organization | Only organization owners can install apps directly; members can *request* the installation, and an owner has to approve it. Until then Repo Watch shows the organization's access as pending. |
 | A repository is missing from the picker | GitHub has not granted the app access to it. Use *Manage access*, then *Refresh list*. Organization repositories may be waiting for an owner's approval or need *Authorize single sign-on*. |
 | `Reconnect required` | The session expired or was revoked on GitHub. Choose *Sign in again*; Repo Watch does not retry forever. |
 | One section says it is unavailable (e.g. Actions disabled) | That part is reported per repository; the other sections keep working. Check the repository's settings on GitHub. |
