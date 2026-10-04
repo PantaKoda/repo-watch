@@ -223,8 +223,11 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         PullRequestsText = snapshot.PullRequests.Value is { OpenCount: { Value: > 0 } prs } ? $"{prs} open PR{(prs is { Value: 1, IsExact: true } ? "" : "s")}" : null;
         IssuesText = snapshot.Issues.Value is { OpenCount: { Value: > 0 } issues } ? $"{issues} issue{(issues is { Value: 1, IsExact: true } ? "" : "s")}" : null;
 
+        var pullRequests = snapshot.PullRequests.Value; // names the pull request each run belongs to
         Actions.Apply(snapshot.Actions, now, isRefreshing, allowReorder,
-            a => a.RecentRuns, r => r.Id, vm => vm.Id, r => Create(new RunItemViewModel(_browser, r.Id), vm => vm.Update(r, now)), (vm, r) => vm.Update(r, now));
+            a => a.RecentRuns, r => r.Id, vm => vm.Id,
+            r => Create(new RunItemViewModel(_browser, r.Id), vm => vm.Update(r, now, RunPullRequest.For(r, pullRequests))),
+            (vm, r) => vm.Update(r, now, RunPullRequest.For(r, pullRequests)));
         PullRequests.Apply(snapshot.PullRequests, now, isRefreshing, allowReorder,
             p => p.Items, e => e.PullRequest.Number, vm => vm.Number, e => Create(new PullRequestItemViewModel(_browser, e.PullRequest.Number), vm => vm.Update(e)), (vm, e) => vm.Update(e), p => p.OpenCount);
         Issues.Apply(snapshot.Issues, now, isRefreshing, allowReorder,

@@ -86,6 +86,9 @@ public sealed record PullRequest
 
     public MergeState MergeState { get; init; } = MergeState.Unknown;
 
+    /// <summary>Conversation and inline review comments (not review summaries), as GitHub counts them.</summary>
+    public int CommentCount { get; init; }
+
     public required Uri HtmlUrl { get; init; }
 
     public required DateTimeOffset CreatedAt { get; init; }

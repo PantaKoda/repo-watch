@@ -39,6 +39,15 @@
                     <StackPanel Grid.Column="1">
                       <TextBlock Classes="title" Text="{Binding Title}" />
                       <TextBlock Classes="secondary" Text="{Binding Detail}" />
+                      <!-- The pull request this run belongs to; opens it (the row itself opens the run). -->
+                      <Button Classes="prlink" IsVisible="{Binding HasPullRequest}" Command="{Binding OpenPullRequestCommand}"
+                              ToolTip.Tip="The pull request this run belongs to. Click to open it on GitHub."
+                              AutomationProperties.Name="{Binding PullRequestText}">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <PathIcon Data="{StaticResource IconPullRequest}" Width="10" Height="10" />
+                          <TextBlock Text="{Binding PullRequestText}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Margin="8,0,0,0">
                       <TextBlock Classes="secondary" Text="{Binding OutcomeLabel}" HorizontalAlignment="Right" />
@@ -66,8 +75,8 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:PullRequestItemViewModel">
                 <Button Classes="row" Command="{Binding OpenCommand}" ToolTip.Tip="Open this pull request on GitHub"
-                        AutomationProperties.Name="{Binding Title}">
-                  <Grid ColumnDefinitions="Auto,*">
+                        AutomationProperties.Name="{Binding AccessibleName}">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
                     <c:StatusDot Tone="{Binding ChecksTone}" Margin="0,4,8,0" VerticalAlignment="Top" />
                     <StackPanel Grid.Column="1" Spacing="1">
                       <TextBlock Classes="title" Text="{Binding Title}" />
@@ -75,6 +84,10 @@
                       <TextBlock Classes="secondary" Text="{Binding ChecksLabel}" />
                       <TextBlock Classes="secondary" Text="{Binding ReviewLabel}" />
                       <TextBlock Classes="secondary" Text="{Binding MergeLabel}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Classes="comments" IsVisible="{Binding HasComments}" ToolTip.Tip="Comments, including inline review comments">
+                      <PathIcon Data="{StaticResource IconComment}" />
+                      <TextBlock Text="{Binding CommentCount}" />
                     </StackPanel>
                   </Grid>
                 </Button>
@@ -98,13 +111,19 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:IssueItemViewModel">
                 <Button Classes="row" Command="{Binding OpenCommand}" ToolTip.Tip="Open this issue on GitHub"
-                        AutomationProperties.Name="{Binding Title}">
+                        AutomationProperties.Name="{Binding AccessibleName}">
                   <Grid ColumnDefinitions="*,Auto">
                     <StackPanel>
                       <TextBlock Classes="title" Text="{Binding Title}" />
                       <TextBlock Classes="secondary" Text="{Binding Detail}" />
                     </StackPanel>
-                    <TextBlock Grid.Column="1" Classes="secondary" Text="{Binding TimeText}" Margin="8,0,0,0" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Top">
+                      <TextBlock Classes="secondary" Text="{Binding TimeText}" HorizontalAlignment="Right" />
+                      <StackPanel Classes="comments" IsVisible="{Binding HasComments}" ToolTip.Tip="Comments">
+                        <PathIcon Data="{StaticResource IconComment}" />
+                        <TextBlock Text="{Binding CommentCount}" />
+                      </StackPanel>
+                    </StackPanel>
                   </Grid>
                 </Button>
               </DataTemplate>

@@ -26,6 +26,8 @@ public sealed record Issue
 
     public IReadOnlyList<string> Assignees { get; init; } = [];
 
+    public int CommentCount { get; init; }
+
     public required Uri HtmlUrl { get; init; }
 
     public required DateTimeOffset CreatedAt { get; init; }

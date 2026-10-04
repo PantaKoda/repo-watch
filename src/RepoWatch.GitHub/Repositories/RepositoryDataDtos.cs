@@ -202,6 +202,8 @@ internal sealed record PullRequestNode
 
     [JsonPropertyName("reviews")] public Connection<ReviewNode>? Reviews { get; init; }
 
+    [JsonPropertyName("totalCommentsCount")] public int? TotalCommentsCount { get; init; }
+
 }
 
 internal sealed record ReviewRequestNode([property: JsonPropertyName("requestedReviewer")] RequestedReviewerNode? RequestedReviewer);
@@ -266,7 +268,11 @@ internal sealed record IssueNode
     [JsonPropertyName("labels")] public Connection<NameNode>? Labels { get; init; }
 
     [JsonPropertyName("assignees")] public Connection<LoginNode>? Assignees { get; init; }
+
+    [JsonPropertyName("comments")] public CountNode? Comments { get; init; }
 }
+
+internal sealed record CountNode([property: JsonPropertyName("totalCount")] int TotalCount);
 
 [JsonSerializable(typeof(RepositoryInfoDto))]
 [JsonSerializable(typeof(RunsPageDto))]

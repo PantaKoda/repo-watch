@@ -148,11 +148,12 @@ public sealed class RepositoryDataTests
         Assert.Equal(ResourceErrorKind.ServerError, result.Error!.Kind);
     }
 
-    private static string PullRequest(int number, string author, string mergeable = "MERGEABLE", bool draft = false, string reviewRequests = "", string reviews = "") =>
+    private static string PullRequest(int number, string author, string mergeable = "MERGEABLE", bool draft = false, string reviewRequests = "", string reviews = "", int? comments = null) =>
         "{\"databaseId\":" + (number * 100) + ",\"number\":" + number + ",\"title\":\"PR " + number + " <script>\",\"url\":\"https://github.com/octo-test/hello/pull/" + number + "\","
         + "\"isDraft\":" + (draft ? "true" : "false") + ",\"createdAt\":\"2026-10-01T10:00:00Z\",\"updatedAt\":\"2026-10-03T10:0" + (number % 10) + ":00Z\",\"mergeable\":\"" + mergeable + "\","
         + "\"headRefName\":\"feature-" + number + "\",\"baseRefName\":\"main\",\"headRefOid\":\"" + PrSha + "\",\"author\":{\"login\":\"" + author + "\"},"
         + "\"reviewRequests\":{\"totalCount\":0,\"nodes\":[" + reviewRequests + "]},"
+        + (comments is { } count ? "\"totalCommentsCount\":" + count + "," : "")
         + "\"reviews\":{\"totalCount\":0,\"nodes\":[" + reviews + "]}}";
 
     // REST shapes for GET /commits/{sha}/check-runs and /commits/{sha}/status.
@@ -192,7 +193,8 @@ public sealed class RepositoryDataTests
         handler.Json(PullRequests(57,
                 PullRequest(1, "octo-test",
                     reviewRequests: """{"requestedReviewer":{"__typename":"Team","slug":"core","organization":{"login":"acme"}}}""",
-                    reviews: string.Join(",", Review(1, "alice", "APPROVED", "0000000000000000000000000000000000000000"), Review(2, "bob", "CHANGES_REQUESTED", PrSha), Review(3, "bob", "COMMENTED", PrSha, "2026-10-02T11:00:00Z")))))
+                    reviews: string.Join(",", Review(1, "alice", "APPROVED", "0000000000000000000000000000000000000000"), Review(2, "bob", "CHANGES_REQUESTED", PrSha), Review(3, "bob", "COMMENTED", PrSha, "2026-10-02T11:00:00Z")),
+                    comments: 5)))
             .Json(CheckRuns(3, CheckRun(10, "build", 900, "completed", "failure"), CheckRun(11, "build", 900, "completed", "success"), CheckRun(12, "build", 901, "in_progress", null)))
             .Json(Statuses(1, Status(5, "ci/legacy", "failure")));
 
@@ -216,6 +218,7 @@ public sealed class RepositoryDataTests
         var entry = Assert.Single(state.Items);
         Assert.Equal("PR 1 <script>", entry.PullRequest.Title); // carried as plain text
         Assert.Equal(MergeState.Clean, entry.PullRequest.MergeState);
+        Assert.Equal(5, entry.PullRequest.CommentCount); // conversation and inline review comments, one field
 
         var checks = entry.Checks.Value!;
         Assert.Equal(2, checks.CheckRuns.Count); // re-run 11 supersedes 10 in suite 900; suite 901 counted separately
@@ -415,7 +418,7 @@ public sealed class RepositoryDataTests
         handler.Json("""
             {"data":{"repository":{"hasIssuesEnabled":true,"issues":{"totalCount":143,"nodes":[
               {"databaseId":501,"number":12,"title":"Crash on start","url":"https://github.com/octo-test/hello/issues/12","createdAt":"2026-09-01T10:00:00Z","updatedAt":"2026-10-03T09:00:00Z",
-               "author":{"login":"alice"},"labels":{"totalCount":1,"nodes":[{"name":"bug"}]},"assignees":{"totalCount":1,"nodes":[{"login":"octo-test"}]}},
+               "author":{"login":"alice"},"labels":{"totalCount":1,"nodes":[{"name":"bug"}]},"assignees":{"totalCount":1,"nodes":[{"login":"octo-test"}]},"comments":{"totalCount":4}},
               {"databaseId":502,"number":13,"title":"Ghost author","url":"https://github.com/octo-test/hello/issues/13","createdAt":"2026-09-01T10:00:00Z","updatedAt":"2026-10-02T09:00:00Z",
                "author":null,"labels":{"totalCount":0,"nodes":[]},"assignees":{"totalCount":0,"nodes":[]}}
             ]}}}}
@@ -428,6 +431,7 @@ public sealed class RepositoryDataTests
         Assert.Equal([12, 13], issues.Items.Select(i => i.Number));
         Assert.Equal(["bug"], issues.Items[0].Labels);
         Assert.Equal("ghost", issues.Items[1].AuthorLogin);
+        Assert.Equal([4, 0], issues.Items.Select(i => i.CommentCount)); // a missing count is zero, not an error
     }
 
     [Fact]

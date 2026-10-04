@@ -28,7 +28,9 @@ public abstract partial class LinkItemViewModel(IExternalBrowser browser) : Obse
 
 public sealed partial class RunItemViewModel(IExternalBrowser browser, long id) : LinkItemViewModel(browser)
 {
+    private readonly IExternalBrowser _browser = browser;
     private DateTimeOffset _updatedAt;
+    private Uri? _pullRequestUrl;
 
     public long Id { get; } = id;
 
@@ -51,7 +53,14 @@ public sealed partial class RunItemViewModel(IExternalBrowser browser, long id) 
     [ObservableProperty]
     public partial string TimeText { get; private set; } = "";
 
-    public void Update(WorkflowRun run, DateTimeOffset now)
+    /// <summary>"PR #61 · Add login rate limiting": the pull request this run belongs to; null when none.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPullRequest))]
+    public partial string? PullRequestText { get; private set; }
+
+    public bool HasPullRequest => PullRequestText is not null;
+
+    public void Update(WorkflowRun run, DateTimeOffset now, RunPullRequest? pullRequest = null)
     {
         Title = run.WorkflowName;
         var attempt = run.RunAttempt > 1 ? string.Create(CultureInfo.InvariantCulture, $" · attempt {run.RunAttempt}") : "";
@@ -60,10 +69,38 @@ public sealed partial class RunItemViewModel(IExternalBrowser browser, long id) 
         Tone = StatusPresentation.Tone(run.Outcome);
         Url = run.HtmlUrl;
         _updatedAt = run.UpdatedAt;
+        _pullRequestUrl = pullRequest?.HtmlUrl;
+        PullRequestText = pullRequest is null ? null
+            : string.Create(CultureInfo.InvariantCulture, $"PR #{pullRequest.Number}")
+              + (string.IsNullOrWhiteSpace(pullRequest.Title) ? "" : " · " + pullRequest.Title)
+              + (pullRequest.Others > 0 ? string.Create(CultureInfo.InvariantCulture, $" (+{pullRequest.Others} more)") : "");
+        OpenPullRequestCommand.NotifyCanExecuteChanged();
         Tick(now);
     }
 
     public void Tick(DateTimeOffset now) => TimeText = Presentation.TimeText.Ago(_updatedAt, now);
+
+    [RelayCommand(CanExecute = nameof(CanOpenPullRequest))]
+    private async Task OpenPullRequestAsync()
+    {
+        if (_pullRequestUrl is not null)
+        {
+            await _browser.OpenAsync(_pullRequestUrl);
+        }
+    }
+
+    private bool CanOpenPullRequest() => _pullRequestUrl is not null;
+}
+
+/// <summary>What a screen reader says for a pull request or issue: its title and how many comments it has.</summary>
+internal static class CommentText
+{
+    public static string Accessible(string title, int comments) => comments switch
+    {
+        0 => title,
+        1 => title + ", 1 comment",
+        _ => string.Create(CultureInfo.InvariantCulture, $"{title}, {comments} comments"),
+    };
 }
 
 public sealed partial class PullRequestItemViewModel(IExternalBrowser browser, int number) : LinkItemViewModel(browser)
@@ -88,10 +125,22 @@ public sealed partial class PullRequestItemViewModel(IExternalBrowser browser, i
     [ObservableProperty]
     public partial string MergeLabel { get; private set; } = "";
 
+    /// <summary>Conversation and inline review comments.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasComments))]
+    public partial int CommentCount { get; private set; }
+
+    public bool HasComments => CommentCount > 0;
+
+    [ObservableProperty]
+    public partial string AccessibleName { get; private set; } = "";
+
     public void Update(PullRequestEntry entry)
     {
         var pr = entry.PullRequest;
         Title = pr.Title;
+        CommentCount = pr.CommentCount;
+        AccessibleName = CommentText.Accessible(pr.Title, pr.CommentCount);
         Detail = string.Create(CultureInfo.InvariantCulture, $"#{pr.Number} by {pr.AuthorLogin}{(pr.IsDraft ? " · draft" : "")}");
         Url = pr.HtmlUrl;
         MergeLabel = StatusPresentation.Label(pr.MergeState);
@@ -143,9 +192,20 @@ public sealed partial class IssueItemViewModel(IExternalBrowser browser, int num
     [ObservableProperty]
     public partial string TimeText { get; private set; } = "";
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasComments))]
+    public partial int CommentCount { get; private set; }
+
+    public bool HasComments => CommentCount > 0;
+
+    [ObservableProperty]
+    public partial string AccessibleName { get; private set; } = "";
+
     public void Update(Issue issue, DateTimeOffset now)
     {
         Title = issue.Title;
+        CommentCount = issue.CommentCount;
+        AccessibleName = CommentText.Accessible(issue.Title, issue.CommentCount);
         var labels = issue.Labels.Count > 0 ? " · " + string.Join(", ", issue.Labels) : "";
         Detail = string.Create(CultureInfo.InvariantCulture, $"#{issue.Number} by {issue.AuthorLogin}{labels}");
         Url = issue.HtmlUrl;

@@ -445,6 +445,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
             HeadRef = node.HeadRefName ?? "",
             BaseRef = node.BaseRefName ?? "",
             RequestedReviewers = requests,
+            CommentCount = Math.Max(0, node.TotalCommentsCount ?? 0),
             // GraphQL "mergeable" only says whether the branches conflict; branch protection and
             // required checks are not known here, so this never becomes "ready to merge".
             MergeState = node.IsDraft ? MergeState.Draft : node.Mergeable switch
@@ -501,6 +502,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
             State = IssueState.Open,
             Labels = (node.Labels?.Nodes ?? []).Select(l => l?.Name).OfType<string>().ToList(),
             Assignees = (node.Assignees?.Nodes ?? []).Select(a => a?.Login).OfType<string>().ToList(),
+            CommentCount = Math.Max(0, node.Comments?.TotalCount ?? 0),
             HtmlUrl = html,
             CreatedAt = created,
             UpdatedAt = node.UpdatedAt ?? created,
@@ -520,7 +522,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
     private const string PullRequestFields = """
         fragment PullRequestFields on PullRequest {
                 databaseId number title url isDraft createdAt updatedAt mergeable
-                headRefName baseRefName headRefOid
+                headRefName baseRefName headRefOid totalCommentsCount
                 author { login }
                 reviewRequests(first: 20) {
                   nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { slug organization { login } } } }
@@ -570,6 +572,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
                 author { login }
                 labels(first: 10) { nodes { name } }
                 assignees(first: 10) { nodes { login } }
+                comments { totalCount }
               }
             }
           }

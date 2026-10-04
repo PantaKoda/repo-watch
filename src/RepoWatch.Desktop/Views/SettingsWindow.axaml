@@ -35,19 +35,19 @@
         <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding RunningSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
                        Increment="5" FormatString="0" MinWidth="130" AutomationProperties.Name="Running workflows refresh interval in seconds" />
         <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
-                   Text="{Binding DefaultRunningSeconds, StringFormat='Actions while a workflow is queued or running, and the repository whose details are open. Default {0} s.'}" />
+                   Text="{Binding DefaultRunningSeconds, StringFormat='Actions (each run with the pull request it belongs to) while a workflow is queued or running, and the repository whose details are open. Default {0} s.'}" />
 
         <TextBlock Grid.Row="2" Text="Pull requests and repository details" VerticalAlignment="Center" FontWeight="SemiBold" TextWrapping="Wrap" />
         <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding PullRequestsSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
                        Increment="10" FormatString="0" MinWidth="130" AutomationProperties.Name="Pull requests refresh interval in seconds" />
         <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
-                   Text="{Binding DefaultPullRequestsSeconds, StringFormat='Open pull requests with their checks, reviews and merge state, plus repository details: public or private, renames, archived. Default {0} s.'}" />
+                   Text="{Binding DefaultPullRequestsSeconds, StringFormat='Open pull requests with their checks, reviews, merge state and comment counts, plus repository details: public or private, renames, archived. Default {0} s.'}" />
 
         <TextBlock Grid.Row="4" Text="Issues" VerticalAlignment="Center" FontWeight="SemiBold" />
         <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding IssuesSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
                        Increment="10" FormatString="0" MinWidth="130" AutomationProperties.Name="Issues refresh interval in seconds" />
         <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Classes="secondary" TextWrapping="Wrap" TextTrimming="None" Margin="0,0,0,6"
-                   Text="{Binding DefaultIssuesSeconds, StringFormat='Open issues and their counts. Default {0} s.'}" />
+                   Text="{Binding DefaultIssuesSeconds, StringFormat='Open issues, how many there are, and the comment count on each. Default {0} s.'}" />
 
         <TextBlock Grid.Row="6" Text="Quiet workflows" VerticalAlignment="Center" FontWeight="SemiBold" />
         <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding QuietSeconds}" Minimum="{Binding MinRefreshSeconds}" Maximum="{Binding MaxRefreshSeconds}"
