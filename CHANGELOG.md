@@ -10,6 +10,10 @@ What changed in each Repo Watch release. The section for a version becomes its G
 - **Refresh intervals in Settings:** choose, in seconds, how often running workflows, pull requests and repository details, issues and quiet workflows are checked.
 - **Which pull request started a run:** on the Actions tab, a run from a pull request shows "PR #61 · title"; click it to open the pull request. Runs from forks are matched to their pull request too.
 - **Comment counts** on each pull request (conversation and inline review comments) and issue. They refresh with the pull request and issue intervals, as Settings now explains, and a new comment makes the repository's row light up like other activity.
+- **Resize the widget from any edge or corner**, not only the bottom-right grip.
+
+### Changed
+- **Refresh buttons show they're working:** while a refresh you started runs, its icon turns in the theme's accent color (only the color changes with reduced motion).
 
 ## [0.2.0] - 2026-10-04
 

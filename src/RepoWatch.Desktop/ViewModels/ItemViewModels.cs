@@ -69,12 +69,17 @@ public sealed partial class RunItemViewModel(IExternalBrowser browser, long id) 
         Tone = StatusPresentation.Tone(run.Outcome);
         Url = run.HtmlUrl;
         _updatedAt = run.UpdatedAt;
-        _pullRequestUrl = pullRequest?.HtmlUrl;
         PullRequestText = pullRequest is null ? null
             : string.Create(CultureInfo.InvariantCulture, $"PR #{pullRequest.Number}")
               + (string.IsNullOrWhiteSpace(pullRequest.Title) ? "" : " · " + pullRequest.Title)
               + (pullRequest.Others > 0 ? string.Create(CultureInfo.InvariantCulture, $" (+{pullRequest.Others} more)") : "");
-        OpenPullRequestCommand.NotifyCanExecuteChanged();
+        if (pullRequest?.HtmlUrl != _pullRequestUrl)
+        {
+            // Only when the link changes: a routine refresh mustn't make the bound button re-query the command.
+            _pullRequestUrl = pullRequest?.HtmlUrl;
+            OpenPullRequestCommand.NotifyCanExecuteChanged();
+        }
+
         Tick(now);
     }
 

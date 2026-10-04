@@ -32,7 +32,7 @@ public sealed class WidgetWindowTests
     private static readonly string ScreenshotDirectory = Path.Combine(
         AppContext.BaseDirectory, "..", "..", "..", "..", "..", "artifacts", "screenshots", "stage03");
 
-    private static (WidgetWindow Window, WidgetViewModel ViewModel, RecordingBrowser Browser) Open(double width, double height, bool demo = true)
+    private static (WidgetWindow Window, WidgetViewModel ViewModel, RecordingBrowser Browser) Open(double width, double height, bool demo = true, SettingsService? settings = null)
     {
         var monitors = new MonitorHost(TimeProvider.System);
         if (demo)
@@ -41,7 +41,7 @@ public sealed class WidgetWindowTests
         }
 
         var browser = new RecordingBrowser();
-        var viewModel = new WidgetViewModel(monitors, TestServices.Settings(), new FakeShell(), browser, TimeProvider.System, new ImmediateDispatcher(), new RepoWatch.Core.Configuration.RepoWatchOptions());
+        var viewModel = new WidgetViewModel(monitors, settings ?? TestServices.Settings(), new FakeShell(), browser, TimeProvider.System, new ImmediateDispatcher(), new RepoWatch.Core.Configuration.RepoWatchOptions());
         var window = new WidgetWindow { DataContext = viewModel, Width = width, Height = height };
         window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -367,6 +367,131 @@ public sealed class WidgetWindowTests
 
         window.GetLogicalDescendants().OfType<TabControl>().Single().SelectedIndex = 1;
         Capture(window, $"details-pulls-comments-{theme.ToLowerInvariant()}");
+        window.Close();
+    }
+
+    /// <summary>The icon's current rotation in degrees (0 when untransformed).</summary>
+    private static double Angle(Visual icon) =>
+        icon.RenderTransform is { } transform ? Math.Round(Math.Atan2(transform.Value.M12, transform.Value.M11) * 180 / Math.PI, 1) : 0;
+
+    /// <summary>Runs the render timer for a while, so style animations advance.</summary>
+    private static async Task Animate(int milliseconds = 300)
+    {
+        for (var elapsed = 0; elapsed < milliseconds; elapsed += 50)
+        {
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task A_manual_refresh_turns_the_refresh_icon_in_the_accent_color_until_it_finishes()
+    {
+        Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+        var (window, viewModel, _) = Open(400, 560);
+        var button = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "Refresh");
+        var icon = button.GetVisualDescendants().OfType<PathIcon>().Single();
+        var idle = icon.Foreground;
+
+        var refresh = viewModel.RefreshCommand.ExecuteAsync(null); // the demo answers after a short simulated delay
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("spinning", button.Classes);
+        Assert.True(window.TryFindResource("HudAccentBrush", window.ActualThemeVariant, out var accent));
+        Assert.Equal(accent, icon.Foreground);
+        Assert.NotEqual(idle, icon.Foreground);
+        await Animate();
+        Assert.NotEqual(0, Angle(icon)); // it really turns
+
+        await refresh;
+        await Animate(100);
+        Assert.DoesNotContain("spinning", button.Classes); // nothing keeps turning once it's done
+        Assert.Equal(idle, icon.Foreground);
+        Assert.Equal(0, Angle(icon)); // and the icon is upright again
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task With_reduced_motion_a_refresh_only_changes_the_icon_color()
+    {
+        Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+        var (window, viewModel, _) = Open(400, 560);
+        window.Classes.Add("reduce-motion");
+        var button = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "Refresh");
+        var icon = button.GetVisualDescendants().OfType<PathIcon>().Single();
+
+        var refresh = viewModel.RefreshCommand.ExecuteAsync(null);
+        await Animate();
+        Assert.True(window.TryFindResource("HudAccentBrush", window.ActualThemeVariant, out var accent));
+        Assert.Equal(accent, icon.Foreground);
+        Assert.Equal(0, Angle(icon));
+
+        await refresh;
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Refreshing_one_repository_turns_its_details_refresh_icon()
+    {
+        Application.Current!.RequestedThemeVariant = ThemeVariant.Light;
+        var (window, viewModel, _) = Open(400, 560);
+        viewModel.ShowRepositoryCommand.Execute(viewModel.Repositories[0]);
+        Dispatcher.UIThread.RunJobs();
+        var button = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "Refresh this repository");
+        Assert.DoesNotContain("spinning", button.Classes);
+
+        var refresh = viewModel.SelectedRepository!.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("spinning", button.Classes);
+
+        await refresh;
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain("spinning", button.Classes);
+        window.Close();
+    }
+    /// <summary>The resize strip under a point of the window, or null.</summary>
+    private static WindowEdge? EdgeAt(Window window, double x, double y) =>
+        window.InputHitTest(new Point(x, y)) is Border { Tag: string tag } border && border.Classes.Contains("resize") ? Enum.Parse<WindowEdge>(tag) : null;
+
+    [AvaloniaFact]
+    public void The_widget_resizes_from_every_edge_and_corner()
+    {
+        var (window, _, _) = Open(400, 560);
+        var (w, h) = (window.Bounds.Width, window.Bounds.Height);
+
+        var edges = window.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("resize"))
+            .Select(b => Enum.Parse<WindowEdge>((string)b.Tag!)).ToHashSet();
+        Assert.Equal(Enum.GetValues<WindowEdge>().ToHashSet(), edges);
+
+        // The strips are what the pointer reaches at the edges; the middle stays free.
+        Assert.Equal(WindowEdge.West, EdgeAt(window, 2, h / 2));
+        Assert.Equal(WindowEdge.East, EdgeAt(window, w - 2, h / 2));
+        Assert.Equal(WindowEdge.North, EdgeAt(window, w / 2, 2));
+        Assert.Equal(WindowEdge.South, EdgeAt(window, w / 2, h - 2));
+        Assert.Equal(WindowEdge.NorthWest, EdgeAt(window, 2, 2));
+        Assert.Equal(WindowEdge.SouthEast, EdgeAt(window, w - 2, h - 2));
+        Assert.Null(EdgeAt(window, w / 2, h / 2));
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void A_locked_widget_only_resizes_from_edges_that_keep_it_in_place()
+    {
+        var settings = TestServices.Settings();
+        settings.UpdateApp(s => s with { Window = s.Window with { PositionLocked = true } });
+        var (window, _, _) = Open(400, 560, settings: settings);
+        var (w, h) = (window.Bounds.Width, window.Bounds.Height);
+
+        // Top and left edges would move the window: they're gone while the position is locked.
+        Assert.Null(EdgeAt(window, 2, h / 2));
+        Assert.Null(EdgeAt(window, w / 2, 2));
+        Assert.Null(EdgeAt(window, 2, 2));
+        Assert.Null(EdgeAt(window, w - 2, 2));
+        Assert.Null(EdgeAt(window, 2, h - 2));
+        Assert.Equal(WindowEdge.East, EdgeAt(window, w - 2, h / 2));
+        Assert.Equal(WindowEdge.South, EdgeAt(window, w / 2, h - 2));
+        Assert.Equal(WindowEdge.SouthEast, EdgeAt(window, w - 2, h - 2));
+        Assert.All(Enum.GetValues<WindowEdge>(), e => Assert.Equal(e is WindowEdge.East or WindowEdge.South or WindowEdge.SouthEast, WidgetWindow.KeepsPosition(e)));
         window.Close();
     }
 }

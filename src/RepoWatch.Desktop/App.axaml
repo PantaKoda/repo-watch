@@ -166,6 +166,31 @@
     </Style>
 
     <!--
+      A refresh the user asked for: the icon takes the theme's accent and turns until it finishes (it only
+      changes color with reduced motion). It stops with the refresh, so nothing spins while idle.
+    -->
+    <Style Selector="Button.icon.spinning PathIcon">
+      <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
+    </Style>
+    <Style Selector="Window:not(.reduce-motion) Button.icon.spinning PathIcon">
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="INFINITE">
+          <KeyFrame Cue="0%">
+            <Setter Property="RotateTransform.Angle" Value="0" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="RotateTransform.Angle" Value="360" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <!-- The widget's resize edges and corners: invisible, but they take the pointer. -->
+    <Style Selector="Border.resize">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!--
       A row's "open on GitHub" button. Quiet by color, never by fading: the dim secondary color at
       rest (the same contrast as secondary text), the accent on the hovered or selected row.
     -->
