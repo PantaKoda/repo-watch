@@ -46,6 +46,7 @@ public sealed class AppShell(
     private RepositoriesWindow? _repositoriesWindow;
     private OnboardingWindow? _onboardingWindow;
     private UpdateWindow? _updateWindow;
+    private UninstallWindow? _uninstallWindow;
     private DispatcherTimer? _clock;
     private DateTimeOffset _widgetDeactivatedAt = DateTimeOffset.MinValue;
     private bool _quitting;
@@ -157,6 +158,7 @@ public sealed class AppShell(
         var updates = services.GetRequiredService<UpdateService>();
         updates.ExitRequested += (_, _) => Dispatcher.UIThread.Post(Quit);
         updates.Start();
+        services.GetRequiredService<Uninstall.UninstallService>().ExitRequested += (_, _) => Dispatcher.UIThread.Post(Quit);
 
         // Restore the signed-in account in the background; the widget shows the outcome.
         _ = RestoreAccountAsync();
@@ -313,6 +315,18 @@ public sealed class AppShell(
         BringToFront(_updateWindow);
     }
 
+    public void OpenUninstall()
+    {
+        if (_uninstallWindow is null)
+        {
+            var viewModel = ActivatorUtilities.CreateInstance<UninstallViewModel>(services);
+            _uninstallWindow = new UninstallWindow { DataContext = viewModel, Icon = _widget?.Icon };
+            _uninstallWindow.Closed += (_, _) => _uninstallWindow = null;
+        }
+
+        BringToFront(_uninstallWindow);
+    }
+
     public async Task CopyTextAsync(string text)
     {
         try
@@ -354,6 +368,7 @@ public sealed class AppShell(
         _repositoriesWindow?.Close();
         _onboardingWindow?.Close();
         _updateWindow?.Close();
+        _uninstallWindow?.Close();
         _desktop?.Shutdown();
     }
 

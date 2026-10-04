@@ -80,6 +80,12 @@ internal static class CompositionRoot
         services.AddSingleton<Updates.IProcessLauncher, Updates.ProcessLauncher>();
         services.AddSingleton<Updates.UpdateService>();
 
+        // Uninstall: removes everything Repo Watch created on this PC (see UninstallService).
+        services.AddSingleton<Uninstall.IUninstallPlatform>(sp => OperatingSystem.IsWindows()
+            ? new Uninstall.WindowsUninstallPlatform(sp.GetRequiredService<ILogger<Uninstall.WindowsUninstallPlatform>>())
+            : new Uninstall.BasicUninstallPlatform());
+        services.AddSingleton<Uninstall.UninstallService>();
+
         // Monitoring and platform adapters.
         services.AddSingleton<MonitorHost>();
         services.AddSingleton<VisualStateService>();

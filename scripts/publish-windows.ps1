@@ -64,7 +64,12 @@ Invoke-Checked 'Publish' {
 if (-not (Test-Path (Join-Path $publishDir 'RepoWatch.exe'))) { throw 'The publish did not produce RepoWatch.exe.' }
 
 # Marks the folder as a release: only such a copy may replace itself with a newer release (in-app updates).
-$manifest = [ordered]@{ version = $version; commit = $commit; runtime = $runtime }
+# "files" lists everything the release ships (ordinal order), so an uninstall deletes exactly these files and
+# never anything else that happens to share the folder.
+$shipped = [string[]](Get-ChildItem $publishDir -Recurse -File | Where-Object { $_.Extension -ne '.pdb' } |
+    ForEach-Object { [IO.Path]::GetRelativePath($publishDir, $_.FullName).Replace('\', '/') }) + 'release.json'
+[Array]::Sort($shipped, [StringComparer]::Ordinal)
+$manifest = [ordered]@{ version = $version; commit = $commit; runtime = $runtime; files = $shipped }
 Set-Content -Path (Join-Path $publishDir 'release.json') -Value ($manifest | ConvertTo-Json -Compress) -Encoding utf8 -NoNewline
 
 Write-Host '==> Zip' -ForegroundColor Cyan

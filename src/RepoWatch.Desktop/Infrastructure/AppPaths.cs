@@ -7,6 +7,10 @@ public sealed record AppPaths(string DataDirectory, string DefaultsFile, string 
 
     public const string DataDirectoryVariable = "REPOWATCH_DATA_DIR";
 
+    /// <summary>The normal data folder, used when REPOWATCH_DATA_DIR is not set.</summary>
+    public static string DefaultDataDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RepoWatch");
+
     /// <summary>
     /// Uses %LOCALAPPDATA%\RepoWatch on Windows (the platform equivalent elsewhere).
     /// REPOWATCH_DATA_DIR overrides it for portable use and isolated testing.
@@ -16,7 +20,7 @@ public sealed record AppPaths(string DataDirectory, string DefaultsFile, string 
         var root = Environment.GetEnvironmentVariable(DataDirectoryVariable);
         if (string.IsNullOrWhiteSpace(root))
         {
-            root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RepoWatch");
+            root = DefaultDataDirectory;
         }
 
         root = Path.GetFullPath(root);

@@ -483,6 +483,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Quit() => _shell.Quit();
 
+    [RelayCommand]
+    private void Uninstall() => _shell.OpenUninstall();
+
     private void Save(Func<AppSettings, AppSettings> change)
     {
         if (!_applying)

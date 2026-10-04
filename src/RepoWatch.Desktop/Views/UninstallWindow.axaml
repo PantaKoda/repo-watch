@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RepoWatch.Desktop.ViewModels"
+        xmlns:u="using:RepoWatch.Desktop.Uninstall"
+        x:Class="RepoWatch.Desktop.Views.UninstallWindow"
+        x:DataType="vm:UninstallViewModel"
+        Title="Uninstall Repo Watch"
+        Width="540" Height="600" MinWidth="380" MinHeight="420"
+        WindowStartupLocation="CenterScreen">
+  <DockPanel Margin="20,12,20,16">
+    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,10">
+      <TextBlock Classes="heading" Margin="0,4,0,0" Text="Uninstall Repo Watch" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="Repo Watch will close and remove itself from this PC. Your GitHub repositories are not touched." />
+      <RadioButton GroupName="keep" IsChecked="{Binding RemoveEverything}" Margin="0,6,0,0" AutomationProperties.Name="Remove everything">
+        <StackPanel>
+          <TextBlock Text="Remove everything" FontWeight="SemiBold" />
+          <TextBlock Classes="secondary" TextWrapping="Wrap" TextTrimming="None"
+                     Text="Nothing of Repo Watch stays on this PC: no settings, cache, logs, sign-in or registry entries." />
+        </StackPanel>
+      </RadioButton>
+      <RadioButton GroupName="keep" IsChecked="{Binding KeepSettings}" AutomationProperties.Name="Keep my settings and repository list">
+        <StackPanel>
+          <TextBlock Text="Keep my settings and repository list" FontWeight="SemiBold" />
+          <TextBlock Classes="secondary" TextWrapping="Wrap" TextTrimming="None"
+                     Text="For a later reinstall. Only the settings file stays, without your sign-in or any cached repository data." />
+        </StackPanel>
+      </RadioButton>
+      <CheckBox IsChecked="{Binding OpenGitHubAccess}" Margin="0,4,0,0" AutomationProperties.Name="Open GitHub afterwards to remove Repo Watch's access">
+        <TextBlock TextWrapping="Wrap"
+                   Text="Open GitHub afterwards so I can also remove Repo Watch's access to my account (GitHub keeps it until you revoke it there)" />
+      </CheckBox>
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0">
+      <TextBlock Text="{Binding Message}" IsVisible="{Binding HasMessage}" TextWrapping="Wrap" />
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Classes="accent" Content="Uninstall" Command="{Binding UninstallCommand}"
+                AutomationProperties.Name="Uninstall Repo Watch" />
+        <Button Content="Cancel" Click="OnCancelClick" IsEnabled="{Binding !IsRunning}" />
+      </WrapPanel>
+    </StackPanel>
+
+    <!-- What will happen, with the real paths -->
+    <Border BorderBrush="{DynamicResource HudFrameBrush}" BorderThickness="1" CornerRadius="6">
+      <ScrollViewer Padding="12,8">
+        <ItemsControl ItemsSource="{Binding Items}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="u:UninstallItem">
+              <StackPanel Spacing="1" Margin="0,3,0,7">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="{Binding Removed, Converter={x:Static vm:UninstallMarks.Mark}}" FontWeight="Bold" />
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                </StackPanel>
+                <SelectableTextBlock Classes="secondary" Text="{Binding Detail}" TextWrapping="Wrap" Margin="18,0,0,0" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+  </DockPanel>
+</Window>

@@ -131,6 +131,8 @@
         <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />
         <Button Content="Export diagnostics" Command="{Binding ExportDiagnosticsCommand}" IsVisible="{Binding CanExportDiagnostics}" />
         <Button Content="Quit Repo Watch" Command="{Binding QuitCommand}" />
+        <Button Content="Uninstall Repo Watch…" Command="{Binding UninstallCommand}"
+                ToolTip.Tip="Removes Repo Watch from this PC. You choose whether to keep your settings." />
       </WrapPanel>
       <TextBlock Text="{Binding ActionMessage}" IsVisible="{Binding HasActionMessage}" TextWrapping="Wrap" Classes="secondary" />
     </StackPanel>

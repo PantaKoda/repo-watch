@@ -28,6 +28,9 @@ public interface IShell
     /// <summary>Opens the update window: what changed since this version, and Install update.</summary>
     void OpenUpdate();
 
+    /// <summary>Opens the uninstall window (what will be removed, keep settings or not, Uninstall).</summary>
+    void OpenUninstall();
+
     void Quit();
 }
 
