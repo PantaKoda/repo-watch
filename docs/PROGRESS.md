@@ -1103,3 +1103,8 @@ Requested by the maintainer: a proper one-click uninstall that asks whether to k
   - README "Use it with your own repositories": what users grant, read-only scope, data staying local, organization approval and SSO, how to revoke, using one's own app.
   - The troubleshooting row, the validation checklist and the GitHub App setup guide are updated accordingly.
 
+## CI on every push to main and every pull request (4 Oct 2026)
+
+- **Why:** since Stage 01 the CI workflow ran only when started by hand. Merges to `main` therefore never produced a CI run, and Repo Watch correctly showed `PantaKoda/repo-watch` with "main: No checks" and no dot, while repositories with push-triggered CI showed green.
+- **Change:** `ci.yml` now runs on pushes to `main`, on pull requests and by hand. A newer push cancels a superseded run. The release-zip job runs only for `main` and manual runs, not for pull requests. GitHub Actions is free for this public repository.
+
