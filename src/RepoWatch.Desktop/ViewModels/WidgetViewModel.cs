@@ -402,7 +402,8 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
     /// <summary>Runs <paramref name="action"/> on the UI thread after <paramref name="delay"/> (ends a row's change glow).</summary>
     private void Schedule(TimeSpan delay, Action action) =>
-        _ = Task.Delay(delay, _time).ContinueWith(_ => _dispatcher.Post(action), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        // Runs right where the timer fires (it only posts to the UI thread), so a test clock is deterministic.
+        _ = Task.Delay(delay, _time).ContinueWith(_ => _dispatcher.Post(action), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
     private void OnMonitorChanged(object? sender, EventArgs e) => _dispatcher.Post(() => Sync());
 
