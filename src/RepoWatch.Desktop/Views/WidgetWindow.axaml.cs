@@ -76,12 +76,16 @@ public partial class WidgetWindow : Window
     /// <summary>The footer grip and the frame's edges and corners; each names its edge in <c>Tag</c>.</summary>
     private void OnResizePointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && sender is Control { Tag: string tag } && Enum.TryParse<WindowEdge>(tag, out var edge))
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && sender is Control { Tag: string tag } && Enum.TryParse<WindowEdge>(tag, out var edge)
+            && (ViewModel is not { PositionLocked: true } || KeepsPosition(edge)))
         {
             BeginResizeDrag(edge, e);
             e.Handled = true;
         }
     }
+
+    /// <summary>Edges that resize without moving the window's top-left corner: allowed while the position is locked.</summary>
+    public static bool KeepsPosition(WindowEdge edge) => edge is WindowEdge.East or WindowEdge.South or WindowEdge.SouthEast;
 
     private void OnRepositoryTapped(object? sender, TappedEventArgs e)
     {

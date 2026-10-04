@@ -378,15 +378,16 @@
     <!--
       Resize from every edge and corner: thin strips in the transparent margin around the surface
       (corners a little larger, so they are easy to grab). The middle stays free for normal hit testing.
+      With the position locked, only the edges that keep the top-left corner in place remain.
     -->
     <Panel Name="ResizeFrame">
-      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="North" Cursor="TopSide" Height="7" VerticalAlignment="Top" Margin="14,0" />
+      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="North" IsVisible="{Binding !PositionLocked}" Cursor="TopSide" Height="7" VerticalAlignment="Top" Margin="14,0" />
       <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="South" Cursor="BottomSide" Height="7" VerticalAlignment="Bottom" Margin="14,0" />
-      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="West" Cursor="LeftSide" Width="7" HorizontalAlignment="Left" Margin="0,14" />
+      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="West" IsVisible="{Binding !PositionLocked}" Cursor="LeftSide" Width="7" HorizontalAlignment="Left" Margin="0,14" />
       <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="East" Cursor="RightSide" Width="7" HorizontalAlignment="Right" Margin="0,14" />
-      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="NorthWest" Cursor="TopLeftCorner" Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Top" />
-      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="NorthEast" Cursor="TopRightCorner" Width="14" Height="14" HorizontalAlignment="Right" VerticalAlignment="Top" />
-      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="SouthWest" Cursor="BottomLeftCorner" Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
+      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="NorthWest" IsVisible="{Binding !PositionLocked}" Cursor="TopLeftCorner" Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Top" />
+      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="NorthEast" IsVisible="{Binding !PositionLocked}" Cursor="TopRightCorner" Width="14" Height="14" HorizontalAlignment="Right" VerticalAlignment="Top" />
+      <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="SouthWest" IsVisible="{Binding !PositionLocked}" Cursor="BottomLeftCorner" Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
       <Border Classes="resize" PointerPressed="OnResizePointerPressed" Tag="SouthEast" Cursor="BottomRightCorner" Width="14" Height="14" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
     </Panel>
   </Panel>
