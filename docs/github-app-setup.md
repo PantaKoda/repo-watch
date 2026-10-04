@@ -4,6 +4,8 @@ Repo Watch signs users in through a **GitHub App with device flow enabled**. The
 
 These are user-controlled actions on GitHub. Nothing in this repository performs them automatically.
 
+> **The released Repo Watch uses the public app [Repo Watch PantaKoda](https://github.com/apps/repo-watch-pantakoda)** (owner: PantaKoda; public since 4 Oct 2026; read-only permissions; no webhooks). End users don't need this guide. It is for the maintainer of that app, and for anyone who prefers to run Repo Watch with a GitHub App of their own.
+
 ## 1. Register the app
 
 On GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub App**. For an organization-owned app, use **Organization settings → Developer settings → GitHub Apps** instead.
