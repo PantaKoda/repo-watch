@@ -352,7 +352,7 @@ public sealed class WidgetWindowTests
         Dispatcher.UIThread.RunJobs();
 
         var run = row.Actions.Items.Single(r => r.Detail.StartsWith("#411", StringComparison.Ordinal));
-        Assert.Equal("PR #61 · Add login rate limiting", run.PullRequestText);
+        Assert.Equal("PR #61 · Add login rate limiting to the sign-in and password reset endpoints", run.PullRequestText);
         Assert.All(row.Actions.Items.Where(r => r != run), r => Assert.False(r.HasPullRequest)); // pushes to main
         Capture(window, $"details-actions-pr-{theme.ToLowerInvariant()}");
 
@@ -362,7 +362,7 @@ public sealed class WidgetWindowTests
 
         var pull = row.PullRequests.Items.Single(p => p.Number == 61);
         Assert.Equal(1, pull.CommentCount);
-        Assert.Equal("Add login rate limiting, 1 comment", pull.AccessibleName);
+        Assert.Equal("Add login rate limiting to the sign-in and password reset endpoints, 1 comment", pull.AccessibleName);
         Assert.Contains(row.Issues.Items, i => i.HasComments);
 
         window.GetLogicalDescendants().OfType<TabControl>().Single().SelectedIndex = 1;

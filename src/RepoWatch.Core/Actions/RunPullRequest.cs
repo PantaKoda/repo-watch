@@ -7,8 +7,11 @@ public sealed record RunPullRequest(int Number, string? Title, Uri? HtmlUrl, int
 {
     /// <summary>
     /// GitHub lists the pull requests of a run while they are open in the same repository. It lists none for
-    /// pull requests from forks (or once the pull request closed), so a pull request run is then matched to
-    /// an open pull request by its commit, then by its branch. Null when there is no pull request to show.
+    /// pull requests from forks (or once the pull request closed), so a <c>pull_request</c> run is then matched
+    /// to an open pull request by its commit, then by its branch together with the branch's owner (forks often
+    /// share branch names like <c>main</c> or <c>patch-1</c>). <c>pull_request_target</c> runs are never matched:
+    /// they run on the base branch, so their commit and branch are not the pull request's. Anything uncertain
+    /// shows no pull request rather than a wrong one.
     /// </summary>
     public static RunPullRequest? For(WorkflowRun run, PullRequestsState? pullRequests)
     {
@@ -21,13 +24,16 @@ public sealed record RunPullRequest(int Number, string? Title, Uri? HtmlUrl, int
             return new RunPullRequest(number, known?.Title, known?.HtmlUrl ?? PullUrl(run, number), run.PullRequestNumbers.Count - 1);
         }
 
-        if (!run.Event.StartsWith("pull_request", StringComparison.Ordinal))
+        if (run.Event != "pull_request")
         {
-            return null; // a push, schedule or manual run: no pull request triggered it
+            return null; // a push, schedule or manual run, or pull_request_target (base branch): nothing to match
         }
 
-        var match = open.FirstOrDefault(p => p.HeadSha == run.HeadSha)
-            ?? (run.HeadBranch is { Length: > 0 } branch ? open.FirstOrDefault(p => p.HeadRef == branch) : null);
+        var match = open.Where(p => p.HeadSha == run.HeadSha).ToList() is [var byCommit] ? byCommit
+            : run is { HeadBranch: { Length: > 0 } branch, HeadOwner: { Length: > 0 } owner }
+                && open.Where(p => p.HeadRef == branch && string.Equals(p.HeadOwner, owner, StringComparison.OrdinalIgnoreCase)).ToList() is [var byBranch]
+                ? byBranch
+                : null;
         return match is null ? null : new RunPullRequest(match.Number, match.Title, match.HtmlUrl);
     }
 

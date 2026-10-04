@@ -119,7 +119,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
             OpenCount = ItemCount.Exact(3),
             Items =
             [
-                PullRequestEntry(now, 61, "Add login rate limiting", "demo-dev", prHead, MergeState.Blocked,
+                PullRequestEntry(now, 61, "Add login rate limiting to the sign-in and password reset endpoints", "demo-dev", prHead, MergeState.Blocked,
                     CommitChecks.Summarize(prHead, [Check(1, 11, "CI / build", CheckOutcome.Failure, prHead), Check(2, 11, "CI / test", CheckOutcome.Success, prHead)], []),
                     ReviewSummary.From([], [new ReviewRequest(ReviewerKind.User, "demo-you")], prHead)),
                 PullRequestEntry(now, 58, "Upgrade bundler configuration", "demo-bot", "c0ffee0000000000000000000000000000000004", MergeState.Unknown,

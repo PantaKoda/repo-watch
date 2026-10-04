@@ -43,10 +43,10 @@
                       <Button Classes="prlink" IsVisible="{Binding HasPullRequest}" Command="{Binding OpenPullRequestCommand}"
                               ToolTip.Tip="The pull request this run belongs to. Click to open it on GitHub."
                               AutomationProperties.Name="{Binding PullRequestText}">
-                        <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
                           <PathIcon Data="{StaticResource IconPullRequest}" Width="10" Height="10" />
-                          <TextBlock Text="{Binding PullRequestText}" TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
+                          <TextBlock Grid.Column="1" Text="{Binding PullRequestText}" TextTrimming="CharacterEllipsis" />
+                        </Grid>
                       </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Margin="8,0,0,0">

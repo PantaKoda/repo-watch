@@ -417,7 +417,12 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
             HeadSha = dto.HeadSha,
             HeadBranch = dto.HeadBranch,
             Event = dto.Event ?? "unknown",
-            PullRequestNumbers = (dto.PullRequests ?? []).Select(p => p.Number).Where(n => n > 0).ToList(),
+            // GitHub also lists pull requests that target another repository (a watched fork's branch with a
+            // pull request upstream); only this repository's own pull requests are kept, by repository ID.
+            PullRequestNumbers = (dto.PullRequests ?? [])
+                .Where(p => p.Number > 0 && dto.Repository is { Id: > 0 } repository && p.Base?.Repo?.Id == repository.Id)
+                .Select(p => p.Number).ToList(),
+            HeadOwner = dto.HeadRepository?.Owner?.Login,
             Outcome = GitHubStatusMapping.ToOutcome(dto.Status, dto.Conclusion),
             HtmlUrl = html,
             CreatedAt = created,
@@ -445,6 +450,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
             HeadRef = node.HeadRefName ?? "",
             BaseRef = node.BaseRefName ?? "",
             RequestedReviewers = requests,
+            HeadOwner = node.HeadRepositoryOwner?.Login,
             CommentCount = Math.Max(0, node.TotalCommentsCount ?? 0),
             // GraphQL "mergeable" only says whether the branches conflict; branch protection and
             // required checks are not known here, so this never becomes "ready to merge".
@@ -523,6 +529,7 @@ public sealed class RepositoryDataClient(GitHubApiClient api)
         fragment PullRequestFields on PullRequest {
                 databaseId number title url isDraft createdAt updatedAt mergeable
                 headRefName baseRefName headRefOid totalCommentsCount
+                headRepositoryOwner { login }
                 author { login }
                 reviewRequests(first: 20) {
                   nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { slug organization { login } } } }

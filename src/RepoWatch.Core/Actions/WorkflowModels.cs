@@ -38,7 +38,11 @@ public sealed record WorkflowRun
     /// <summary>Trigger event, e.g. "push", "pull_request", "schedule". Part of the run's scope.</summary>
     public required string Event { get; init; }
 
+    /// <summary>This repository's pull requests GitHub lists for the run (open ones; none for forks).</summary>
     public IReadOnlyList<int> PullRequestNumbers { get; init; } = [];
+
+    /// <summary>Owner of the repository the run's commit comes from (a fork's owner for pull requests from forks).</summary>
+    public string? HeadOwner { get; init; }
 
     public required CheckOutcome Outcome { get; init; }
 

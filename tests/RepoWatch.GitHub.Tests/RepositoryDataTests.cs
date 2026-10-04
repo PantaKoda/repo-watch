@@ -72,6 +72,26 @@ public sealed class RepositoryDataTests
     }
 
     [Fact]
+    public async Task A_run_keeps_only_pull_requests_of_its_own_repository_and_names_its_head_owner()
+    {
+        var (client, handler) = Create();
+        // A watched fork (repository 42): GitHub also lists the upstream pull request (base repository 99).
+        var run = """
+            {"id":40,"workflow_id":7,"name":"CI","run_number":3,"run_attempt":1,"head_sha":"PR_SHA","head_branch":"patch-1","event":"pull_request",
+             "status":"completed","conclusion":"success","html_url":"https://github.com/octo-test/hello/actions/runs/40","created_at":"2026-10-03T11:00:00Z","updated_at":"2026-10-03T11:00:00Z",
+             "repository":{"id":42},"head_repository":{"owner":{"login":"forker"}},
+             "pull_requests":[{"number":900,"base":{"repo":{"id":99}}},{"number":7,"base":{"repo":{"id":42}}},{"number":8}]}
+            """.Replace("PR_SHA", PrSha, StringComparison.Ordinal);
+        handler.Json(Runs(run)).Json(Ref(MainSha)).Json(Runs());
+
+        var result = await client.GetActionsAsync(new ActionsRequest("octo-test", "hello", ["main"], []), TestContext.Current.CancellationToken);
+
+        var mapped = Assert.Single(result.Value!.RecentRuns);
+        Assert.Equal([7], mapped.PullRequestNumbers); // not upstream's #900, nor one whose base repository is unknown
+        Assert.Equal("forker", mapped.HeadOwner);
+    }
+
+    [Fact]
     public async Task Branch_health_uses_the_branch_head_and_the_latest_attempt_of_each_run()
     {
         var (client, handler) = Create();
@@ -151,7 +171,7 @@ public sealed class RepositoryDataTests
     private static string PullRequest(int number, string author, string mergeable = "MERGEABLE", bool draft = false, string reviewRequests = "", string reviews = "", int? comments = null) =>
         "{\"databaseId\":" + (number * 100) + ",\"number\":" + number + ",\"title\":\"PR " + number + " <script>\",\"url\":\"https://github.com/octo-test/hello/pull/" + number + "\","
         + "\"isDraft\":" + (draft ? "true" : "false") + ",\"createdAt\":\"2026-10-01T10:00:00Z\",\"updatedAt\":\"2026-10-03T10:0" + (number % 10) + ":00Z\",\"mergeable\":\"" + mergeable + "\","
-        + "\"headRefName\":\"feature-" + number + "\",\"baseRefName\":\"main\",\"headRefOid\":\"" + PrSha + "\",\"author\":{\"login\":\"" + author + "\"},"
+        + "\"headRefName\":\"feature-" + number + "\",\"baseRefName\":\"main\",\"headRefOid\":\"" + PrSha + "\",\"author\":{\"login\":\"" + author + "\"},\"headRepositoryOwner\":{\"login\":\"octo-test\"},"
         + "\"reviewRequests\":{\"totalCount\":0,\"nodes\":[" + reviewRequests + "]},"
         + (comments is { } count ? "\"totalCommentsCount\":" + count + "," : "")
         + "\"reviews\":{\"totalCount\":0,\"nodes\":[" + reviews + "]}}";
@@ -219,6 +239,7 @@ public sealed class RepositoryDataTests
         Assert.Equal("PR 1 <script>", entry.PullRequest.Title); // carried as plain text
         Assert.Equal(MergeState.Clean, entry.PullRequest.MergeState);
         Assert.Equal(5, entry.PullRequest.CommentCount); // conversation and inline review comments, one field
+        Assert.Equal("octo-test", entry.PullRequest.HeadOwner);
 
         var checks = entry.Checks.Value!;
         Assert.Equal(2, checks.CheckRuns.Count); // re-run 11 supersedes 10 in suite 900; suite 901 counted separately

@@ -80,6 +80,9 @@ public sealed record PullRequest
 
     public required string HeadRef { get; init; }
 
+    /// <summary>Owner of the head branch's repository (a fork's owner); null when that repository was deleted.</summary>
+    public string? HeadOwner { get; init; }
+
     public required string BaseRef { get; init; }
 
     public IReadOnlyList<ReviewRequest> RequestedReviewers { get; init; } = [];

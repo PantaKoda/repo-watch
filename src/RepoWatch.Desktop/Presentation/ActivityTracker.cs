@@ -82,15 +82,21 @@ public sealed class ActivityTracker
         return string.Join("|",
             snapshot.PullRequests.Value?.OpenCount.ToString() ?? "-",
             snapshot.Issues.Value?.OpenCount.ToString() ?? "-",
-            Comments(snapshot).ToString(CultureInfo.InvariantCulture),
+            Comments(snapshot),
             running.ToString(CultureInfo.InvariantCulture),
             AttentionPolicy.Evaluate(snapshot).ToString(),
             latest is null ? "-" : string.Create(CultureInfo.InvariantCulture, $"{latest.Id}:{latest.RunAttempt}:{latest.Outcome}"));
     }
 
-    /// <summary>New comments on listed pull requests and issues count as activity too.</summary>
-    private static int Comments(RepositorySnapshot snapshot) =>
-        (snapshot.PullRequests.Value?.Items.Sum(e => e.PullRequest.CommentCount) ?? 0) + (snapshot.Issues.Value?.Items.Sum(i => i.CommentCount) ?? 0);
+    /// <summary>
+    /// New comments on listed pull requests and issues count as activity too. Each item's count is kept
+    /// separately, so a comment added on one item and one deleted on another don't cancel out.
+    /// </summary>
+    private static string Comments(RepositorySnapshot snapshot) => string.Join(",",
+        (snapshot.PullRequests.Value?.Items ?? []).Select(e => e.PullRequest).Where(p => p.CommentCount > 0).OrderBy(p => p.Number)
+            .Select(p => string.Create(CultureInfo.InvariantCulture, $"p{p.Number}:{p.CommentCount}"))
+        .Concat((snapshot.Issues.Value?.Items ?? []).Where(i => i.CommentCount > 0).OrderBy(i => i.Number)
+            .Select(i => string.Create(CultureInfo.InvariantCulture, $"i{i.Number}:{i.CommentCount}"))));
 
     private static bool Settled<T>(Resource<T> resource) where T : class =>
         resource.Availability is ResourceAvailability.FeatureUnavailable or ResourceAvailability.AccessLost

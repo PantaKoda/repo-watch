@@ -34,7 +34,18 @@ internal sealed record RepositoryInfoDto
 
 internal sealed record RunsPageDto([property: JsonPropertyName("workflow_runs")] List<RunDto?>? WorkflowRuns);
 
-internal sealed record RunPullRequestDto([property: JsonPropertyName("number")] int Number);
+/// <summary>A pull request GitHub lists on a run; <c>base.repo.id</c> says which repository it targets.</summary>
+internal sealed record RunPullRequestDto(
+    [property: JsonPropertyName("number")] int Number,
+    [property: JsonPropertyName("base")] RunPullRequestBaseDto? Base = null);
+
+internal sealed record RunPullRequestBaseDto([property: JsonPropertyName("repo")] IdDto? Repo);
+
+internal sealed record IdDto([property: JsonPropertyName("id")] long Id);
+
+internal sealed record HeadRepositoryDto([property: JsonPropertyName("owner")] LoginDto? Owner);
+
+internal sealed record LoginDto([property: JsonPropertyName("login")] string? Login);
 
 internal sealed record RunDto
 {
@@ -65,6 +76,12 @@ internal sealed record RunDto
     [JsonPropertyName("updated_at")] public DateTimeOffset? UpdatedAt { get; init; }
 
     [JsonPropertyName("pull_requests")] public List<RunPullRequestDto>? PullRequests { get; init; }
+
+    /// <summary>The repository the run belongs to (the watched one).</summary>
+    [JsonPropertyName("repository")] public IdDto? Repository { get; init; }
+
+    /// <summary>Where the run's commit comes from: a fork for pull requests from forks.</summary>
+    [JsonPropertyName("head_repository")] public HeadRepositoryDto? HeadRepository { get; init; }
 }
 
 /// <summary>The combined status of a ref or commit: the resolved head commit and its legacy statuses.</summary>
@@ -203,6 +220,8 @@ internal sealed record PullRequestNode
     [JsonPropertyName("reviews")] public Connection<ReviewNode>? Reviews { get; init; }
 
     [JsonPropertyName("totalCommentsCount")] public int? TotalCommentsCount { get; init; }
+
+    [JsonPropertyName("headRepositoryOwner")] public LoginNode? HeadRepositoryOwner { get; init; }
 
 }
 
