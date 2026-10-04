@@ -6,6 +6,7 @@ using RepoWatch.Core.PullRequests;
 using RepoWatch.Core.Settings;
 using RepoWatch.Core.State;
 using RepoWatch.Core.Status;
+using RepoWatch.Desktop.Presentation;
 using RepoWatch.Desktop.Services;
 using RepoWatch.Desktop.ViewModels;
 
@@ -18,7 +19,8 @@ public sealed class WidgetFilterTests
     private const string Sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     private static MonitoredRepository Repo(long id, string name, int index, bool isPrivate = false, int openIssues = 0,
-        CheckOutcome outcome = CheckOutcome.Success, DateTimeOffset? pushedAt = null, bool loaded = true)
+        CheckOutcome outcome = CheckOutcome.Success, DateTimeOffset? pushedAt = null, bool loaded = true,
+        ItemCount? issues = null, ItemCount? pullRequests = null, bool fromCache = false, bool actionsFailing = false)
     {
         var key = new RepositoryKey(Account, id);
         var watch = new WatchedRepository { RepositoryId = id, Owner = "octo", Name = name };
@@ -40,12 +42,18 @@ public sealed class WidgetFilterTests
                 Key = key, Owner = "octo", Name = name, OwnerKind = RepositoryOwnerKind.User, IsPrivate = isPrivate, IsArchived = false,
                 DefaultBranch = "main", HtmlUrl = new Uri($"https://github.com/octo/{name}"), PushedAt = pushedAt,
             }, Now),
-            Actions = Resource<ActionsState>.NotLoaded.Succeeded(new ActionsState { RecentRuns = [run], DefaultBranch = WorkflowRunSelection.ForCommit([run], Sha) }, Now),
-            PullRequests = Resource<PullRequestsState>.NotLoaded.Succeeded(new PullRequestsState { OpenCount = ItemCount.Exact(0) }, Now),
-            Issues = Resource<IssuesState>.NotLoaded.Succeeded(new IssuesState { OpenCount = ItemCount.Exact(openIssues) }, Now),
+            Actions = actionsFailing
+                ? Resource<ActionsState>.NotLoaded.Failed(new ResourceError(ResourceErrorKind.Forbidden, "no access to Actions", Now))
+                : Section(new ActionsState { RecentRuns = [run], DefaultBranch = WorkflowRunSelection.ForCommit([run], Sha) }, fromCache),
+            PullRequests = Section(new PullRequestsState { OpenCount = pullRequests ?? ItemCount.Exact(0) }, fromCache),
+            Issues = Section(new IssuesState { OpenCount = issues ?? ItemCount.Exact(openIssues) }, fromCache),
         };
         return new MonitoredRepository(watch, snapshot, index);
     }
+
+    /// <summary>A section loaded live, or restored from the local cache at startup.</summary>
+    private static Resource<T> Section<T>(T value, bool fromCache) where T : class =>
+        fromCache ? Resource<T>.FromCache(value, Now.AddHours(-1)) : Resource<T>.NotLoaded.Succeeded(value, Now);
 
     private static (WidgetViewModel Widget, FakeMonitor Monitor, SettingsService Settings) Create(WatchlistService? watchlist = null, SettingsService? settings = null)
     {
@@ -322,9 +330,107 @@ public sealed class WidgetFilterTests
 
         widget.ShowRepositoryCommand.Execute(row); // opened: seen
         Assert.False(row.HasUnseenActivity);
+        widget.BackCommand.Execute(null);
 
         monitor.Publish([Repo(1, "repo", 0, outcome: CheckOutcome.Failure)]);
         Assert.True(row.HasUnseenActivity);
+    }
+
+    [Fact]
+    public void A_change_while_its_details_are_open_is_shown_but_not_left_unseen()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "repo", 0)]);
+        var row = widget.Repositories.Single();
+        widget.ShowRepositoryCommand.Execute(row);
+
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 1)]);
+
+        Assert.True(row.IsFlashing);
+        Assert.False(row.HasUnseenActivity); // the user is looking at it
+    }
+
+    [Fact]
+    public void A_hidden_idle_repository_that_gets_activity_comes_back_marked()
+    {
+        var (widget, monitor, _) = Create();
+        widget.HideIdle = true;
+        monitor.Publish([Repo(1, "quiet", 0), Repo(2, "busy", 1, openIssues: 1)]);
+        Assert.Equal(["octo/busy"], Names(widget));
+
+        monitor.Publish([Repo(1, "quiet", 0, openIssues: 1), Repo(2, "busy", 1, openIssues: 1)]);
+
+        var quiet = widget.Repositories.Single(r => r.Name == "octo/quiet");
+        Assert.True(quiet.HasUnseenActivity);
+        Assert.True(quiet.IsFlashing);
+    }
+
+    [Fact]
+    public void A_name_filter_doesnt_erase_the_marker_of_rows_it_hides()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "alpha", 0), Repo(2, "beta", 1)]);
+        monitor.Publish([Repo(1, "alpha", 0, openIssues: 1), Repo(2, "beta", 1)]);
+
+        widget.SearchText = "beta"; // alpha's row goes away
+        widget.SearchText = "";      // and comes back as a new row
+
+        Assert.True(widget.Repositories.Single(r => r.Name == "octo/alpha").HasUnseenActivity);
+    }
+
+    [Fact]
+    public void Cached_data_at_startup_is_not_the_baseline()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 5, fromCache: true)]); // restored from last session
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 7)]);                  // first live refresh
+
+        var row = widget.Repositories.Single();
+        Assert.False(row.HasUnseenActivity); // starting the app never lights everything up
+        Assert.False(row.IsFlashing);
+
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 8)]);
+        Assert.True(row.HasUnseenActivity);
+    }
+
+    [Fact]
+    public void A_section_that_keeps_failing_doesnt_stop_other_changes_from_being_noticed()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "repo", 0, actionsFailing: true)]);
+        monitor.Publish([Repo(1, "repo", 0, actionsFailing: true, pullRequests: ItemCount.Exact(1))]);
+
+        Assert.True(widget.Repositories.Single().HasUnseenActivity);
+    }
+
+    [Fact]
+    public void Chips_handle_inexact_counts_and_pull_requests()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([
+            Repo(1, "many", 0, issues: ItemCount.AtLeast(30), pullRequests: ItemCount.Exact(3)),
+            Repo(2, "one", 1, issues: ItemCount.AtLeast(1), pullRequests: ItemCount.Exact(1)),
+        ]);
+        var rows = widget.Repositories.ToDictionary(r => r.Name);
+
+        Assert.Equal("30+ issues", rows["octo/many"].IssuesText);
+        Assert.Equal("3 open PRs", rows["octo/many"].PullRequestsText);
+        Assert.Equal("1+ issues", rows["octo/one"].IssuesText); // "at least one" is plural
+        Assert.Equal("1 open PR", rows["octo/one"].PullRequestsText);
+    }
+
+    [Fact]
+    public void Screen_readers_hear_running_work_and_the_change_marker()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "repo", 0, outcome: CheckOutcome.Running)]);
+        var row = widget.Repositories.Single();
+        Assert.Contains("1 running", row.Summary, StringComparison.Ordinal);
+        Assert.Equal(StatusTone.Running, row.RunningTone);
+
+        monitor.Publish([Repo(1, "repo", 0, outcome: CheckOutcome.Success)]);
+        Assert.EndsWith("Changed since you last opened it", row.Summary, StringComparison.Ordinal);
+        Assert.Equal(StatusTone.None, row.RunningTone); // nothing running: the chip's dot doesn't pulse
     }
 
     [Fact]

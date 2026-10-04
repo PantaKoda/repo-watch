@@ -302,7 +302,7 @@
                     <WrapPanel ItemSpacing="4" LineSpacing="3" Margin="0,3,0,0" IsVisible="{Binding HasChips}">
                       <Border Classes="chip running" IsVisible="{Binding HasRunning}" ToolTip.Tip="Workflows queued or running">
                         <StackPanel Orientation="Horizontal" Spacing="4">
-                          <c:StatusDot Tone="Running" Width="6" Height="6" VerticalAlignment="Center" />
+                          <c:StatusDot Tone="{Binding RunningTone}" Width="6" Height="6" VerticalAlignment="Center" />
                           <TextBlock Text="{Binding RunningText}" />
                         </StackPanel>
                       </Border>
