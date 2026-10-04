@@ -118,7 +118,8 @@ public sealed class SpaceStationVisualsTests
         window.Classes.Set("reduce-motion", reduceMotion);
         Dispatcher.UIThread.RunJobs();
 
-        var active = window.GetVisualDescendants().OfType<StatusDot>().Where(d => d.Classes.Contains(":active")).ToList();
+        // Visible ones only: a quiet row's (hidden) running chip carries a running dot too.
+        var active = window.GetVisualDescendants().OfType<StatusDot>().Where(d => d.Classes.Contains(":active") && d.IsEffectivelyVisible).ToList();
         Assert.NotEmpty(active);
         var observed = new List<double>();
         for (var i = 0; i < 40; i++)

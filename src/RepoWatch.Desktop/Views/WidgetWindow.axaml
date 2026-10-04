@@ -276,10 +276,16 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:RepositoryRowViewModel">
               <Grid RowDefinitions="*,Auto" ToolTip.Tip="{Binding Summary}" AutomationProperties.Name="{Binding Summary}">
+                <!-- Something changed: the row glows briefly (static with reduced motion: the dot by the name stays) -->
+                <Border Grid.RowSpan="2" Classes="flash" IsVisible="{Binding IsFlashing}" Margin="-8,-4" CornerRadius="8" IsHitTestVisible="False" />
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                   <c:StatusDot Tone="{Binding Tone}" Width="9" Height="9" Margin="2,5,12,0" VerticalAlignment="Top" />
                   <StackPanel Grid.Column="1" Spacing="1">
-                    <TextBlock Classes="title" Text="{Binding Name}" />
+                    <DockPanel>
+                      <Ellipse DockPanel.Dock="Left" Classes="unseen" Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center"
+                               IsVisible="{Binding HasUnseenActivity}" ToolTip.Tip="Changed since you last opened it" />
+                      <TextBlock Classes="title" Text="{Binding Name}" />
+                    </DockPanel>
                     <DockPanel>
                       <Border DockPanel.Dock="Left" Classes="tag" Classes.private="{Binding IsPrivate}" Margin="0,0,6,0"
                               IsVisible="{Binding HasVisibility}" ToolTip.Tip="Repository visibility on GitHub">
@@ -292,13 +298,27 @@
                       <c:StatusDot Tone="Warning" Width="6" Height="6" VerticalAlignment="Center" />
                       <TextBlock Classes="secondary" Text="{Binding FreshnessWarning}" />
                     </StackPanel>
+                    <!-- What's going on, at a glance: only what is there; a quiet repository shows nothing here -->
+                    <WrapPanel ItemSpacing="4" LineSpacing="3" Margin="0,3,0,0" IsVisible="{Binding HasChips}">
+                      <Border Classes="chip running" IsVisible="{Binding HasRunning}" ToolTip.Tip="Workflows queued or running">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <c:StatusDot Tone="Running" Width="6" Height="6" VerticalAlignment="Center" />
+                          <TextBlock Text="{Binding RunningText}" />
+                        </StackPanel>
+                      </Border>
+                      <Border Classes="chip failing" IsVisible="{Binding IsFailing}" ToolTip.Tip="The latest commit of a tracked branch fails CI">
+                        <TextBlock Text="CI failing" />
+                      </Border>
+                      <Border Classes="chip prs" IsVisible="{Binding HasPullRequests}" ToolTip.Tip="Open pull requests in the watched scope">
+                        <TextBlock Text="{Binding PullRequestsText}" />
+                      </Border>
+                      <Border Classes="chip issues" IsVisible="{Binding HasIssues}" ToolTip.Tip="Open issues">
+                        <TextBlock Text="{Binding IssuesText}" />
+                      </Border>
+                    </WrapPanel>
                   </StackPanel>
-                  <StackPanel Grid.Column="2" Margin="8,0,0,0" Spacing="1">
-                    <TextBlock Classes="secondary" Text="{Binding PullRequestCount}" HorizontalAlignment="Right" />
-                    <TextBlock Classes="secondary" Text="{Binding IssueCount}" HorizontalAlignment="Right" />
-                    <TextBlock Classes="secondary" Text="{Binding ActivityText}" IsVisible="{Binding HasActivity}" HorizontalAlignment="Right"
-                               ToolTip.Tip="Last activity: push, workflow run, pull request or issue update" />
-                  </StackPanel>
+                  <TextBlock Grid.Column="2" Margin="8,1,0,0" Classes="secondary" Text="{Binding ActivityText}" IsVisible="{Binding HasActivity}"
+                             VerticalAlignment="Top" ToolTip.Tip="Last activity: push, workflow run, pull request or issue update" />
                   <!--
                     Discreet: dim until the row is hovered or selected. Not focusable: the keyboard path is
                     Ctrl+Enter on the selected row, so keys always act on the row that is selected.

@@ -6,6 +6,7 @@ What changed in each Repo Watch release. The section for a version becomes its G
 
 ### Added
 - **Uninstall from inside the app.** Settings › About › *Uninstall Repo Watch…* shows exactly what will be removed and removes it with one click. Choose *Remove everything* (nothing is left on your PC: program, settings, cache, logs, sign-in, startup entry, notifications, shortcuts) or keep only your settings and repository list for a later reinstall. It can open GitHub so you can also revoke Repo Watch's access to your account.
+- **Activity at a glance:** repository rows show chips for running workflows, failing CI, open PRs and issues. A row that changes glows briefly and keeps a small dot until you open it.
 - **Refresh intervals in Settings:** choose, in seconds, how often running workflows, pull requests and repository details, issues and quiet workflows are checked.
 
 ## [0.2.0] - 2026-10-04
