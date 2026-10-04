@@ -1134,3 +1134,12 @@ Requested by the maintainer: the main list gave no clear sign that something was
   - The visuals test now considers only visible dots, since hidden chips carry a running dot.
 - **Real window (demo):** web-app shows *CI failing*, *3 open PRs* and *30+ issues*; legacy-tool shows *1 open PR*; quiet rows show nothing. Refreshing api-service (queued → running → succeeded) made its row glow, then the glow faded and the dot stayed.
 
+**Review of PR #20.** The review arrived seconds after the merge, so the findings are fixed in a follow-up PR.
+- **Idle animation (blocking):** every row's running-chip dot had a constant `Running` tone, so hidden chips kept an infinite pulse animation going. The tone is now bound (`RunningTone`: `Running` only while something runs, otherwise `None`). The visuals test asserts no hidden dot is animating, replacing the earlier `IsEffectivelyVisible` workaround.
+- **Markers through filters (blocking):** the per-repository fingerprint and "unseen" state moved out of the row into an `ActivityTracker` owned by the widget. It observes **all** watched repositories, including hidden ones. A quiet repository hidden by *Hide idle* that gets new activity reappears with the dot and the glow; clearing a name filter keeps the dots of the rows it hid. It resets on account or demo change and forgets unwatched repositories.
+- **Cache at startup:** the baseline comes from live data only (a cached section isn't settled), so a restart doesn't light rows up, as documented. A test covers it.
+- **Failing section:** a section with an error counts as settled (the attention level reflects it), so the other sections' changes are still noticed.
+- **Details open:** a change to the repository being looked at glows but isn't left as "unseen".
+- **Accessibility:** the row's announced summary includes the running count and "Changed since you last opened it".
+- **Tests:** inexact counts ("30+ issues", "1+ issues") and the PR chip ("1 open PR", "3 open PRs"). `dotnet test`: 518 passed, twice in Release.
+

@@ -35,6 +35,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
     private readonly TimeProvider _time;
     private readonly IUiDispatcher _dispatcher;
     private readonly WatchlistService? _watchlist;
+    private readonly ActivityTracker _activity = new();
     private readonly UpdateService? _updates;
     private IRepositoryMonitor _monitor;
     private bool _syncing;
@@ -413,6 +414,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         _monitor = _monitors.Current;
         _monitor.Changed += OnMonitorChanged;
         Repositories.Clear();
+        _activity.Clear();
         _demoOrdering = null;
         _firstLoadDone = false;
         _wasRefreshing = false;
@@ -540,6 +542,19 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
             return false;
         }
 
+        // Activity is tracked for every watched repository, also the ones the filters hide, so a row that
+        // (re)appears keeps its marker and shows a change that happened while it was hidden.
+        var changed = new HashSet<RepositoryKey>();
+        foreach (var repository in all)
+        {
+            if (_activity.Observe(repository.Key, repository.Snapshot, watching: ShowDetails && SelectedRepository?.Key == repository.Key))
+            {
+                changed.Add(repository.Key);
+            }
+        }
+
+        _activity.Retain(all.Select(r => r.Key));
+
         var ordered = AttentionPolicy.Order(all, Ordering).Where(Visible).ToList();
         HasPendingReorder = deferredRemoval | !CollectionReconciler.Reconcile(
             Repositories,
@@ -548,12 +563,17 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
             vm => vm.Key,
             r =>
             {
-                var row = new RepositoryRowViewModel(r.Key, _browser, key => _monitor.RefreshAsync(key), Schedule);
+                var row = new RepositoryRowViewModel(r.Key, _browser, key => _monitor.RefreshAsync(key), Schedule, _activity.MarkSeen);
                 row.Update(r, now, refreshing, allowReorder);
                 return row;
             },
             (vm, r) => vm.Update(r, now, refreshing, allowReorder),
             allowReorder);
+
+        foreach (var row in Repositories)
+        {
+            row.ApplyActivity(_activity.IsUnseen(row.Key), changed.Contains(row.Key));
+        }
 
         if (SelectedRepository is not null && !Repositories.Contains(SelectedRepository))
         {

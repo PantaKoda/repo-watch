@@ -22,24 +22,31 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
     private readonly IExternalBrowser _browser;
     private readonly Func<RepositoryKey, Task> _refresh;
     private readonly Action<TimeSpan, Action>? _schedule;
-    private string? _activity; // what was last seen: PR and issue counts, running work, CI state, latest run
+    private readonly Action<RepositoryKey>? _markSeen;
+    private string _summary = "";
     private int _flashes;
 
     /// <param name="schedule">Runs an action after a delay on the UI thread (ends the change glow); null in tests that don't need it.</param>
-    public RepositoryRowViewModel(RepositoryKey key, IExternalBrowser browser, Func<RepositoryKey, Task> refresh, Action<TimeSpan, Action>? schedule = null)
+    /// <param name="markSeen">Tells the widget's activity tracker this repository was opened.</param>
+    public RepositoryRowViewModel(RepositoryKey key, IExternalBrowser browser, Func<RepositoryKey, Task> refresh, Action<TimeSpan, Action>? schedule = null,
+        Action<RepositoryKey>? markSeen = null)
     {
         Key = key;
         _browser = browser;
         _refresh = refresh;
         _schedule = schedule;
+        _markSeen = markSeen;
     }
 
     /// <summary>Workflows queued or running (any branch), shown as a pulsing chip.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasRunning), nameof(HasChips))]
+    [NotifyPropertyChangedFor(nameof(HasRunning), nameof(HasChips), nameof(RunningTone))]
     public partial string? RunningText { get; private set; }
 
     public bool HasRunning => RunningText is not null;
+
+    /// <summary>The chip's dot pulses only while something runs: a hidden chip must never keep an animation going.</summary>
+    public StatusTone RunningTone => HasRunning ? StatusTone.Running : StatusTone.None;
 
     /// <summary>A tracked branch's latest commit fails CI.</summary>
     [ObservableProperty]
@@ -67,12 +74,31 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
     [ObservableProperty]
     public partial bool HasUnseenActivity { get; private set; }
 
+    partial void OnHasUnseenActivityChanged(bool value) => UpdateSummary();
+
     /// <summary>The row glows briefly after a change (not with reduced motion).</summary>
     [ObservableProperty]
     public partial bool IsFlashing { get; private set; }
 
     /// <summary>The user opened this repository: the "changed" dot goes away.</summary>
-    public void MarkSeen() => HasUnseenActivity = false;
+    public void MarkSeen()
+    {
+        HasUnseenActivity = false;
+        _markSeen?.Invoke(Key);
+    }
+
+    /// <summary>
+    /// Applies the widget's activity tracking: whether something changed since the user last opened this
+    /// repository, and whether it just changed (the row glows).
+    /// </summary>
+    public void ApplyActivity(bool unseen, bool changed)
+    {
+        HasUnseenActivity = unseen;
+        if (changed)
+        {
+            Flash();
+        }
+    }
 
     public RepositoryKey Key { get; }
 
@@ -196,7 +222,6 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         IsFailing = Attention == AttentionLevel.Failure;
         PullRequestsText = snapshot.PullRequests.Value is { OpenCount: { Value: > 0 } prs } ? $"{prs} open PR{(prs is { Value: 1, IsExact: true } ? "" : "s")}" : null;
         IssuesText = snapshot.Issues.Value is { OpenCount: { Value: > 0 } issues } ? $"{issues} issue{(issues is { Value: 1, IsExact: true } ? "" : "s")}" : null;
-        NoticeChange(snapshot, running);
 
         Actions.Apply(snapshot.Actions, now, isRefreshing, allowReorder,
             a => a.RecentRuns, r => r.Id, vm => vm.Id, r => Create(new RunItemViewModel(_browser, r.Id), vm => vm.Update(r, now)), (vm, r) => vm.Update(r, now));
@@ -212,38 +237,12 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         HasFreshnessWarning = FreshnessWarning is not null;
 
         var activity = ActivityText is null ? null : $"Last activity {ActivityText}";
-        Summary = string.Join(". ", new[] { Name, Visibility?.ToLowerInvariant(), Badges, BranchStatus, PullRequestCount, IssueCount, activity, FreshnessWarning }.Where(s => !string.IsNullOrEmpty(s)));
+        _summary = string.Join(". ", new[] { Name, Visibility?.ToLowerInvariant(), Badges, BranchStatus, RunningText, PullRequestCount, IssueCount, activity, FreshnessWarning }.Where(s => !string.IsNullOrEmpty(s)));
+        UpdateSummary();
     }
 
-    /// <summary>
-    /// Compares what matters at a glance with what was there before. The first complete load only sets the
-    /// baseline (opening the app never lights everything up); later changes mark the row and make it glow.
-    /// </summary>
-    private void NoticeChange(RepositorySnapshot snapshot, int running)
-    {
-        if (!Loaded(snapshot.Actions) || !Loaded(snapshot.PullRequests) || !Loaded(snapshot.Issues))
-        {
-            return; // still loading: no baseline yet
-        }
-
-        var latest = snapshot.Actions.Value?.RecentRuns.OrderByDescending(r => r.UpdatedAt).FirstOrDefault();
-        var activity = string.Join("|",
-            snapshot.PullRequests.Value?.OpenCount.ToString() ?? "-",
-            snapshot.Issues.Value?.OpenCount.ToString() ?? "-",
-            running.ToString(CultureInfo.InvariantCulture),
-            Attention.ToString(),
-            latest is null ? "-" : string.Create(CultureInfo.InvariantCulture, $"{latest.Id}:{latest.RunAttempt}:{latest.Outcome}"));
-        if (_activity is not null && _activity != activity)
-        {
-            HasUnseenActivity = true;
-            Flash();
-        }
-
-        _activity = activity;
-    }
-
-    private static bool Loaded<T>(Resource<T> resource) where T : class =>
-        resource.Value is not null || resource.Availability is ResourceAvailability.FeatureUnavailable or ResourceAvailability.AccessLost;
+    /// <summary>What screen readers announce: everything on the row, including "changed since you last opened it".</summary>
+    private void UpdateSummary() => Summary = HasUnseenActivity ? _summary + ". Changed since you last opened it" : _summary;
 
     private void Flash()
     {
