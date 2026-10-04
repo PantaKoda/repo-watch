@@ -1,8 +1,17 @@
 name: CI
 
-# Manual only for now; restore push/pull_request triggers when CI is wanted.
+# Every push to main and every pull request is built and tested, so main's latest commit always has a
+# CI result (Repo Watch itself shows it), and pull requests get checks before review. Also runnable by hand.
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
+
+# A newer push to the same pull request or branch replaces a run still in progress.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -43,6 +52,8 @@ jobs:
   windows-release:
     # The portable release zip, built by the same script maintainers use. Uploaded as a workflow
     # artifact for inspection only: publishing a GitHub release stays a manual maintainer action.
+    # Skipped for pull requests (main and manual runs only) to keep checks quick.
+    if: github.event_name != 'pull_request'
     needs: windows
     runs-on: windows-latest
     steps:
