@@ -7,6 +7,7 @@ using RepoWatch.Desktop.Platform.Startup;
 using RepoWatch.Desktop.Storage;
 using RepoWatch.Desktop.Uninstall;
 using RepoWatch.Desktop.Updates;
+using RepoWatch.Desktop.ViewModels;
 using RepoWatch.GitHub;
 
 namespace RepoWatch.Desktop.Tests.Uninstall;
@@ -23,6 +24,8 @@ internal sealed class FakeUninstallPlatform : IUninstallPlatform
 
     public List<string> StartedScripts { get; } = [];
 
+    public bool CleanupStarts { get; set; } = true;
+
     public int RemoveAllCredentials()
     {
         AllCredentialRemovals++;
@@ -38,8 +41,20 @@ internal sealed class FakeUninstallPlatform : IUninstallPlatform
     public bool StartCleanup(string script)
     {
         StartedScripts.Add(script);
-        return true;
+        return CleanupStarts;
     }
+}
+
+internal sealed class ListLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+{
+    public List<string> Lines { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+    public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+        Lines.Add($"{logLevel}: {formatter(state, exception)} {exception?.GetType().Name} {exception?.Message}");
 }
 
 internal sealed class FakeStartup(bool registered) : IStartupRegistration
@@ -57,13 +72,20 @@ internal sealed class FakeStartup(bool registered) : IStartupRegistration
 
 public sealed class UninstallTests : IDisposable
 {
+    private static readonly string[] Shipped = ["RepoWatch.exe", "RepoWatch.dll", "runtimes/win-x64/native.dll", "release.json"];
+
     private readonly string _root = Directory.CreateTempSubdirectory("repowatch-uninstall-").FullName;
     private readonly FakeUninstallPlatform _platform = new();
     private readonly RecordingBrowser _browser = new();
 
-    private string Install => Path.Combine(_root, "Programs", "RepoWatch");
+    public UninstallTests() => Install = Path.Combine(_root, "Programs", "RepoWatch");
 
-    private string Data => Path.Combine(_root, "data");
+    /// <summary>The program folder; tests may point it at a shared folder such as "Tools".</summary>
+    private string Install { get; set; }
+
+    private string Data { get; set; } = "";
+
+    private ListLogger<UninstallService> Log { get; } = new();
 
     public void Dispose()
     {
@@ -81,17 +103,32 @@ public sealed class UninstallTests : IDisposable
         }
     }
 
-    private (UninstallService Service, AccountKit Kit, FakeStartup Startup) Create(bool release = true, bool startAtLogin = false, bool main = false)
+    /// <summary>Lays out a release folder: the shipped files, and a manifest listing them (unless <paramref name="withList"/> is false).</summary>
+    private void LayOutRelease(string folder, bool withList = true)
     {
-        Directory.CreateDirectory(Install);
-        File.WriteAllText(Path.Combine(Install, "RepoWatch.exe"), "exe");
+        foreach (var file in Shipped)
+        {
+            var path = Path.Combine(folder, file.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "shipped");
+        }
+
+        var list = withList ? ", \"files\": [" + string.Join(",", Shipped.Select(f => $"\"{f}\"")) + "]" : "";
+        File.WriteAllText(Path.Combine(folder, "release.json"), "{\"version\":\"0.2.0\"" + list + "}");
+    }
+
+    private (UninstallService Service, AccountKit Kit, FakeStartup Startup) Create(bool release = true, bool startAtLogin = false, bool main = false, bool withList = true, string data = "data")
+    {
+        LayOutRelease(Install, withList);
+        Data = Path.Combine(_root, data);
         Directory.CreateDirectory(Data);
         var kit = new AccountKit().Start();
-        var paths = new AppPaths(Data, "d.json", "u.json", Path.Combine(Data, "logs"));
+        var paths = new AppPaths(Data, "d.json", Path.Combine(Data, "repowatch.config.json"), Path.Combine(Data, "logs"));
         var startup = new FakeStartup(startAtLogin);
         AppVersion.TryParse("0.2.0", out var version);
         var service = new UninstallService(paths, new InstallInfo(version, Install, release), kit.Accounts, kit.Settings, startup, _platform, _browser,
-            new GitHubEndpoints(kit.Options.GitHub), NullLogger<UninstallService>.Instance, mainDataDirectory: main ? Data : Path.Combine(_root, "elsewhere"),
+            new GitHubEndpoints(kit.Options.GitHub), Log,
+            mainDataDirectory: main ? Data : Path.Combine(_root, "elsewhere"),
             scriptDirectory: _root); // never leaves scripts in the real temp folder
         return (service, kit, startup);
     }
@@ -121,18 +158,50 @@ public sealed class UninstallTests : IDisposable
         return (long)command.ExecuteScalar()!;
     }
 
-    [Fact]
-    public void A_full_uninstall_script_removes_the_app_its_previous_version_and_the_data_folder_then_itself()
+    private async Task RunScript(string script, bool unixToolsFirst = false)
     {
+        var info = new System.Diagnostics.ProcessStartInfo("cmd.exe") { ArgumentList = { "/d", "/c", script }, CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = _root };
+        if (unixToolsFirst)
+        {
+            info.Environment["PATH"] = @"C:\Program Files\Git\usr\bin;" + Environment.GetEnvironmentVariable("PATH");
+        }
+
+        using var run = System.Diagnostics.Process.Start(info)!;
+        await run.WaitForExitAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<int> ExitedProcess()
+    {
+        using var finished = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c exit") { CreateNoWindow = true })!;
+        await finished.WaitForExitAsync(TestContext.Current.CancellationToken);
+        return finished.Id;
+    }
+
+    [Fact]
+    public void Only_the_files_a_release_shipped_are_deleted_from_a_shared_folder()
+    {
+        Install = Path.Combine(_root, "Tools"); // files copied flat into a folder that holds other things
         var (service, _, _) = Create();
+        File.WriteAllText(Path.Combine(Install, "my-notes.txt"), "not Repo Watch's");
 
-        var script = service.BuildScript(keepSettings: false, waitForProcess: 4321);
+        var plan = service.Plan(keepSettings: false);
 
-        Assert.Contains("tasklist /FI \"PID eq 4321\"", script, StringComparison.Ordinal);
-        Assert.Contains($"rmdir /s /q \"{Install}\"", script, StringComparison.Ordinal);
-        Assert.Contains($"rmdir /s /q \"{Install}.previous\"", script, StringComparison.Ordinal);
-        Assert.Contains($"rmdir /s /q \"{Data}\"", script, StringComparison.Ordinal);
-        Assert.EndsWith("(goto) 2>nul & del \"%~f0\"" + Environment.NewLine, script, StringComparison.Ordinal);
+        Assert.Equal(Shipped.Length, plan.Files.Count(f => f.StartsWith(Install, StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(Path.Combine(Install, "my-notes.txt"), plan.Files);
+        Assert.Contains(Path.Combine(Install, "my-notes.txt"), plan.KeptForeign);
+        Assert.DoesNotContain(Install, plan.OwnedFolders); // only removed if empty, never recursively
+        Assert.Contains(Install, plan.EmptyFolders);
+    }
+
+    [Fact]
+    public void A_release_without_a_file_list_keeps_its_folder()
+    {
+        var (service, _, _) = Create(withList: false);
+
+        var plan = service.Plan(keepSettings: false);
+
+        Assert.NotNull(plan.ProgramFolderKept);
+        Assert.DoesNotContain(plan.Files, f => f.StartsWith(Install, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -140,44 +209,130 @@ public sealed class UninstallTests : IDisposable
     {
         var (service, _, _) = Create(release: false);
 
-        var script = service.BuildScript(keepSettings: false);
+        var plan = service.Plan(keepSettings: false);
 
-        Assert.DoesNotContain(Install, script, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(service.Describe(false), i => !i.Removed && i.Title.StartsWith("Program folder", StringComparison.Ordinal));
+        Assert.Contains("built from source", plan.ProgramFolderKept, StringComparison.Ordinal);
+        Assert.DoesNotContain(plan.Files.Concat(plan.EmptyFolders).Concat(plan.OwnedFolders), p => p.StartsWith(Install, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void Keeping_settings_removes_logs_diagnostics_and_updates_but_not_the_settings_file()
+    public void A_custom_data_folder_loses_only_Repo_Watchs_files()
     {
+        var (service, _, _) = Create(data: "portable");
+        SeedDatabase();
+        Directory.CreateDirectory(Path.Combine(Data, "logs"));
+        File.WriteAllText(Path.Combine(Data, "logs", "repowatch-20261004.log"), "ours");
+        File.WriteAllText(Path.Combine(Data, "logs", "other-app.log"), "theirs");
+        File.WriteAllText(Path.Combine(Data, "photos.zip"), "theirs");
+
+        var plan = service.Plan(keepSettings: false);
+
+        Assert.Empty(plan.OwnedFolders);
+        Assert.Contains(Path.Combine(Data, "repowatch.db"), plan.Files);
+        Assert.Contains(Path.Combine(Data, "logs", "repowatch-20261004.log"), plan.Files);
+        Assert.Contains(Path.Combine(Data, "logs", "other-app.log"), plan.KeptForeign);
+        Assert.DoesNotContain(Path.Combine(Data, "photos.zip"), plan.Files);
+        Assert.Contains(Path.Combine(Data, "photos.zip"), plan.KeptForeign); // counted in "Other files (kept)"
+        Assert.Contains(Data, plan.EmptyFolders);
+    }
+
+    [Fact]
+    public void The_default_data_folder_is_Repo_Watchs_own_and_is_removed_whole()
+    {
+        var (service, _, _) = Create(main: true);
+
+        Assert.Equal([Data], service.Plan(keepSettings: false).OwnedFolders);
+        Assert.Empty(service.Plan(keepSettings: true).OwnedFolders); // keeping settings: never the whole folder
+    }
+
+    [Fact]
+    public void Running_from_the_backup_after_a_failed_update_also_cleans_the_half_copied_folder()
+    {
+        var half = Install;
+        Directory.CreateDirectory(half);
+        File.WriteAllText(Path.Combine(half, "RepoWatch.dll"), "half-copied");
+        Install = half + ".previous";
         var (service, _, _) = Create();
 
-        var script = service.BuildScript(keepSettings: true);
+        var plan = service.Plan(keepSettings: false);
 
-        Assert.Contains($"\"{Path.Combine(Data, "logs")}\"", script, StringComparison.Ordinal);
-        Assert.Contains($"\"{Path.Combine(Data, "diagnostics")}\"", script, StringComparison.Ordinal);
-        Assert.Contains($"\"{Path.Combine(Data, "updates")}\"", script, StringComparison.Ordinal);
-        Assert.DoesNotContain($"rmdir /s /q \"{Data}\" ", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("del /f /q \"" + Path.Combine(Data, "repowatch.db") + "\"", script, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine(half, "RepoWatch.dll"), plan.Files);
+        Assert.Contains(half, plan.EmptyFolders);
     }
 
     [Fact]
-    public void Percent_signs_in_paths_are_escaped_for_cmd()
+    public void The_script_calls_system_tools_by_full_path_and_escapes_percent_signs()
     {
-        var (service, _, _) = Create();
-        var odd = new AppPaths(Path.Combine(_root, "100%data"), "d", "u", "l");
-        AppVersion.TryParse("0.2.0", out var version);
-        var kit = new AccountKit().Start();
-        var other = new UninstallService(odd, new InstallInfo(version, Install, true), kit.Accounts, kit.Settings, new FakeStartup(false), _platform, _browser,
-            new GitHubEndpoints(kit.Options.GitHub), NullLogger<UninstallService>.Instance);
+        var plan = new UninstallPlan([], [], [Path.Combine(_root, "100%data")], [], null);
 
-        Assert.Contains("100%%data", other.BuildScript(keepSettings: false), StringComparison.Ordinal);
-        _ = service;
+        var script = UninstallService.BuildScript(plan, Path.Combine(_root, "s"), 4321);
+
+        Assert.Contains("\"%SystemRoot%\\System32\\tasklist.exe\" /FI \"PID eq 4321\"", script, StringComparison.Ordinal);
+        Assert.Contains("\"%SystemRoot%\\System32\\find.exe\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(" timeout /t", script, StringComparison.Ordinal);
+        Assert.Contains("100%%data", script, StringComparison.Ordinal);
+        Assert.EndsWith("(goto) 2>nul & del \"%~f0\"" + Environment.NewLine, script, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Uninstalling_a_side_by_side_copy_removes_only_its_own_sign_in_and_leaves_shared_parts()
+    public async Task The_real_script_removes_exactly_the_planned_files_even_with_Unix_tools_first_on_PATH()
     {
-        var (service, _, startup) = Create(startAtLogin: false, main: false);
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Install = Path.Combine(_root, "Tools");
+        var (service, _, _) = Create(data: "portable");
+        Directory.CreateDirectory(Install + ".previous");
+        File.WriteAllText(Path.Combine(Install + ".previous", "RepoWatch.exe"), "old");
+        File.WriteAllText(Path.Combine(Install, "my-notes.txt"), "keep me");
+        File.WriteAllText(Path.Combine(Data, "repowatch.db"), "db");
+        File.WriteAllText(Path.Combine(Data, "photos.zip"), "keep me");
+        var plan = service.Plan(keepSettings: false);
+        var listBase = Path.Combine(_root, "cleanup");
+        File.WriteAllText(listBase + ".cmd", UninstallService.BuildScript(plan, listBase, await ExitedProcess()), new System.Text.UTF8Encoding(false));
+
+        await RunScript(listBase + ".cmd", unixToolsFirst: true);
+
+        Assert.All(Shipped, f => Assert.False(File.Exists(Path.Combine(Install, f.Replace('/', Path.DirectorySeparatorChar)))));
+        Assert.False(Directory.Exists(Path.Combine(Install, "runtimes"))); // emptied folders are removed
+        Assert.True(File.Exists(Path.Combine(Install, "my-notes.txt"))); // the shared folder and its other files stay
+        Assert.False(Directory.Exists(Install + ".previous"));
+        Assert.False(File.Exists(Path.Combine(Data, "repowatch.db")));
+        Assert.True(File.Exists(Path.Combine(Data, "photos.zip")));
+        Assert.False(File.Exists(listBase + ".cmd"));
+        Assert.False(File.Exists(listBase + ".files.txt"));
+        Assert.False(File.Exists(listBase + ".folders.txt"));
+    }
+
+    [Fact]
+    public async Task The_script_waits_for_a_running_process_even_with_Unix_tools_first_on_PATH()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var file = Path.Combine(_root, "in-use.txt");
+        File.WriteAllText(file, "x");
+        using var running = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c ping -n 4 127.0.0.1 >nul") { CreateNoWindow = true })!;
+        var listBase = Path.Combine(_root, "wait");
+        File.WriteAllText(listBase + ".cmd", UninstallService.BuildScript(new UninstallPlan([file], [], [], [], null), listBase, running.Id), new System.Text.UTF8Encoding(false));
+
+        var script = RunScript(listBase + ".cmd", unixToolsFirst: true);
+        await Task.Delay(1000, TestContext.Current.CancellationToken);
+        Assert.True(File.Exists(file)); // still waiting: GNU find on PATH didn't end the wait early
+
+        await script;
+        Assert.True(running.HasExited);
+        Assert.False(File.Exists(file));
+    }
+
+    [Fact]
+    public async Task Uninstalling_a_side_by_side_copy_removes_only_its_own_accounts_sign_in_and_leaves_shared_parts()
+    {
+        var (service, _, startup) = Create(main: false);
         SeedDatabase();
 
         Assert.Null(await service.UninstallAsync(new UninstallOptions(KeepSettings: false, OpenGitHubAccess: false)));
@@ -188,6 +343,7 @@ public sealed class UninstallTests : IDisposable
         Assert.False(startup.IsRegistered);
         Assert.Empty(_browser.Opened);
         Assert.True(File.Exists(Assert.Single(_platform.StartedScripts)));
+        Assert.Contains(service.Describe(false), i => i.Title == "Sign-in" && i.Detail.Contains("signed out too", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -222,34 +378,47 @@ public sealed class UninstallTests : IDisposable
         Assert.Equal(0, Count("http_cache"));
         Assert.Equal(0, Count("notification_history"));
         Assert.Equal(2, Count("settings"));
-        Assert.DoesNotContain("private", File.ReadAllText(Path.Combine(Data, "repowatch.db"), System.Text.Encoding.Latin1), StringComparison.Ordinal); // compacted
+        Assert.DoesNotContain("private", File.ReadAllText(Path.Combine(Data, "repowatch.db"), System.Text.Encoding.Latin1), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task The_cleanup_script_really_removes_the_folders_and_itself()
+    public async Task If_the_cache_cant_be_emptied_the_settings_are_removed_too_and_the_user_is_told()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var (service, _, _) = Create();
-        Directory.CreateDirectory(Install + ".previous");
-        Directory.CreateDirectory(Path.Combine(Data, "logs"));
-        File.WriteAllText(Path.Combine(Data, "logs", "repowatch.log"), "log");
-        using var finished = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c exit") { CreateNoWindow = true })!;
-        await finished.WaitForExitAsync(TestContext.Current.CancellationToken);
-        var script = Path.Combine(_root, "cleanup.cmd");
-        File.WriteAllText(script, service.BuildScript(keepSettings: false, waitForProcess: finished.Id), new System.Text.UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(Data, "repowatch.db"), "this is not a database");
 
-        using var run = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") { ArgumentList = { "/d", "/c", script }, CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = _root })!;
-        await run.WaitForExitAsync(TestContext.Current.CancellationToken);
-        await Task.Delay(500, TestContext.Current.CancellationToken);
+        var note = await service.UninstallAsync(new UninstallOptions(KeepSettings: true, OpenGitHubAccess: false));
 
-        Assert.False(Directory.Exists(Install));
-        Assert.False(Directory.Exists(Install + ".previous"));
-        Assert.False(Directory.Exists(Data));
-        Assert.False(File.Exists(script));
+        Assert.True(note?.Contains("removed as well", StringComparison.Ordinal) == true, string.Join(" | ", Log.Lines));
+        var script = Assert.Single(_platform.StartedScripts);
+        var files = File.ReadAllText(Path.ChangeExtension(script, null) + ".files.txt");
+        Assert.Contains(Path.Combine(Data, "repowatch.db"), files, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_failed_uninstall_is_reported_in_the_window_and_can_be_retried()
+    {
+        var (service, _, _) = Create();
+        _platform.CleanupStarts = false;
+        var viewModel = new UninstallViewModel(service);
+
+        await viewModel.UninstallCommand.ExecuteAsync(null);
+
+        Assert.StartsWith("Uninstalling didn't finish", viewModel.Message, StringComparison.Ordinal);
+        Assert.False(viewModel.IsRunning);
+        Assert.True(viewModel.UninstallCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_successful_uninstall_keeps_the_button_disabled_until_the_app_quits()
+    {
+        var (service, _, _) = Create();
+        var viewModel = new UninstallViewModel(service);
+
+        await viewModel.UninstallCommand.ExecuteAsync(null);
+
+        Assert.True(viewModel.IsRunning);
+        Assert.False(viewModel.UninstallCommand.CanExecute(null)); // no second cleanup
     }
 
     [Fact]
@@ -263,5 +432,15 @@ public sealed class UninstallTests : IDisposable
 
         Assert.True(ShortcutFiles.PointsTo(ours, exe));
         Assert.False(ShortcutFiles.PointsTo(other, exe));
+    }
+
+    [Fact]
+    public void The_manifest_file_list_cannot_point_outside_the_folder()
+    {
+        var folder = Path.Combine(_root, "m");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "release.json"), """{"version":"0.2.0","files":["RepoWatch.exe","../../Windows/explorer.exe","C:/boot.ini"]}""");
+
+        Assert.Equal(["RepoWatch.exe"], InstallInfo.ReadManifestFiles(folder));
     }
 }

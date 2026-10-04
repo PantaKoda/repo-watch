@@ -1046,6 +1046,7 @@ Requested by the maintainer: a proper one-click uninstall that asks whether to k
   - a copy built from source never deletes its program folder;
   - shared parts (all sign-ins, the notification identity) are removed only for the normal data folder;
   - shortcuts are matched by their target path, so other shortcuts are never touched.
+  - Tightened after review; see below.
 
 **Checks run**
 - `dotnet test`: 499 passed, twice, with no files left in the temp folder. New tests cover:
@@ -1064,4 +1065,32 @@ Requested by the maintainer: a proper one-click uninstall that asks whether to k
 **Limitations**
 - Not run end to end against the normal install, since that would uninstall the maintainer's real copy. The main-install branch (all sign-ins, notification identity) is covered by unit tests with a fake platform, and `DeleteAll` uses the same Credential Manager API as the existing store.
 - GitHub keeps Repo Watch's authorization until the user revokes it on GitHub; the window offers to open that page.
+
+**Review of PR #17 (all findings addressed)**
+- **Program folder (blocking):** the publish script now records every shipped file in `release.json` (`files`, 248 entries). Uninstall deletes exactly those files, in this folder and its partner (`.previous`, or the half-copied folder when running from `.previous` after a failed update), then removes folders only if empty (`rmdir` without `/s`).
+  - Other files stay and are counted in the window.
+  - A release without a list (0.2.0) or a source build keeps its folder.
+  - List entries that would leave the folder are ignored.
+- **Custom data folder (blocking):** with `REPOWATCH_DATA_DIR`, only Repo Watch's own entries are deleted:
+  - the database files and the config override;
+  - `logs\repowatch-yyyyMMdd.log` and `update.log`;
+  - `diagnostics\repowatch-diagnostics-*.zip`;
+  - update downloads and version folders.
+  - The folders go only once empty. Only the default `%LOCALAPPDATA%\RepoWatch` is removed outright.
+- **PATH (blocking):** the script calls `"%SystemRoot%\System32\tasklist.exe"`, `find.exe` and `timeout.exe` by full path. Listed paths are read from list files, so they need no cmd escaping.
+- **Cache wipe:** `secure_delete` overwrites freed pages. Each statement runs on its own and the result is verified, because a multi-statement command returned silently on a corrupt file without wiping anything (caught by the new test). If the wipe fails, the settings are removed too and the window says so.
+- **Window:** errors are caught and shown, and retry is possible; after success the button stays disabled until the app quits.
+- **Wording:** a side-by-side copy's sign-in removal also signs out other copies on the same account (README and window). Keep-settings also keeps `repowatch.config.json` (README and window).
+- **Tests** (`dotnet test`: 507 passed, twice):
+  - shared-folder planning, missing list, custom data folder, default folder owned;
+  - the `.previous` partner, full tool paths and `%` escaping;
+  - the real script with **Git's Unix tools first on PATH**: it removes exactly the planned files and keeps others, and it waits for a running process instead of exiting early;
+  - the cache-wipe failure path;
+  - the window's error and success states;
+  - manifest path containment.
+- **End to end with the new release build, through the real window,** with the files copied flat into a shared `Tools` folder, a custom data folder holding another file, and the app started with Git's Unix tools first on PATH:
+  - `Tools` was left with only `my-other-tool.txt`;
+  - the data folder was left with only `my-photos.txt`;
+  - the shortcut was removed;
+  - no script remained.
 

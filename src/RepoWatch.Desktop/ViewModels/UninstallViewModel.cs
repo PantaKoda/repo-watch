@@ -68,8 +68,18 @@ public sealed partial class UninstallViewModel : ObservableObject
     {
         IsRunning = true;
         Message = "Removing Repo Watch…";
-        Message = await _uninstall.UninstallAsync(new UninstallOptions(KeepSettings, OpenGitHubAccess)) ?? "Repo Watch is closing and removing its files.";
-        IsRunning = false;
+        try
+        {
+            var note = await _uninstall.UninstallAsync(new UninstallOptions(KeepSettings, OpenGitHubAccess));
+            Message = note is null ? "Repo Watch is closing and removing its files." : "Repo Watch is closing and removing its files. " + note;
+            // Stays disabled: the app is quitting, and a second run would start a second cleanup.
+        }
+        catch (Exception ex)
+        {
+            // Sign-in, start entry and shortcuts may already be gone; say so, and let the user try again or close.
+            Message = $"Uninstalling didn't finish ({ex.Message}). Your sign-in and shortcuts may already have been removed; you can try again.";
+            IsRunning = false;
+        }
     }
 }
 

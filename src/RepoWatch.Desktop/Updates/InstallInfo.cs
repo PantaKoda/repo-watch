@@ -54,6 +54,35 @@ public sealed record InstallInfo(AppVersion Version, string InstallDirectory, bo
         return null;
     }
 
+    /// <summary>
+    /// The files a release folder shipped with (relative paths), from its manifest; null when the manifest is
+    /// missing or predates the list. Paths that would leave the folder are dropped.
+    /// </summary>
+    public static IReadOnlyList<string>? ReadManifestFiles(string directory)
+    {
+        try
+        {
+            using var stream = File.OpenRead(Path.Combine(directory, ManifestFile));
+            using var document = JsonDocument.Parse(stream);
+            if (!document.RootElement.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)) + Path.DirectorySeparatorChar;
+            return files.EnumerateArray()
+                .Select(f => f.GetString())
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Select(f => f!.Replace('/', Path.DirectorySeparatorChar))
+                .Where(f => !Path.IsPathRooted(f) && Path.GetFullPath(Path.Combine(directory, f)).StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>The version recorded in a release folder's manifest, or null when there is none.</summary>
     public static AppVersion? ReadManifestVersion(string directory)
     {

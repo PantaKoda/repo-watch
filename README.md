@@ -65,19 +65,23 @@ The onboarding window walks through **Sign in → Grant repository access → Ch
 
 Settings → About → **Uninstall Repo Watch…** opens a window that lists exactly what will be removed, with paths, and has one **Uninstall** button.
 
-- **Remove everything** (the default) leaves nothing on the PC:
-  - the program folder and the previous version kept after an update;
+- **Remove everything** (the default) leaves nothing of Repo Watch on the PC:
+  - its program files and the version kept after an update;
   - `%LOCALAPPDATA%\RepoWatch` (settings, repository cache, logs, diagnostics, downloaded updates);
   - every Repo Watch sign-in in Windows Credential Manager;
   - the start-at-login entry;
   - the notification identity, its notification settings and its notifications in the action center;
   - Desktop and Start menu shortcuts that start Repo Watch.
-- **Keep my settings and repository list** removes all of that except the settings file. The sign-in and all cached repository data are removed, and the file is compacted, so a later reinstall starts with your choices and asks you to sign in.
-- **Open GitHub afterwards** (on by default) opens the page where you revoke Repo Watch's access to your account. Local uninstall can't do that for you.
-- Repo Watch quits, and a small temporary script deletes the folders once it has exited, then deletes itself.
+- **Keep my settings and repository list** removes all of that except `repowatch.db` (settings only: the sign-in and all cached repository data are removed, overwritten and compacted) and `repowatch.config.json` if you created one. A later reinstall starts with your choices and asks you to sign in. If the cache can't be emptied safely, the settings are removed as well and the window says so.
+- **Open GitHub afterwards** (on by default) opens the page where you revoke Repo Watch's access to your account. A local uninstall can't revoke it.
+- Repo Watch quits, and a small temporary script deletes the files once it has exited, then deletes itself.
+- **Only what Repo Watch created is deleted:**
+  - Program files are removed by the list each release ships in `release.json`, so other files in the same folder (for example if you copied Repo Watch into `C:\Tools`) stay, and folders are removed only once empty.
+  - A data folder set with `REPOWATCH_DATA_DIR` loses only Repo Watch's own files.
+  - The window counts any other files it found and leaves them in place.
 - **Exceptions:**
-  - A copy built from source never deletes its own folder.
-  - A copy started with its own `REPOWATCH_DATA_DIR` removes only its own sign-in, so it can't sign the normal install out.
+  - A copy built from source, or one from a release older than 0.2.1 (no file list), keeps its program folder for you to delete.
+  - A copy with its own `REPOWATCH_DATA_DIR` removes the sign-in only for the accounts it used, but that also signs out any other copy signed in to the same account. It leaves the shared notification identity alone.
   - The start-at-login entry is removed only if it starts this copy.
 
 ## Platform baseline
