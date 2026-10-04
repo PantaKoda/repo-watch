@@ -34,7 +34,7 @@ jobs:
 
       - name: Release notes from CHANGELOG.md
         shell: pwsh
-        run: pwsh scripts/release-notes.ps1 -Version $env:VERSION > release-notes.md
+        run: pwsh scripts/release-notes.ps1 -Version $env:VERSION -OutFile release-notes.md
 
       - name: Build, test and package
         shell: pwsh
