@@ -179,6 +179,7 @@ public sealed class RelayLink : IDisposable
             _subscribed = ids;
             _restart.Reader.TryRead(out _);
         }
+
         if (ids.Count == 0 || await _tokens.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false) is not { } token)
         {
             return Outcome.NothingToWatch;

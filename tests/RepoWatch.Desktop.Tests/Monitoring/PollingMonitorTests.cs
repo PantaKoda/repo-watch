@@ -169,7 +169,7 @@ public sealed class PollingMonitorTests
         using var monitor = Create(source, Watching(Watch(1) with { PullRequests = PullRequestScope.None, ShowIssues = false, Branches = ["release"] }));
         await monitor.RefreshAsync(cancellationToken: TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
-        // The monitor's own first pass can overlap this refresh, so the same requests may appear twice.
+        // A refresh requested while the automatic first pass is in flight runs again after it, so each request may appear twice.
         Assert.Equal(["repo 1", "actions repo1 release"], source.Calls.Distinct());
         var snapshot = Snapshot(monitor, 1);
         Assert.Equal(ResourceAvailability.FeatureUnavailable, snapshot.PullRequests.Availability);
