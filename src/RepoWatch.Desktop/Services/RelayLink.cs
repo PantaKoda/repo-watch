@@ -41,6 +41,7 @@ public sealed class RelayLink : IDisposable
 
     /// <summary>Coalescing "restart the stream" signal: at most one pending, so bursts cause one reconnect.</summary>
     private readonly Channel<bool> _restart = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
+    private readonly Lock _subscription = new(); // checking the watchlist and recording/draining a session's set are atomic
     private HashSet<long> _subscribed = [];
 
     public RelayLink(PollingRepositoryMonitor monitor, RelayClient client, IAccessTokenSource tokens, TimeProvider time, ILogger logger, CancellationToken lifetime,
@@ -83,10 +84,14 @@ public sealed class RelayLink : IDisposable
 
     private void OnMonitorChanged(object? sender, EventArgs e)
     {
-        var ids = _monitor.Repositories.Select(r => r.Key.RepositoryId).ToHashSet();
-        if (!ids.SetEquals(Volatile.Read(ref _subscribed)))
+        lock (_subscription)
         {
-            _restart.Writer.TryWrite(true); // the session must cover exactly the watched repositories
+            // Under the lock: a signal can't land just after a new session drained it for the set it already covers.
+            var ids = _monitor.Repositories.Select(r => r.Key.RepositoryId).ToHashSet();
+            if (!ids.SetEquals(_subscribed))
+            {
+                _restart.Writer.TryWrite(true); // the session must cover exactly the watched repositories
+            }
         }
     }
 
@@ -168,13 +173,12 @@ public sealed class RelayLink : IDisposable
         // Record what this attempt subscribes to first, then drop the signals it already covers. Changes after
         // that compare against the new set, so a burst of watchlist events causes one session, not several.
         HashSet<long> ids;
-        do
+        lock (_subscription)
         {
             ids = _monitor.Repositories.Select(r => r.Key.RepositoryId).ToHashSet();
-            Volatile.Write(ref _subscribed, ids);
+            _subscribed = ids;
             _restart.Reader.TryRead(out _);
         }
-        while (!ids.SetEquals(_monitor.Repositories.Select(r => r.Key.RepositoryId)));
         if (ids.Count == 0 || await _tokens.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false) is not { } token)
         {
             return Outcome.NothingToWatch;
