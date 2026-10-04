@@ -63,10 +63,22 @@ The onboarding window walks through **Sign in → Grant repository access → Ch
 
 ## Uninstall
 
-1. In Settings, turn off *Start Repo Watch when I sign in* (removes the `Run` registry value) and choose *Sign out* (removes the tokens and the account's cached data).
-2. Quit Repo Watch from the tray menu and delete its folder.
-3. Optionally delete `%LOCALAPPDATA%\RepoWatch` (settings, cache, logs) and the registry key `HKCU\Software\Classes\AppUserModelId\RepoWatch.Desktop` (notification identity).
-4. Optionally revoke the app on GitHub (Settings → Applications → Authorized GitHub Apps) and uninstall it where it was installed.
+Settings → About → **Uninstall Repo Watch…** opens a window that lists exactly what will be removed, with paths, and has one **Uninstall** button.
+
+- **Remove everything** (the default) leaves nothing on the PC:
+  - the program folder and the previous version kept after an update;
+  - `%LOCALAPPDATA%\RepoWatch` (settings, repository cache, logs, diagnostics, downloaded updates);
+  - every Repo Watch sign-in in Windows Credential Manager;
+  - the start-at-login entry;
+  - the notification identity, its notification settings and its notifications in the action center;
+  - Desktop and Start menu shortcuts that start Repo Watch.
+- **Keep my settings and repository list** removes all of that except the settings file. The sign-in and all cached repository data are removed, and the file is compacted, so a later reinstall starts with your choices and asks you to sign in.
+- **Open GitHub afterwards** (on by default) opens the page where you revoke Repo Watch's access to your account. Local uninstall can't do that for you.
+- Repo Watch quits, and a small temporary script deletes the folders once it has exited, then deletes itself.
+- **Exceptions:**
+  - A copy built from source never deletes its own folder.
+  - A copy started with its own `REPOWATCH_DATA_DIR` removes only its own sign-in, so it can't sign the normal install out.
+  - The start-at-login entry is removed only if it starts this copy.
 
 ## Platform baseline
 

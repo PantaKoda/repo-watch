@@ -130,6 +130,34 @@ public sealed class WindowsCredentialStore(string targetPrefix = WindowsCredenti
         return Task.CompletedTask;
     }
 
+    /// <summary>Deletes every Repo Watch entry (all accounts and hosts). Returns how many were removed.</summary>
+    public int DeleteAll()
+    {
+        if (!CredEnumerate(targetPrefix + "*", 0, out var count, out var list))
+        {
+            return 0; // ERROR_NOT_FOUND: nothing stored
+        }
+
+        var targets = new List<string>();
+        try
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var entry = Marshal.PtrToStructure<NativeCredential>(Marshal.ReadIntPtr(list, i * IntPtr.Size));
+                if (entry.TargetName?.StartsWith(targetPrefix, StringComparison.Ordinal) == true)
+                {
+                    targets.Add(entry.TargetName);
+                }
+            }
+        }
+        finally
+        {
+            CredFree(list);
+        }
+
+        return targets.Count(target => CredDelete(target, CredTypeGeneric, 0));
+    }
+
     private string Target(AccountKey account) => targetPrefix + account.StorageKey;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -160,6 +188,9 @@ public sealed class WindowsCredentialStore(string targetPrefix = WindowsCredenti
 
     [DllImport("advapi32.dll", SetLastError = false)]
     private static extern void CredFree(IntPtr buffer);
+
+    [DllImport("advapi32.dll", EntryPoint = "CredEnumerateW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CredEnumerate(string? filter, int flags, out int count, out IntPtr credentials);
 }
 
 internal sealed record CredentialBlob(string AccessToken, DateTimeOffset? AccessTokenExpiresAt, string? RefreshToken, DateTimeOffset? RefreshTokenExpiresAt)

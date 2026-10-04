@@ -1027,3 +1027,41 @@ Requested by the maintainer after deciding against a shared relay: let users cho
 **Next concrete task**
 - Further UI changes as requested. The next release will exercise the in-app update path against a real newer release.
 
+## After release — one-click clean uninstall (feature branch `uninstall`)
+
+Requested by the maintainer: a proper one-click uninstall that asks whether to keep anything. If the user keeps nothing, the uninstall must be completely clean, with no leftovers on the system.
+
+**Implemented**
+- **Settings › About › Uninstall Repo Watch…** opens `UninstallWindow`. It lists every item to be removed or kept with its real path (✕/✓). The choices are *Remove everything* (the default) or *Keep my settings and repository list*, plus *Open GitHub afterwards* to revoke access there. One **Uninstall** button.
+- **`UninstallService`**, in this order:
+  1. Signs out, which stops GitHub activity and clears the active account's cache.
+  2. Removes stored sign-ins: every `RepoWatch:github/*` entry in Credential Manager (new `WindowsCredentialStore.DeleteAll` with `CredEnumerate`), or only this copy's accounts for a side-by-side data folder.
+  3. Removes the start-at-login entry, only if it starts this copy.
+  4. Clears the notification history and deletes `HKCU\Software\Classes\AppUserModelId\RepoWatch.Desktop` and `HKCU\...\Notifications\Settings\RepoWatch.Desktop` (main install only).
+  5. Deletes Desktop and Start menu shortcuts whose target is this executable.
+  6. With *Keep settings*: empties the repository cache, HTTP cache, notification history and settings backups, clears the sign-in, and compacts the database (`VACUUM`) so nothing can be recovered.
+  7. Optionally opens GitHub's authorization page.
+  8. Writes a cleanup script to `%TEMP%` and starts it hidden, then quits. The script waits for the process to exit, deletes the program folder, `<folder>.previous` and the data folder (or, with *Keep settings*, only logs, diagnostics and downloaded updates), retrying while files are briefly locked, then deletes itself. Paths are quoted and `%` is escaped for cmd.
+- **Safety:**
+  - a copy built from source never deletes its program folder;
+  - shared parts (all sign-ins, the notification identity) are removed only for the normal data folder;
+  - shortcuts are matched by their target path, so other shortcuts are never touched.
+
+**Checks run**
+- `dotnet test`: 499 passed, twice, with no files left in the temp folder. New tests cover:
+  - the cleanup script for a release copy, a source build and keep-settings, with `%` escaping;
+  - a side-by-side copy removing only its own sign-in;
+  - the main install removing all sign-ins, the start entry, notifications and shortcuts, and opening GitHub;
+  - keep-settings emptying every cache table and compacting the file;
+  - the **real script run by cmd** against temporary folders: the folders and the script are gone;
+  - shortcut target matching.
+- **End to end with a release build, through the real window** (UI Automation), installed in a temporary folder with a real Start menu shortcut and its own data folder:
+  - **Remove everything:** the app exited, and the program folder, previous version, data folder and test shortcut were all gone, with no script left.
+  - **Keep settings:** only `repowatch.db` remained, holding the settings, with 0 snapshots, cache entries and history rows. Logs and shortcut were gone and no script was left.
+  - Both runs left the maintainer's own shortcuts, start-at-login value, Credential Manager entries and notification identity untouched, as designed for a side-by-side copy.
+- Found while testing: the radio options had no accessible names, so screen readers couldn't announce them. They now have names.
+
+**Limitations**
+- Not run end to end against the normal install, since that would uninstall the maintainer's real copy. The main-install branch (all sign-ins, notification identity) is covered by unit tests with a fake platform, and `DeleteAll` uses the same Credential Manager API as the existing store.
+- GitHub keeps Repo Watch's authorization until the user revokes it on GitHub; the window offers to open that page.
+

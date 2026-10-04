@@ -76,6 +76,10 @@ internal sealed class FakeShell : IShell
 
     public void OpenUpdate() => UpdateRequests++;
 
+    public int UninstallRequests { get; private set; }
+
+    public void OpenUninstall() => UninstallRequests++;
+
     public void Quit()
     {
     }
