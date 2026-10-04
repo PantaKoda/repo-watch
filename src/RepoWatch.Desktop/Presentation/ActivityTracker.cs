@@ -7,8 +7,8 @@ using RepoWatch.Core.Status;
 namespace RepoWatch.Desktop.Presentation;
 
 /// <summary>
-/// Remembers, per repository, what the user last saw at a glance (open PRs and issues, running work, CI state,
-/// latest run) and whether it changed since they last opened it. It lives in the widget, not in the row, so
+/// Remembers, per repository, what the user last saw at a glance (open PRs and issues, their comments, running
+/// work, CI state, latest run) and whether it changed since they last opened it. It lives in the widget, not in the row, so
 /// rows recreated by the filters keep their marker, and repositories the filters hide are still tracked.
 /// <para>
 /// The baseline is taken from live data only: values restored from the local cache at startup don't count, so
@@ -82,10 +82,21 @@ public sealed class ActivityTracker
         return string.Join("|",
             snapshot.PullRequests.Value?.OpenCount.ToString() ?? "-",
             snapshot.Issues.Value?.OpenCount.ToString() ?? "-",
+            Comments(snapshot),
             running.ToString(CultureInfo.InvariantCulture),
             AttentionPolicy.Evaluate(snapshot).ToString(),
             latest is null ? "-" : string.Create(CultureInfo.InvariantCulture, $"{latest.Id}:{latest.RunAttempt}:{latest.Outcome}"));
     }
+
+    /// <summary>
+    /// New comments on listed pull requests and issues count as activity too. Each item's count is kept
+    /// separately, so a comment added on one item and one deleted on another don't cancel out.
+    /// </summary>
+    private static string Comments(RepositorySnapshot snapshot) => string.Join(",",
+        (snapshot.PullRequests.Value?.Items ?? []).Select(e => e.PullRequest).Where(p => p.CommentCount > 0).OrderBy(p => p.Number)
+            .Select(p => string.Create(CultureInfo.InvariantCulture, $"p{p.Number}:{p.CommentCount}"))
+        .Concat((snapshot.Issues.Value?.Items ?? []).Where(i => i.CommentCount > 0).OrderBy(i => i.Number)
+            .Select(i => string.Create(CultureInfo.InvariantCulture, $"i{i.Number}:{i.CommentCount}"))));
 
     private static bool Settled<T>(Resource<T> resource) where T : class =>
         resource.Availability is ResourceAvailability.FeatureUnavailable or ResourceAvailability.AccessLost

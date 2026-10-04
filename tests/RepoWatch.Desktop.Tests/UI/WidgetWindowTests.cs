@@ -340,6 +340,36 @@ public sealed class WidgetWindowTests
         monitors.Dispose();
     }
 
+    [AvaloniaTheory]
+    [InlineData("Light")]
+    [InlineData("Dark")]
+    public void Runs_name_their_pull_request_and_items_show_comment_counts(string theme)
+    {
+        Application.Current!.RequestedThemeVariant = theme == "Dark" ? ThemeVariant.Dark : ThemeVariant.Light;
+        var (window, viewModel, browser) = Open(400, 640);
+        var row = viewModel.Repositories.First(r => r.Name == "demo-org/web-app");
+        viewModel.ShowRepositoryCommand.Execute(row);
+        Dispatcher.UIThread.RunJobs();
+
+        var run = row.Actions.Items.Single(r => r.Detail.StartsWith("#411", StringComparison.Ordinal));
+        Assert.Equal("PR #61 · Add login rate limiting to the sign-in and password reset endpoints", run.PullRequestText);
+        Assert.All(row.Actions.Items.Where(r => r != run), r => Assert.False(r.HasPullRequest)); // pushes to main
+        Capture(window, $"details-actions-pr-{theme.ToLowerInvariant()}");
+
+        var link = window.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("prlink") && b.IsEffectivelyVisible);
+        link.Command!.Execute(null);
+        Assert.Single(browser.Opened); // the pull request, not the run
+
+        var pull = row.PullRequests.Items.Single(p => p.Number == 61);
+        Assert.Equal(1, pull.CommentCount);
+        Assert.Equal("Add login rate limiting to the sign-in and password reset endpoints, 1 comment", pull.AccessibleName);
+        Assert.Contains(row.Issues.Items, i => i.HasComments);
+
+        window.GetLogicalDescendants().OfType<TabControl>().Single().SelectedIndex = 1;
+        Capture(window, $"details-pulls-comments-{theme.ToLowerInvariant()}");
+        window.Close();
+    }
+
     /// <summary>The icon's current rotation in degrees (0 when untransformed).</summary>
     private static double Angle(Visual icon) =>
         icon.RenderTransform is { } transform ? Math.Round(Math.Atan2(transform.Value.M12, transform.Value.M11) * 180 / Math.PI, 1) : 0;

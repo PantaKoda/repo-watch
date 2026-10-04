@@ -80,11 +80,17 @@ public sealed record PullRequest
 
     public required string HeadRef { get; init; }
 
+    /// <summary>Owner of the head branch's repository (a fork's owner); null when that repository was deleted.</summary>
+    public string? HeadOwner { get; init; }
+
     public required string BaseRef { get; init; }
 
     public IReadOnlyList<ReviewRequest> RequestedReviewers { get; init; } = [];
 
     public MergeState MergeState { get; init; } = MergeState.Unknown;
+
+    /// <summary>Conversation and inline review comments (not review summaries), as GitHub counts them.</summary>
+    public int CommentCount { get; init; }
 
     public required Uri HtmlUrl { get; init; }
 

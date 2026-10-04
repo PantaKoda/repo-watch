@@ -110,7 +110,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
         {
             Run(5001, 1, "CI", 412, 1, head, "main", "push", CheckOutcome.Failure, now.AddMinutes(-7)),
             Run(5002, 2, "Deploy preview", 88, 1, head, "main", "push", CheckOutcome.Skipped, now.AddMinutes(-7)),
-            Run(4990, 1, "CI", 411, 2, "c0ffee0000000000000000000000000000000002", "feature/login", "pull_request", CheckOutcome.Success, now.AddMinutes(-40)),
+            Run(4990, 1, "CI", 411, 2, "c0ffee0000000000000000000000000000000003", "demo/61", "pull_request", CheckOutcome.Success, now.AddMinutes(-40)),
         };
 
         var prHead = "c0ffee0000000000000000000000000000000003";
@@ -119,7 +119,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
             OpenCount = ItemCount.Exact(3),
             Items =
             [
-                PullRequestEntry(now, 61, "Add login rate limiting", "demo-dev", prHead, MergeState.Blocked,
+                PullRequestEntry(now, 61, "Add login rate limiting to the sign-in and password reset endpoints", "demo-dev", prHead, MergeState.Blocked,
                     CommitChecks.Summarize(prHead, [Check(1, 11, "CI / build", CheckOutcome.Failure, prHead), Check(2, 11, "CI / test", CheckOutcome.Success, prHead)], []),
                     ReviewSummary.From([], [new ReviewRequest(ReviewerKind.User, "demo-you")], prHead)),
                 PullRequestEntry(now, 58, "Upgrade bundler configuration", "demo-bot", "c0ffee0000000000000000000000000000000004", MergeState.Unknown,
@@ -305,6 +305,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
                 BaseRef = "main",
                 RequestedReviewers = reviews.PendingRequests,
                 MergeState = merge,
+                CommentCount = number % 6,
                 HtmlUrl = PullRequestDocs,
                 CreatedAt = now.AddDays(-number % 5 - 1),
                 UpdatedAt = now.AddHours(-(number % 7)),
@@ -315,6 +316,7 @@ public sealed class DemoRepositoryMonitor : IRepositoryMonitor, IDisposable
 
     private static Issue Issue(DateTimeOffset now, int number, string title, string author, IReadOnlyList<string> labels) => new()
     {
+        CommentCount = number % 4,
         Id = 80000 + number,
         Number = number,
         Title = title,

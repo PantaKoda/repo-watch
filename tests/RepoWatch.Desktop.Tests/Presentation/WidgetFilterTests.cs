@@ -452,4 +452,26 @@ public sealed class WidgetFilterTests
         Assert.False(row.IsFlashing);
         Assert.True(row.HasUnseenActivity);
     }
+
+    [Fact]
+    public void A_new_comment_is_activity_even_when_another_was_deleted_elsewhere()
+    {
+        static MonitoredRepository WithComments(int first, int second)
+        {
+            var repo = Repo(1, "repo", 0, openIssues: 2);
+            Issue Item(int number, int comments) => new()
+            {
+                Id = number, Number = number, Title = $"Issue {number}", AuthorLogin = "a", State = IssueState.Open, CommentCount = comments,
+                HtmlUrl = new Uri($"https://github.com/octo/repo/issues/{number}"), CreatedAt = Now, UpdatedAt = Now,
+            };
+            var issues = new IssuesState { OpenCount = ItemCount.Exact(2), Items = [Item(1, first), Item(2, second)] };
+            return repo with { Snapshot = repo.Snapshot with { Issues = Resource<IssuesState>.NotLoaded.Succeeded(issues, Now) } };
+        }
+
+        var (widget, monitor, _) = Create();
+        monitor.Publish([WithComments(3, 1)]);
+        monitor.Publish([WithComments(2, 2)]); // one deleted on #1, one added on #2: the total is the same
+
+        Assert.True(widget.Repositories.Single().HasUnseenActivity);
+    }
 }
