@@ -339,4 +339,39 @@ public sealed class WidgetWindowTests
         window.Close();
         monitors.Dispose();
     }
+
+    [AvaloniaFact]
+    public async Task A_manual_refresh_turns_the_refresh_icon_in_the_accent_color_until_it_finishes()
+    {
+        Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+        var (window, viewModel, _) = Open(400, 560);
+        var button = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "Refresh");
+        var icon = button.GetVisualDescendants().OfType<PathIcon>().Single();
+        var idle = icon.Foreground;
+
+        var refresh = viewModel.RefreshCommand.ExecuteAsync(null); // the demo answers after a short simulated delay
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("spinning", button.Classes);
+        Assert.True(window.TryFindResource("HudAccentBrush", window.ActualThemeVariant, out var accent));
+        Assert.Equal(accent, icon.Foreground);
+        Assert.NotEqual(idle, icon.Foreground);
+
+        await refresh;
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain("spinning", button.Classes); // nothing keeps turning once it's done
+        Assert.Equal(idle, icon.Foreground);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void The_widget_resizes_from_every_edge_and_corner()
+    {
+        var (window, _, _) = Open(400, 560);
+
+        var edges = window.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("resize"))
+            .Select(b => Enum.Parse<WindowEdge>((string)b.Tag!)).ToHashSet();
+
+        Assert.Equal(Enum.GetValues<WindowEdge>().ToHashSet(), edges);
+        window.Close();
+    }
 }

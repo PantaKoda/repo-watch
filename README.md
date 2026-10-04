@@ -35,7 +35,7 @@ The onboarding window walks through **Sign in → Grant repository access → Ch
 
 ## Using the widget
 
-- **Move:** drag the header (unless *Lock the widget's position* is on). **Resize:** drag the bottom-right grip. The position and size are remembered per monitor setup. If the widget would open off-screen, it is moved back onto the primary display.
+- **Move:** drag the header (unless *Lock the widget's position* is on). **Resize:** drag any edge or corner (or the bottom-right grip). The position and size are remembered per monitor setup. If the widget would open off-screen, it is moved back onto the primary display.
 - **Tray:** click the tray icon to show or hide the widget. Its menu has *Show widget*, *Pause monitoring*, *Settings…* and *Quit Repo Watch*. Closing or hiding the widget keeps Repo Watch running. Where no tray is available, the widget stays in the taskbar and closing it exits.
 - **Shortcut:** <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> shows or hides the widget from anywhere. It can be turned off in Settings, which also says when another app already uses it.
 - **Refresh intervals:** Settings › *Refresh intervals* sets, in seconds, how often each kind of data is checked: running workflows (20 s), pull requests and repository details such as public/private (90 s), issues (120 s) and quiet workflows (180 s). Allowed: 5–3600 seconds. *Reset to defaults* restores them. Changes are saved a moment after you stop typing and apply at once.
