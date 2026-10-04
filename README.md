@@ -2,7 +2,7 @@
 
 A Windows-first desktop widget for monitoring GitHub Actions, pull requests and issues, built with C#, .NET and Avalonia. The shared core and UI are kept portable for later macOS/Linux releases.
 
-> **Status: Windows release 0.2.0.** Sign-in, the repository picker, live GitHub data with caching and desktop integration (tray, startup, single instance, shortcut) were checked on Windows 11 against github.com. Notifications from real GitHub events and the webhook relay with real GitHub webhooks have been verified only with test fixtures so far. macOS and Linux are not supported yet. Open limitations are listed in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Windows release 0.3.0.** Sign-in, the repository picker, live GitHub data with caching and desktop integration (tray, startup, single instance, shortcut) were checked on Windows 11 against github.com. Notifications from real GitHub events and the webhook relay with real GitHub webhooks have been verified only with test fixtures so far. macOS and Linux are not supported yet. Open limitations are listed in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Install and run (Windows)
 
