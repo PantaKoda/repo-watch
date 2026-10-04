@@ -272,4 +272,78 @@ public sealed class WidgetFilterTests
         await refresh;
         Assert.False(widget.ShowActivity);
     }
+
+    [Fact]
+    public void Rows_show_chips_only_for_what_is_there()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([
+            Repo(1, "quiet", 0),
+            Repo(2, "busy", 1, openIssues: 1, outcome: CheckOutcome.Running),
+            Repo(3, "broken", 2, openIssues: 31, outcome: CheckOutcome.Failure),
+        ]);
+        var rows = widget.Repositories.ToDictionary(r => r.Name);
+
+        Assert.False(rows["octo/quiet"].HasChips); // a quiet repository stays calm
+        Assert.Equal("1 running", rows["octo/busy"].RunningText);
+        Assert.Equal("1 issue", rows["octo/busy"].IssuesText);
+        Assert.True(rows["octo/broken"].IsFailing);
+        Assert.Equal("31 issues", rows["octo/broken"].IssuesText);
+        Assert.False(rows["octo/broken"].HasPullRequests); // 0 open PRs: no chip
+    }
+
+    [Fact]
+    public void The_first_load_sets_a_silent_baseline_and_later_changes_are_marked()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "repo", 0, loaded: false)]);
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 2)]); // first complete load: baseline
+        var row = widget.Repositories.Single();
+        Assert.False(row.HasUnseenActivity);
+        Assert.False(row.IsFlashing);
+
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 2)]); // nothing changed
+        Assert.False(row.HasUnseenActivity);
+
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 3)]); // a new issue
+        Assert.True(row.HasUnseenActivity);
+        Assert.True(row.IsFlashing);
+    }
+
+    [Fact]
+    public void A_workflow_starting_or_failing_marks_the_row()
+    {
+        var (widget, monitor, _) = Create();
+        monitor.Publish([Repo(1, "repo", 0)]);
+        var row = widget.Repositories.Single();
+
+        monitor.Publish([Repo(1, "repo", 0, outcome: CheckOutcome.Running)]);
+        Assert.True(row.HasUnseenActivity);
+
+        widget.ShowRepositoryCommand.Execute(row); // opened: seen
+        Assert.False(row.HasUnseenActivity);
+
+        monitor.Publish([Repo(1, "repo", 0, outcome: CheckOutcome.Failure)]);
+        Assert.True(row.HasUnseenActivity);
+    }
+
+    [Fact]
+    public void The_glow_ends_after_a_few_seconds_but_the_dot_stays_until_opened()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var monitors = new MonitorHost(time);
+        var monitor = new FakeMonitor();
+        monitors.SetBase(monitor);
+        using var widget = new WidgetViewModel(monitors, TestServices.Settings(), new FakeShell(), new RecordingBrowser(), time, new ImmediateDispatcher(),
+            new RepoWatch.Core.Configuration.RepoWatchOptions());
+        monitor.Publish([Repo(1, "repo", 0)]);
+        monitor.Publish([Repo(1, "repo", 0, openIssues: 1)]);
+        var row = widget.Repositories.Single();
+        Assert.True(row.IsFlashing);
+
+        time.Advance(RepositoryRowViewModel.FlashDuration + TimeSpan.FromMilliseconds(100));
+
+        Assert.False(row.IsFlashing);
+        Assert.True(row.HasUnseenActivity);
+    }
 }

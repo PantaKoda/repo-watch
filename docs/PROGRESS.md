@@ -1108,3 +1108,29 @@ Requested by the maintainer: a proper one-click uninstall that asks whether to k
 - **Why:** since Stage 01 the CI workflow ran only when started by hand. Merges to `main` therefore never produced a CI run, and Repo Watch correctly showed `PantaKoda/repo-watch` with "main: No checks" and no dot, while repositories with push-triggered CI showed green.
 - **Change:** `ci.yml` now runs on pushes to `main`, on pull requests and by hand. A newer push cancels a superseded run. The release-zip job runs only for `main` and manual runs, not for pull requests. GitHub Actions is free for this public repository.
 
+## After release — activity at a glance on the main list (feature branch `row-activity`)
+
+Requested by the maintainer: the main list gave no clear sign that something was going on in a repository (counts were small grey text), and nothing showed that something had just changed.
+
+**Implemented**
+- **Activity chips** on each row, only for what is there:
+  - **● N running** (blue, pulsing dot; queued, waiting or running workflows on any branch);
+  - **CI failing** (red; a tracked branch's latest commit fails);
+  - **N open PRs** (accent);
+  - **N issues** (dim).
+  - Quiet repositories show no chips. The right column now shows only the last-activity time and the open-on-GitHub button.
+- **Change marker:**
+  - Each row keeps a fingerprint of open PRs, issues, running count, attention level and latest run (id, attempt, outcome).
+  - The first complete load sets a silent baseline, so starting the app never lights everything up.
+  - Any later change makes the row glow for 3 s (an accent overlay fading out) and shows a small accent dot by the name. Opening the repository (or opening it on GitHub) clears the dot.
+  - With reduced motion there's no glow; the dot stays.
+
+**Checks run**
+- `dotnet test`: 511 passed. New tests cover:
+  - chips only for what is there, with singular/plural and "30+";
+  - a silent first load, then changes marked (a new issue, a run starting, failing);
+  - opening a repository clears the mark;
+  - the glow ending after 3 s while the dot stays (fake clock).
+  - The visuals test now considers only visible dots, since hidden chips carry a running dot.
+- **Real window (demo):** web-app shows *CI failing*, *3 open PRs* and *30+ issues*; legacy-tool shows *1 open PR*; quiet rows show nothing. Refreshing api-service (queued → running → succeeded) made its row glow, then the glow faded and the dot stayed.
+

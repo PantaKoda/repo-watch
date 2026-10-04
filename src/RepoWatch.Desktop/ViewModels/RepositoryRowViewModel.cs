@@ -8,6 +8,7 @@ using RepoWatch.Core.Monitoring;
 using RepoWatch.Core.Platform;
 using RepoWatch.Core.PullRequests;
 using RepoWatch.Core.State;
+using RepoWatch.Core.Status;
 using RepoWatch.Desktop.Presentation;
 
 namespace RepoWatch.Desktop.ViewModels;
@@ -15,15 +16,63 @@ namespace RepoWatch.Desktop.ViewModels;
 /// <summary>One watched repository: a compact summary row plus the expanded detail sections.</summary>
 public sealed partial class RepositoryRowViewModel : ObservableObject
 {
+    /// <summary>How long a row glows after something changed.</summary>
+    public static readonly TimeSpan FlashDuration = TimeSpan.FromSeconds(3);
+
     private readonly IExternalBrowser _browser;
     private readonly Func<RepositoryKey, Task> _refresh;
+    private readonly Action<TimeSpan, Action>? _schedule;
+    private string? _activity; // what was last seen: PR and issue counts, running work, CI state, latest run
+    private int _flashes;
 
-    public RepositoryRowViewModel(RepositoryKey key, IExternalBrowser browser, Func<RepositoryKey, Task> refresh)
+    /// <param name="schedule">Runs an action after a delay on the UI thread (ends the change glow); null in tests that don't need it.</param>
+    public RepositoryRowViewModel(RepositoryKey key, IExternalBrowser browser, Func<RepositoryKey, Task> refresh, Action<TimeSpan, Action>? schedule = null)
     {
         Key = key;
         _browser = browser;
         _refresh = refresh;
+        _schedule = schedule;
     }
+
+    /// <summary>Workflows queued or running (any branch), shown as a pulsing chip.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRunning), nameof(HasChips))]
+    public partial string? RunningText { get; private set; }
+
+    public bool HasRunning => RunningText is not null;
+
+    /// <summary>A tracked branch's latest commit fails CI.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasChips))]
+    public partial bool IsFailing { get; private set; }
+
+    /// <summary>"3 open PRs"; null when there are none (or they aren't watched).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPullRequests), nameof(HasChips))]
+    public partial string? PullRequestsText { get; private set; }
+
+    public bool HasPullRequests => PullRequestsText is not null;
+
+    /// <summary>"30+ issues"; null when there are none (or they are turned off).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasIssues), nameof(HasChips))]
+    public partial string? IssuesText { get; private set; }
+
+    public bool HasIssues => IssuesText is not null;
+
+    /// <summary>Something to show at a glance; quiet repositories show no chips.</summary>
+    public bool HasChips => HasRunning || IsFailing || HasPullRequests || HasIssues;
+
+    /// <summary>Something changed since the user last opened this repository (a dot next to the name).</summary>
+    [ObservableProperty]
+    public partial bool HasUnseenActivity { get; private set; }
+
+    /// <summary>The row glows briefly after a change (not with reduced motion).</summary>
+    [ObservableProperty]
+    public partial bool IsFlashing { get; private set; }
+
+    /// <summary>The user opened this repository: the "changed" dot goes away.</summary>
+    public void MarkSeen() => HasUnseenActivity = false;
 
     public RepositoryKey Key { get; }
 
@@ -142,6 +191,13 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         PullRequestCount = Count("PRs", snapshot.PullRequests, p => p.OpenCount);
         IssueCount = Count("Issues", snapshot.Issues, i => i.OpenCount);
 
+        var running = snapshot.Actions.Value?.RecentRuns.Count(r => r.Outcome is CheckOutcome.Queued or CheckOutcome.Waiting or CheckOutcome.Running) ?? 0;
+        RunningText = running > 0 ? $"{running} running" : null;
+        IsFailing = Attention == AttentionLevel.Failure;
+        PullRequestsText = snapshot.PullRequests.Value is { OpenCount: { Value: > 0 } prs } ? $"{prs} open PR{(prs is { Value: 1, IsExact: true } ? "" : "s")}" : null;
+        IssuesText = snapshot.Issues.Value is { OpenCount: { Value: > 0 } issues } ? $"{issues} issue{(issues is { Value: 1, IsExact: true } ? "" : "s")}" : null;
+        NoticeChange(snapshot, running);
+
         Actions.Apply(snapshot.Actions, now, isRefreshing, allowReorder,
             a => a.RecentRuns, r => r.Id, vm => vm.Id, r => Create(new RunItemViewModel(_browser, r.Id), vm => vm.Update(r, now)), (vm, r) => vm.Update(r, now));
         PullRequests.Apply(snapshot.PullRequests, now, isRefreshing, allowReorder,
@@ -159,12 +215,64 @@ public sealed partial class RepositoryRowViewModel : ObservableObject
         Summary = string.Join(". ", new[] { Name, Visibility?.ToLowerInvariant(), Badges, BranchStatus, PullRequestCount, IssueCount, activity, FreshnessWarning }.Where(s => !string.IsNullOrEmpty(s)));
     }
 
+    /// <summary>
+    /// Compares what matters at a glance with what was there before. The first complete load only sets the
+    /// baseline (opening the app never lights everything up); later changes mark the row and make it glow.
+    /// </summary>
+    private void NoticeChange(RepositorySnapshot snapshot, int running)
+    {
+        if (!Loaded(snapshot.Actions) || !Loaded(snapshot.PullRequests) || !Loaded(snapshot.Issues))
+        {
+            return; // still loading: no baseline yet
+        }
+
+        var latest = snapshot.Actions.Value?.RecentRuns.OrderByDescending(r => r.UpdatedAt).FirstOrDefault();
+        var activity = string.Join("|",
+            snapshot.PullRequests.Value?.OpenCount.ToString() ?? "-",
+            snapshot.Issues.Value?.OpenCount.ToString() ?? "-",
+            running.ToString(CultureInfo.InvariantCulture),
+            Attention.ToString(),
+            latest is null ? "-" : string.Create(CultureInfo.InvariantCulture, $"{latest.Id}:{latest.RunAttempt}:{latest.Outcome}"));
+        if (_activity is not null && _activity != activity)
+        {
+            HasUnseenActivity = true;
+            Flash();
+        }
+
+        _activity = activity;
+    }
+
+    private static bool Loaded<T>(Resource<T> resource) where T : class =>
+        resource.Value is not null || resource.Availability is ResourceAvailability.FeatureUnavailable or ResourceAvailability.AccessLost;
+
+    private void Flash()
+    {
+        if (_schedule is null)
+        {
+            IsFlashing = true;
+            return;
+        }
+
+        // Restart the glow for a change during a glow; only the latest one ends it.
+        IsFlashing = false;
+        IsFlashing = true;
+        var flash = ++_flashes;
+        _schedule(FlashDuration, () =>
+        {
+            if (flash == _flashes)
+            {
+                IsFlashing = false;
+            }
+        });
+    }
+
     [RelayCommand]
     private Task RefreshAsync() => _refresh(Key);
 
     [RelayCommand]
     private async Task OpenOnGitHubAsync()
     {
+        MarkSeen();
         if (Url is not null)
         {
             await _browser.OpenAsync(Url);

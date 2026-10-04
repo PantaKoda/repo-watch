@@ -138,6 +138,64 @@
       <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
     </Style>
 
+    <!-- Activity chips on a repository row: what is going on, at a glance (fully opaque text). -->
+    <Style Selector="Border.chip">
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource HudFrameBrush}" />
+      <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+    </Style>
+    <Style Selector="Border.chip TextBlock">
+      <Setter Property="FontSize" Value="10.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource HudDimBrush}" />
+    </Style>
+    <Style Selector="Border.chip.running">
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusRunningBrush}" />
+    </Style>
+    <Style Selector="Border.chip.running TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource StatusRunningBrush}" />
+    </Style>
+    <Style Selector="Border.chip.failing">
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusFailureBrush}" />
+    </Style>
+    <Style Selector="Border.chip.failing TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource StatusFailureBrush}" />
+    </Style>
+    <Style Selector="Border.chip.prs">
+      <Setter Property="BorderBrush" Value="{DynamicResource HudAccentBrush}" />
+    </Style>
+    <Style Selector="Border.chip.prs TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource HudAccentBrush}" />
+    </Style>
+    <Style Selector="Window.compact Border.chip TextBlock">
+      <Setter Property="FontSize" Value="10" />
+    </Style>
+
+    <!-- "Changed since you last opened it": a small accent dot by the name. -->
+    <Style Selector="Ellipse.unseen">
+      <Setter Property="Fill" Value="{DynamicResource HudAccentBrush}" />
+    </Style>
+
+    <!-- A row that just changed glows once and fades (never with reduced motion). -->
+    <Style Selector="Border.flash">
+      <Setter Property="Background" Value="{DynamicResource HudAccentBrush}" />
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Window:not(.reduce-motion) Border.flash[IsVisible=True]">
+      <Style.Animations>
+        <Animation Duration="0:0:2.6" Easing="CubicEaseOut" FillMode="Forward">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="0.28" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="0" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
     <!-- Header "Update" pill: accent outline and text, fully opaque. -->
     <Style Selector="Button.update">
       <Setter Property="Padding" Value="7,2" />

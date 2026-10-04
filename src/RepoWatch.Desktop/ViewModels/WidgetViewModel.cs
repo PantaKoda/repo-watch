@@ -344,6 +344,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
         }
 
         SelectedRepository = row;
+        row.MarkSeen();
         if (!IsExpanded)
         {
             ToggleExpanded();
@@ -398,6 +399,11 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void ExitDemo() => _monitors.ExitDemo();
+
+    /// <summary>Runs <paramref name="action"/> on the UI thread after <paramref name="delay"/> (ends a row's change glow).</summary>
+    private void Schedule(TimeSpan delay, Action action) =>
+        // Runs right where the timer fires (it only posts to the UI thread), so a test clock is deterministic.
+        _ = Task.Delay(delay, _time).ContinueWith(_ => _dispatcher.Post(action), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
     private void OnMonitorChanged(object? sender, EventArgs e) => _dispatcher.Post(() => Sync());
 
@@ -542,7 +548,7 @@ public sealed partial class WidgetViewModel : ObservableObject, IDisposable
             vm => vm.Key,
             r =>
             {
-                var row = new RepositoryRowViewModel(r.Key, _browser, key => _monitor.RefreshAsync(key));
+                var row = new RepositoryRowViewModel(r.Key, _browser, key => _monitor.RefreshAsync(key), Schedule);
                 row.Update(r, now, refreshing, allowReorder);
                 return row;
             },
